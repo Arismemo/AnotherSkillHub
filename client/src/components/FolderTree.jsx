@@ -9,7 +9,6 @@ import {
   MoreHorizontal,
   Plus,
   Star,
-  Terminal,
   Trash2,
 } from 'lucide-react';
 
@@ -138,14 +137,6 @@ export default function FolderTree({
 
   return (
     <div className="sidebar-content">
-      <header className="brand-row">
-        <div className="brand-mark" aria-hidden="true"><Terminal size={17} /></div>
-        <div className="min-w-0">
-          <h1>SkillHub</h1>
-          <p>Agent 技能库</p>
-        </div>
-      </header>
-
       <div className="sidebar-actions" aria-label="快捷操作">
         <button type="button" onClick={onNewSkill}><Plus size={14} />新建</button>
         <button type="button" onClick={onPasteImport}>粘贴导入</button>

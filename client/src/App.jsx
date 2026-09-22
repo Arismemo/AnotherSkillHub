@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Terminal } from 'lucide-react';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
 import SkillDetail from './components/SkillDetail';
@@ -181,6 +181,38 @@ export default function App() {
     <div className="app-shell">
       <a className="skip-link" href="#skill-detail">跳至技能详情</a>
       <aside className={`app-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`} aria-label="技能分类导航">
+        <div className="sidebar-topbar">
+          {sidebarCollapsed ? (
+            <button
+              type="button"
+              className="icon-button sidebar-collapse-toggle"
+              onClick={() => setSidebarCollapsed(false)}
+              aria-label="展开分类导航"
+              title="展开分类导航"
+            >
+              <ChevronRight size={16} />
+            </button>
+          ) : (
+            <>
+              <div className="sidebar-brand">
+                <div className="brand-mark" aria-hidden="true"><Terminal size={16} /></div>
+                <div className="min-w-0">
+                  <h1>SkillHub</h1>
+                  <p>Agent 技能库</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="icon-button sidebar-collapse-toggle"
+                onClick={() => setSidebarCollapsed(true)}
+                aria-label="收起分类导航"
+                title="收起分类导航"
+              >
+                <ChevronLeft size={16} />
+              </button>
+            </>
+          )}
+        </div>
         {!sidebarCollapsed && (
           <FolderTree
             currentFolder={currentFolder}
@@ -198,17 +230,6 @@ export default function App() {
             onOpenSetup={() => setShowSetupModal(true)}
           />
         )}
-        <button
-          type="button"
-          className="sidebar-collapse-toggle"
-          onClick={() => setSidebarCollapsed((v) => !v)}
-          aria-label={sidebarCollapsed ? '展开分类导航' : '收起分类导航'}
-          aria-expanded={!sidebarCollapsed}
-          title={sidebarCollapsed ? '展开分类导航' : '收起分类导航'}
-        >
-          <ChevronLeft size={15} className="collapse-icon" />
-          {!sidebarCollapsed && <span>收起</span>}
-        </button>
       </aside>
 
       <section className="app-list" aria-label="技能列表">
