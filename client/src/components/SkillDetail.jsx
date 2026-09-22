@@ -265,7 +265,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(() => {
       const w = el.getBoundingClientRect().width;
-      setOutlineFits(w >= 1000);
+      setOutlineFits(w >= 1180);
       if (w < 760) setFileBarCollapsed(true);
     });
     observer.observe(el);

@@ -262,7 +262,7 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 /* 悬浮大纲占 right:1.1rem + 15rem 宽 —— 正文在其下时右侧留出通道，避免文字被盖住 */
 .detail-scroll.has-outline { --outline-channel: 17.2rem; }
 .detail-content { width: min(100% - 2.5rem, 40rem); margin: 0 auto; padding: 1.4rem 0 3rem; }
-.detail-scroll.has-outline .detail-content { width: min(100% - var(--outline-channel) - 2rem, 40rem); margin-right: var(--outline-channel); margin-left: auto; }
+.detail-scroll.has-outline .detail-content { width: min(100% - 2.5rem, 40rem); margin-right: auto; margin-left: auto; }
 .detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.25rem; padding: .65rem 1.25rem; border-bottom: 1px solid var(--border-muted); background: rgba(13, 17, 23, .96); }
 .detail-identity { min-width: 10rem; flex: 1 1 16rem; }
 .breadcrumb { display: flex; align-items: center; gap: .35rem; overflow: hidden; color: var(--text-subtle); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .65rem; white-space: nowrap; text-overflow: ellipsis; }
@@ -526,7 +526,7 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
   .compact-action span { display: none; }
   .compact-action { width: 2rem; padding: 0; }
   .doc-outline { display: none; }
-  .detail-scroll.has-outline .detail-content { width: min(100% - 4rem, 40rem); margin-right: auto; margin-left: auto; }
+  .detail-scroll.has-outline .detail-content { width: min(100% - 2.5rem, 40rem); margin-right: auto; margin-left: auto; }
   .file-sidebar { width: 12rem; }
 }
 
