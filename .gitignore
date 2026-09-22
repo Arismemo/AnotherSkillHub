@@ -4,4 +4,4 @@ client/dist
 data/skillhub.db*
 data/storage
 .DS_Store
-data/*.db
+data/
