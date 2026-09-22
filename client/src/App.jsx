@@ -43,6 +43,7 @@ export default function App() {
   const [sortBy, setSortBy] = useState('updated');
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState('sidebar-collapsed', false);
   const [recentSkillIds, setRecentSkillIds] = usePersistedState('recent-skills', []);
+  const userPickedRef = useRef(false); // 只有用户主动点选才计入最近浏览
   const recentIdsRef = useRef([]);
   useEffect(() => { recentIdsRef.current = recentSkillIds; }, [recentSkillIds]);
   const [skills, setSkills] = useState([]);
@@ -306,6 +307,7 @@ export default function App() {
         return;
       }
     }
+    userPickedRef.current = true;
     setSelectedSkillId(id);
     setSelectedIds(new Set([id]));
     setLastSelectedIndex(skills.findIndex((s) => s.id === id));
@@ -462,7 +464,7 @@ export default function App() {
         onClose={() => setShowPalette(false)}
         skills={skills}
         folders={folders}
-        onSelectSkill={(id) => { setSelectedSkillId(id); const s = skills.find((x) => x.id === id); if (s && !['inbox', 'all', 'starred', 'trash'].includes(s.folder_path)) setCurrentFolder('all'); }}
+        onSelectSkill={(id) => { userPickedRef.current = true; setSelectedSkillId(id); const s = skills.find((x) => x.id === id); if (s && !['inbox', 'all', 'starred', 'trash'].includes(s.folder_path)) setCurrentFolder('all'); }}
         onSelectFolder={handleSelectFolder}
         onNewSkill={() => setShowNewModal(true)}
         onPasteImport={() => setShowPasteModal(true)}

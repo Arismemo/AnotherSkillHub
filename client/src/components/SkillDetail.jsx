@@ -444,6 +444,10 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
         nodes.forEach((node, index) => {
           if (node.getBoundingClientRect().top - containerTop <= 60) current = index;
         });
+        // 滚动到底时高亮最后一个标题（末尾内容不足一屏时永远差一点）
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 4 && nodes.length) {
+          current = nodes.length - 1;
+        }
         setActiveHeading(current);
         ticking = false;
       });
@@ -493,6 +497,19 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
     // offsetTop 的参照系是 offsetParent（.app-detail），不是滚动容器；
     // 用 rect 相对差值计算真实滚动位置
     const delta = target.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    // 末尾标题补位：确保即使内容不足也能把标题滚到视口上部
+    const needed = container.scrollTop + delta - 12;
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    if (needed > maxScroll) {
+      // 动态撑高底部 padding，让最后标题可达
+      const content = container.querySelector('.detail-content');
+      if (content) {
+        const extra = needed - maxScroll;
+        content.style.paddingBottom = `${Math.round(extra + 3 * 16)}px`;
+        window.requestAnimationFrame(() => container.scrollTo({ top: needed, behavior: 'smooth' }));
+        return;
+      }
+    }
     container.scrollTo({ top: container.scrollTop + delta - 12, behavior: 'smooth' });
   };
 
