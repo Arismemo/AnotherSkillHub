@@ -44,13 +44,11 @@ export default function FolderTree({
   onPasteImport,
   onOpenSetup,
   recentSkills = [],
-  onSelectRecentSkill,
   onDropOnFolder,
 }) {
   const [expanded, setExpanded] = useState({ ADL4: true });
   const [menuOpen, setMenuOpen] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
-  const [recentOpen, setRecentOpen] = useState(false);
   const treeRef = useRef(null);
 
   useEffect(() => {
@@ -251,31 +249,14 @@ export default function FolderTree({
               <li>
                 <button
                   type="button"
-                  className={`nav-item ${recentOpen ? '' : 'is-collapsed-group'}`}
-                  onClick={() => setRecentOpen((v) => !v)}
-                  aria-expanded={recentOpen}
+                  className={`nav-item ${currentFolder === 'recent' && !currentTag ? 'is-active' : ''}`}
+                  onClick={() => onSelectFolder('recent')}
+                  aria-current={currentFolder === 'recent' && !currentTag ? 'page' : undefined}
                 >
-                  {recentOpen ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+                  <Clock3 size={16} aria-hidden="true" />
                   <span>最近浏览</span>
                   <span className="nav-count">{recentSkills.length}</span>
                 </button>
-                {recentOpen && (
-                  <ul className="nav-list nav-sublist">
-                    {recentSkills.map((skill) => (
-                      <li key={`recent-${skill.id}`}>
-                        <button
-                          type="button"
-                          className="nav-item nav-subitem"
-                          onClick={() => onSelectRecentSkill(skill.id)}
-                          title={skill.name}
-                        >
-                          <Clock3 size={15} aria-hidden="true" />
-                          <span className="truncate">{skill.name}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </li>
             )}
           </ul>

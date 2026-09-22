@@ -246,12 +246,24 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
     return saved >= 160 && saved <= 480 ? saved : 240;
   });
   const [outlineHidden, setOutlineHidden] = useState(() => window.localStorage.getItem('ash:outline-hidden') === '1');
+  // 大纲只在滚动区足够宽（≥900px）时悬浮显示，避免挤占小视口正文
+  const [outlineFits, setOutlineFits] = useState(true);
   // A2: 文件树过滤
   const [fileFilter, setFileFilter] = useState('');
   // B1: 大纲当前高亮索引
   const [activeHeading, setActiveHeading] = useState(0);
   const scrollRef = useRef(null);
   const resizingRef = useRef(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => {
+      setOutlineFits(el.getBoundingClientRect().width >= 1000);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem('ash:file-sidebar-width', String(fileSidebarWidth));
@@ -605,8 +617,8 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
           </aside>
         )}
 
-        <div className={`detail-scroll${mode === 'preview' && !outlineHidden && headings.length > 1 ? ' has-outline' : ''}`} ref={scrollRef}>
-          {mode === 'preview' && !outlineHidden && headings.length > 1 && (
+        <div className={`detail-scroll${mode === 'preview' && !outlineHidden && outlineFits && headings.length > 1 ? ' has-outline' : ''}`} ref={scrollRef}>
+          {mode === 'preview' && !outlineHidden && outlineFits && headings.length > 1 && (
             <nav className="doc-outline" aria-label="文档大纲">
               <div className="doc-outline-header">
                 <span>大纲</span>
@@ -631,7 +643,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
               </ul>
             </nav>
           )}
-          {mode === 'preview' && outlineHidden && headings.length > 1 && (
+          {mode === 'preview' && outlineHidden && outlineFits && headings.length > 1 && (
             <button
               type="button"
               className="doc-outline-restore"

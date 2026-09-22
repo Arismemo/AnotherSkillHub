@@ -16,6 +16,7 @@ const folderLabels = {
   inbox: '收件箱',
   starred: '收藏',
   trash: '废纸篓',
+  recent: '最近浏览',
 };
 
 function formatDate(value) {

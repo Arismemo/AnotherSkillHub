@@ -76,17 +76,31 @@ export default function App() {
     setLoading(true);
     setAppError('');
     try {
-      const params = new URLSearchParams({ folder: currentFolder });
-      if (currentTag) params.set('tag', currentTag);
-      if (searchQuery.trim()) params.set('search', searchQuery.trim());
-      const result = await requestJson(`/api/skills?${params}`);
-      const list = Array.isArray(result) ? result : result.data || [];
-      setSkills(list);
-      setSelectedSkillId((previousId) => {
-        if (previousId && list.some((skill) => skill.id === previousId)) return previousId;
-        return list[0]?.id ?? null;
-      });
-      setSelectedIds(new Set());
+      if (currentFolder === 'recent') {
+        // 最近浏览视图：全量拉取后按最近浏览顺序过滤
+        const all = await requestJson('/api/skills?folder=all');
+        const allList = Array.isArray(all) ? all : all.data || [];
+        const byId = new Map(allList.map((s) => [s.id, s]));
+        const list = recentSkillIds.map((id) => byId.get(id)).filter(Boolean);
+        setSkills(list);
+        setSelectedSkillId((previousId) => {
+          if (previousId && list.some((skill) => skill.id === previousId)) return previousId;
+          return list[0]?.id ?? null;
+        });
+        setSelectedIds(new Set());
+      } else {
+        const params = new URLSearchParams({ folder: currentFolder });
+        if (currentTag) params.set('tag', currentTag);
+        if (searchQuery.trim()) params.set('search', searchQuery.trim());
+        const result = await requestJson(`/api/skills?${params}`);
+        const list = Array.isArray(result) ? result : result.data || [];
+        setSkills(list);
+        setSelectedSkillId((previousId) => {
+          if (previousId && list.some((skill) => skill.id === previousId)) return previousId;
+          return list[0]?.id ?? null;
+        });
+        setSelectedIds(new Set());
+      }
     } catch (error) {
       setSkills([]);
       setSelectedSkillId(null);
@@ -94,7 +108,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [currentFolder, currentTag, searchQuery]);
+  }, [currentFolder, currentTag, searchQuery, recentSkillIds]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchFoldersAndStats, 0);
@@ -371,7 +385,6 @@ export default function App() {
             onPasteImport={() => setShowPasteModal(true)}
             onOpenSetup={() => setShowSetupModal(true)}
             recentSkills={recentSkills}
-            onSelectRecentSkill={(id) => setSelectedSkillId(id)}
             onDropOnFolder={handleDropOnFolder}
           />
         )}
