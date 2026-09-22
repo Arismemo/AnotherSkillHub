@@ -1,122 +1,254 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import React, { useState, useEffect } from 'react';
+import FolderTree from './components/FolderTree';
+import SkillList from './components/SkillList';
+import SkillDetail from './components/SkillDetail';
+import { NewSkillModal, MoveSkillModal } from './components/Modals';
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+  const [currentFolder, setCurrentFolder] = useState('inbox');
+  const [currentTag, setCurrentTag] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('updated');
+
+  const [skills, setSkills] = useState([]);
+  const [stats, setStats] = useState({ inbox: 0, starred: 0, all: 0, trash: 0 });
+  const [folders, setFolders] = useState([]);
+  const [tags, setTags] = useState([]);
+  const [selectedSkillId, setSelectedSkillId] = useState(null);
+
+  const [loading, setLoading] = useState(true);
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [moveSkillTarget, setMoveSkillTarget] = useState(null);
+
+  // 加载统计与文件夹树
+  const fetchFoldersAndStats = async () => {
+    try {
+      const [resF, resStats] = await Promise.all([
+        fetch('/api/folders'),
+        fetch('/api/stats')
+      ]);
+      const dataF = await resF.json();
+      const dataStats = await resStats.json();
+      setFolders(dataF);
+      setStats(dataStats);
+    } catch (e) {
+      console.error('Failed to load folders/stats:', e);
+    }
+  };
+
+  // 加载技能列表
+  const fetchSkills = async () => {
+    setLoading(true);
+    try {
+      let url = `/api/skills?folder=${encodeURIComponent(currentFolder)}`;
+      if (currentTag) url += `&tag=${encodeURIComponent(currentTag)}`;
+      if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
+
+      const res = await fetch(url);
+      const result = await res.json();
+      const list = Array.isArray(result) ? result : (result.data || []);
+      setSkills(list);
+
+      // 提取全局标签
+      const allRes = await fetch('/api/skills?folder=all');
+      const allData = await allRes.json();
+      const allList = Array.isArray(allData) ? allData : (allData.data || []);
+      const tagSet = new Set();
+      allList.forEach(s => {
+        if (Array.isArray(s.tags)) s.tags.forEach(t => tagSet.add(t));
+      });
+      setTags([...tagSet]);
+
+      // 默认选中第一个
+      if (list.length > 0) {
+        if (!selectedSkillId || !list.some(s => s.id === selectedSkillId)) {
+          setSelectedSkillId(list[0].id);
+        }
+      } else {
+        setSelectedSkillId(null);
+      }
+    } catch (e) {
+      console.error('Failed to load skills:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFoldersAndStats();
+  }, []);
+
+  useEffect(() => {
+    fetchSkills();
+  }, [currentFolder, currentTag, searchQuery]);
+
+  // 操作处理
+  const handleSelectFolder = (f) => {
+    setCurrentFolder(f);
+    setCurrentTag(null);
+  };
+
+  const handleSelectTag = (t) => {
+    setCurrentTag(t);
+  };
+
+  const handleToggleStar = async (skillId) => {
+    try {
+      await fetch(`/api/skills/${skillId}/star`, { method: 'POST' });
+      fetchSkills();
+      fetchFoldersAndStats();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteSkill = async (skillId) => {
+    if (!window.confirm('确定将该技能移入废纸篓吗？')) return;
+    try {
+      await fetch(`/api/skills/${skillId}/trash`, { method: 'POST' });
+      fetchSkills();
+      fetchFoldersAndStats();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveSkill = async (updatedData) => {
+    try {
+      const res = await fetch(`/api/skills/${updatedData.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedData)
+      });
+      if (res.ok) {
+        fetchSkills();
+        fetchFoldersAndStats();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleCreateFolder = async (folderPath) => {
+    try {
+      const res = await fetch('/api/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: folderPath })
+      });
+      if (res.ok) {
+        fetchFoldersAndStats();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const selectedSkill = skills.find(s => s.id === selectedSkillId) || null;
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
+    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans text-slate-800">
+      {/* 1. 左栏：分类与多级文件夹树 */}
+      <aside className="w-64 flex-shrink-0 border-r border-slate-200 bg-white">
+        <FolderTree
+          currentFolder={currentFolder}
+          onSelectFolder={handleSelectFolder}
+          folders={folders}
+          stats={stats}
+          tags={tags}
+          currentTag={currentTag}
+          onSelectTag={handleSelectTag}
+          onCreateFolder={handleCreateFolder}
+          onRefresh={() => { fetchFoldersAndStats(); fetchSkills(); }}
+        />
+      </aside>
+
+      {/* 2. 中栏：技能卡片列表 */}
+      <section className="w-80 flex-shrink-0 border-r border-slate-200 bg-white flex flex-col">
+        <SkillList
+          skills={skills}
+          selectedSkillId={selectedSkillId}
+          onSelectSkill={(id) => setSelectedSkillId(id)}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          onNewSkill={() => setShowNewModal(true)}
+          onToggleStar={handleToggleStar}
+          onDeleteSkill={handleDeleteSkill}
+          onMoveSkill={(skill) => setMoveSkillTarget(skill)}
+          loading={loading}
+          currentFolder={currentFolder}
+        />
       </section>
 
-      <div className="ticks"></div>
+      {/* 3. 右栏：详情与操作中心 */}
+      <main className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-hidden">
+        {selectedSkill ? (
+          <SkillDetail
+            skill={selectedSkill}
+            folders={folders}
+            onSave={handleSaveSkill}
+            onToggleStar={() => handleToggleStar(selectedSkill.id)}
+            onDelete={() => handleDeleteSkill(selectedSkill.id)}
+            onMove={() => setMoveSkillTarget(selectedSkill)}
+            onRefresh={() => { fetchSkills(); fetchFoldersAndStats(); }}
+          />
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+            <div className="text-4xl mb-3">📬</div>
+            <p className="text-base font-medium">请从左侧选择一个技能查看详情</p>
+            <p className="text-xs text-slate-400 mt-1">或点击中栏顶部的“新建技能”</p>
+          </div>
+        )}
+      </main>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      {/* 弹窗：新建技能 */}
+      <NewSkillModal
+        isOpen={showNewModal}
+        folders={folders}
+        onClose={() => setShowNewModal(false)}
+        onCreate={async (skillData) => {
+          try {
+            const res = await fetch('/api/skills', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(skillData)
+            });
+            if (res.ok) {
+              const created = await res.json();
+              fetchSkills();
+              fetchFoldersAndStats();
+              if (created.id) setSelectedSkillId(created.id);
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }}
+      />
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      {/* 弹窗：移动技能 */}
+      <MoveSkillModal
+        isOpen={!!moveSkillTarget}
+        skill={moveSkillTarget}
+        folders={folders}
+        onClose={() => setMoveSkillTarget(null)}
+        onMove={async (skillId, targetFolder) => {
+          try {
+            const res = await fetch(`/api/skills/${skillId}/move`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ target_folder: targetFolder })
+            });
+            if (res.ok) {
+              fetchSkills();
+              fetchFoldersAndStats();
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }}
+      />
+    </div>
+  );
 }
-
-export default App
