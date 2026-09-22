@@ -136,7 +136,13 @@ export default function FolderPicker({
         {!iconOnly && <ChevronDown size={13} aria-hidden="true" />}
       </button>
       {open && createPortal(
-        <div id="ash-folder-popover" className="folder-picker-popover" role="listbox" style={popStyle || undefined}>
+        <div
+          id="ash-folder-popover"
+          className="folder-picker-popover"
+          role="listbox"
+          style={popStyle || undefined}
+          onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); setOpen(false); } }}
+        >
           <div className="folder-picker-search">
             <Search size={13} aria-hidden="true" />
             <input

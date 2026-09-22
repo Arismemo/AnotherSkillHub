@@ -203,7 +203,19 @@ export default function App() {
     method: 'DELETE',
   });
 
-  const handleToggleStar = (skillId) => runMutation(`/api/skills/${skillId}/star`, { method: 'POST' });
+  const handleToggleStar = async (skillId) => {
+    // 乐观更新：本地先翻转，避免整列表刷新造成闪烁
+    const prev = skills;
+    setSkills((list) => list.map((s) => (s.id === skillId ? { ...s, is_starred: s.is_starred ? 0 : 1 } : s)));
+    try {
+      await requestJson(`/api/skills/${skillId}/star`, { method: 'POST' });
+      // 只刷新左栏计数，不重载列表
+      fetchFoldersAndStats();
+    } catch (error) {
+      setSkills(prev); // 失败回滚
+      showToast(error.message);
+    }
+  };
 
   // C3: 拖拽/移动带 Toast 撤销
   const handleMoveSkill = async (skillId, targetFolder) => {
