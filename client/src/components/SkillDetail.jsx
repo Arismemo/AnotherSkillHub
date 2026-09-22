@@ -15,6 +15,7 @@ import {
   Folder,
   List,
   Terminal,
+  PanelLeftClose,
 } from 'lucide-react';
 
 marked.setOptions({ breaks: true, gfm: true });
@@ -262,7 +263,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
     const observer = new ResizeObserver(() => {
       const w = el.getBoundingClientRect().width;
       setOutlineFits(w >= 1300);
-      setFileBarCollapsed(w < 760);
+      if (w < 760) setFileBarCollapsed(true);
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -585,6 +586,9 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
             <div className="attachment-heading">
               <h3 id="attachments-heading">技能文件</h3>
               <span>{fileTree.length} 个</span>
+              <button type="button" className="icon-button" onClick={() => setFileBarCollapsed(true)} aria-label="收起技能文件" title="收起技能文件">
+                <PanelLeftClose size={13} />
+              </button>
             </div>
             <div className="file-filter">
               <input
