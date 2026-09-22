@@ -607,7 +607,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
           </aside>
         )}
 
-        <div className="detail-scroll" ref={scrollRef}>
+        <div className={`detail-scroll${mode === 'preview' && !outlineHidden && headings.length > 1 ? ' has-outline' : ''}`} ref={scrollRef}>
           {mode === 'preview' && !outlineHidden && headings.length > 1 && (
             <nav className="doc-outline" aria-label="文档大纲">
               <div className="doc-outline-header">
