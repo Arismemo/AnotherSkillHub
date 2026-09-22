@@ -273,6 +273,36 @@ export default function App() {
           }
         }}
       />
+
+      {/* 弹窗：快速粘贴导入 */}
+      <PasteSkillModal
+        isOpen={showPasteModal}
+        folders={folders}
+        onClose={() => setShowPasteModal(false)}
+        onImport={async (skillData) => {
+          try {
+            const res = await fetch('/api/skills', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(skillData)
+            });
+            if (res.ok) {
+              const created = await res.json();
+              fetchSkills();
+              fetchFoldersAndStats();
+              if (created.id) setSelectedSkillId(created.id);
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }}
+      />
+
+      {/* 弹窗：Agent 终端接入命令 */}
+      <AgentSetupModal
+        isOpen={showSetupModal}
+        onClose={() => setShowSetupModal(false)}
+      />
     </div>
   );
 }
