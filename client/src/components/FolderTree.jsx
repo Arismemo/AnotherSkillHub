@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   ChevronDown,
   ChevronRight,
+  Clock3,
   Folder,
   FolderPlus,
   Inbox,
@@ -19,6 +20,15 @@ const navItems = [
   { id: 'trash', label: '废纸篓', icon: Trash2 },
 ];
 
+function findNode(nodes, path) {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    const found = findNode(node.children, path);
+    if (found) return found;
+  }
+  return null;
+}
+
 export default function FolderTree({
   currentFolder,
   onSelectFolder,
@@ -33,9 +43,14 @@ export default function FolderTree({
   onNewSkill,
   onPasteImport,
   onOpenSetup,
+  recentSkills = [],
+  onSelectRecentSkill,
+  onDropOnFolder,
 }) {
   const [expanded, setExpanded] = useState({ ADL4: true });
   const [menuOpen, setMenuOpen] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
+  const treeRef = useRef(null);
 
   useEffect(() => {
     const closeOnEscape = (event) => {
@@ -62,6 +77,47 @@ export default function FolderTree({
     return roots;
   }, [folders]);
 
+  // A3: 树键盘导航（↑↓ 移动、→ 展开、← 收起、Enter 打开）
+  useEffect(() => {
+    const el = treeRef.current;
+    if (!el) return undefined;
+    const onKeyDown = (event) => {
+      if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(event.key)) return;
+      const buttons = [...el.querySelectorAll('.folder-select')];
+      const currentIndex = buttons.indexOf(document.activeElement);
+      if (currentIndex === -1) return;
+      event.preventDefault();
+      const path = document.activeElement.dataset.path;
+      const node = findNode(tree, path);
+      switch (event.key) {
+        case 'ArrowDown':
+          buttons[currentIndex + 1]?.focus();
+          break;
+        case 'ArrowUp':
+          buttons[currentIndex - 1]?.focus();
+          break;
+        case 'ArrowRight':
+          if (node && node.children.length > 0 && !expanded[node.path]) {
+            setExpanded((value) => ({ ...value, [node.path]: true }));
+          }
+          break;
+        case 'ArrowLeft':
+          if (node && expanded[node.path]) {
+            setExpanded((value) => ({ ...value, [node.path]: false }));
+          }
+          break;
+        case 'Enter':
+        case ' ':
+          onSelectFolder(path);
+          break;
+        default:
+          break;
+      }
+    };
+    el.addEventListener('keydown', onKeyDown);
+    return () => el.removeEventListener('keydown', onKeyDown);
+  });
+
   const createFolder = (parentPath = '') => {
     const name = window.prompt(parentPath ? '输入子文件夹名称' : '输入文件夹名称或路径');
     if (!name?.trim()) return;
@@ -82,14 +138,28 @@ export default function FolderTree({
     }
   };
 
+  // C3: 拖放目标高亮
+  const dropHandlers = (path) => ({
+    onDragOver: (event) => {
+      event.preventDefault();
+      setDropTarget(path);
+    },
+    onDragLeave: () => setDropTarget((p) => (p === path ? null : p)),
+    onDrop: (event) => {
+      setDropTarget(null);
+      onDropOnFolder?.(event, path);
+    },
+  });
+
   const renderTreeNode = (node, depth = 0) => {
     const isSelected = currentFolder === node.path && !currentTag;
     const hasChildren = node.children.length > 0;
     const isExpanded = Boolean(expanded[node.path]);
+    const isDropTarget = dropTarget === node.path;
 
     return (
       <li key={node.path}>
-        <div className="folder-row" style={{ '--folder-depth': depth }}>
+        <div className={`folder-row${isDropTarget ? ' is-drop-target' : ''}`} style={{ '--folder-depth': depth }} {...dropHandlers(node.path)}>
           {hasChildren ? (
             <button
               type="button"
@@ -106,6 +176,7 @@ export default function FolderTree({
             className={`folder-select ${isSelected ? 'is-active' : ''}`}
             onClick={() => onSelectFolder(node.path)}
             aria-current={isSelected ? 'page' : undefined}
+            data-path={node.path}
           >
             <Folder size={15} aria-hidden="true" />
             <span className="truncate">{node.name}</span>
@@ -143,7 +214,7 @@ export default function FolderTree({
         <button type="button" onClick={onOpenSetup}>终端接入</button>
       </div>
 
-      <div className="sidebar-scroll">
+      <div className="sidebar-scroll" ref={treeRef}>
         <nav aria-label="系统分类">
           <ul className="nav-list">
             {navItems.map(({ id, label, icon: Icon }) => {
@@ -165,6 +236,27 @@ export default function FolderTree({
             })}
           </ul>
         </nav>
+
+        {recentSkills.length > 0 && (
+          <section className="sidebar-section" aria-labelledby="recent-heading">
+            <div className="section-heading"><h2 id="recent-heading">最近浏览</h2></div>
+            <ul className="nav-list">
+              {recentSkills.map((skill) => (
+                <li key={`recent-${skill.id}`}>
+                  <button
+                    type="button"
+                    className="nav-item"
+                    onClick={() => onSelectRecentSkill(skill.id)}
+                    title={skill.name}
+                  >
+                    <Clock3 size={15} aria-hidden="true" />
+                    <span className="truncate">{skill.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section className="sidebar-section" aria-labelledby="folders-heading">
           <div className="section-heading">

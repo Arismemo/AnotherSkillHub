@@ -72,6 +72,16 @@ function slugifyHeading(text, used) {
   return slug;
 }
 
+// B5: frontmatter 解析为键值对表格
+function parseFrontmatterPairs(raw) {
+  if (!raw) return [];
+  return raw.split('\n')
+    .map((line) => line.match(/^([\w-]+)\s*:\s*(.*)$/))
+    .filter(Boolean)
+    .map((match) => ({ key: match[1], value: match[2].replace(/^["']|["']$/g, '').trim() }))
+    .filter((pair) => pair.key);
+}
+
 function buildFileTree(files) {
   const root = { name: '', path: '', children: new Map(), file: null };
   for (const file of files) {
@@ -89,7 +99,7 @@ function buildFileTree(files) {
   return root;
 }
 
-function FileTreeNode({ node, depth, selectedFile, openFile, openDirs, toggleDir, hasSelectionInside }) {
+function FileTreeNode({ node, depth, selectedFile, openFile, openDirs, toggleDir, hasSelectionInside, filterActive }) {
   const dirEntries = [...node.children.values()].sort((a, b) => {
     const aDir = a.children.size > 0;
     const bDir = b.children.size > 0;
@@ -101,7 +111,8 @@ function FileTreeNode({ node, depth, selectedFile, openFile, openDirs, toggleDir
     <ul className="file-tree" role={depth === 0 ? 'tree' : 'group'} aria-label={depth === 0 ? '技能文件目录' : undefined}>
       {dirEntries.map((entry) => {
         const isDir = entry.children.size > 0;
-        const expanded = openDirs.has(entry.path);
+        // 过滤激活时强制展开所有目录，保证匹配文件可见
+        const expanded = filterActive || openDirs.has(entry.path);
         if (isDir) {
           return (
             <li key={entry.path} role="none">
@@ -125,6 +136,7 @@ function FileTreeNode({ node, depth, selectedFile, openFile, openDirs, toggleDir
                   openDirs={openDirs}
                   toggleDir={toggleDir}
                   hasSelectionInside={hasSelectionInside}
+                  filterActive={filterActive}
                 />
               )}
             </li>
@@ -227,10 +239,28 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
   const [fileError, setFileError] = useState('');
   const [copied, setCopied] = useState('');
   const [openDirs, setOpenDirs] = useState(() => new Set());
-  const [fileSidebarWidth, setFileSidebarWidth] = useState(240);
-  const [outlineHidden, setOutlineHidden] = useState(false);
+  // D1: 面板宽度/大纲显隐持久化
+  const [fileSidebarWidth, setFileSidebarWidth] = useState(() => {
+    const saved = Number(window.localStorage.getItem('skillhub:file-sidebar-width'));
+    return saved >= 160 && saved <= 480 ? saved : 240;
+  });
+  const [outlineHidden, setOutlineHidden] = useState(() => window.localStorage.getItem('skillhub:outline-hidden') === '1');
+  // A2: 文件树过滤
+  const [fileFilter, setFileFilter] = useState('');
+  // B1: 大纲当前高亮索引
+  const [activeHeading, setActiveHeading] = useState(0);
+  // C2: 编辑模式实时预览
+  const [livePreview, setLivePreview] = useState(true);
   const scrollRef = useRef(null);
   const resizingRef = useRef(null);
+
+  useEffect(() => {
+    window.localStorage.setItem('skillhub:file-sidebar-width', String(fileSidebarWidth));
+  }, [fileSidebarWidth]);
+
+  useEffect(() => {
+    window.localStorage.setItem('skillhub:outline-hidden', outlineHidden ? '1' : '0');
+  }, [outlineHidden]);
 
   // 技能文件栏拖拽调宽
   useEffect(() => {
@@ -337,8 +367,16 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
     [auxFileContent, selectedFile],
   );
 
+  // C2: 编辑模式实时预览渲染（防抖由 useMemo 天然提供——content 变更才重算）
+  // 注意：必须声明在下方 DOM 补丁 effect 之前——effect 的依赖数组在组件执行时求值
+  const liveRenderedMarkdown = useMemo(
+    () => highlightMarkdownHtml(marked.parse(splitFrontmatter(content).body || content || '')),
+    [content],
+  );
+
   // 渲染后为标题 DOM 补 id，与大纲的 slug 保持一致（marked v18 renderer 回调
   // 内部没有 parser 引用，覆写 heading renderer 会在运行时崩溃，故改为 DOM 补丁）
+  // B3: 同时为代码块注入「复制」按钮（事件委托，避免重复绑定）
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return undefined;
@@ -347,10 +385,66 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
       const text = node.textContent || '';
       node.id = slugifyHeading(text, used);
     });
+    container.querySelectorAll('.markdown-document pre[data-lang], .file-viewer pre[data-lang]').forEach((pre) => {
+      if (pre.querySelector('.code-copy')) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'code-copy';
+      btn.textContent = '复制';
+      btn.setAttribute('aria-label', '复制代码');
+      btn.addEventListener('click', async () => {
+        const code = pre.querySelector('code')?.textContent || '';
+        try {
+          await navigator.clipboard.writeText(code);
+          btn.textContent = '已复制';
+          btn.classList.add('is-copied');
+          window.setTimeout(() => {
+            btn.textContent = '复制';
+            btn.classList.remove('is-copied');
+          }, 1600);
+        } catch { /* 剪贴板不可用时静默 */ }
+      });
+      pre.appendChild(btn);
+    });
     return undefined;
-  }, [renderedMarkdown, auxRendered, selectedFile]);
+  }, [renderedMarkdown, auxRendered, selectedFile, liveRenderedMarkdown, mode]);
+
+  // B1: 大纲跟随滚动高亮（scroll-spy）：当前视口顶部所在章节即高亮项
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container || headings.length < 2) return undefined;
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        const nodes = container.querySelectorAll('.markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4');
+        const containerTop = container.getBoundingClientRect().top;
+        let current = 0;
+        nodes.forEach((node, index) => {
+          if (node.getBoundingClientRect().top - containerTop <= 60) current = index;
+        });
+        setActiveHeading(current);
+        ticking = false;
+      });
+    };
+    container.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => container.removeEventListener('scroll', onScroll);
+  }, [headings.length, renderedMarkdown, auxRendered, selectedFile, mode]);
 
   const treeData = useMemo(() => buildFileTree(fileTree), [fileTree]);
+
+  // A2: 文件树过滤（含路径子串匹配）
+  const filteredTreeData = useMemo(() => {
+    const q = fileFilter.trim().toLowerCase();
+    if (!q) return treeData;
+    const filtered = fileTree.filter((f) => f.path.toLowerCase().includes(q));
+    return buildFileTree(filtered);
+  }, [treeData, fileFilter, fileTree]);
+
+  // B5: frontmatter 键值对
+  const frontmatterPairs = useMemo(() => parseFrontmatterPairs(documentParts.frontmatter), [documentParts.frontmatter]);
 
   const toggleDir = (dirPath) => {
     setOpenDirs((prev) => {
@@ -428,9 +522,16 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
     <div className="detail-panel">
       <header className="detail-toolbar">
         <div className="detail-identity">
-          <div className="breadcrumb" aria-label="技能路径">
-            <span>{skill.folder_path}</span><span aria-hidden="true">/</span><span>{skill.slug}</span>
-          </div>
+          <nav className="breadcrumb" aria-label="技能路径">
+            {skill.folder_path.split('/').map((segment, i, arr) => (
+              <span key={`${segment}-${i}`} className="crumb-segment">
+                <button type="button" className="crumb-link" onClick={() => onMoveFolder(skill.id, skill.folder_path)} title="在目录中查看">{segment}</button>
+                {i < arr.length - 1 && <i aria-hidden="true">/</i>}
+              </span>
+            ))}
+            <i aria-hidden="true">/</i>
+            <span className="crumb-current">{skill.slug}</span>
+          </nav>
           <h2>{skill.name}</h2>
         </div>
 
@@ -469,16 +570,29 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
               <h3 id="attachments-heading">技能文件</h3>
               <span>{fileTree.length} 个</span>
             </div>
+            <div className="file-filter">
+              <input
+                type="search"
+                value={fileFilter}
+                onChange={(event) => setFileFilter(event.target.value)}
+                placeholder="过滤文件…"
+                aria-label="过滤技能文件"
+              />
+            </div>
             <div className="file-sidebar-scroll">
               <FileTreeNode
-                node={treeData}
+                node={filteredTreeData}
                 depth={0}
                 selectedFile={selectedFile}
                 openFile={openFile}
                 openDirs={openDirs}
                 toggleDir={toggleDir}
                 hasSelectionInside={hasSelectionInside}
+                filterActive={Boolean(fileFilter.trim())}
               />
+              {fileFilter.trim() && filteredTreeData.children.size === 0 && (
+                <p className="file-filter-empty">没有匹配「{fileFilter.trim()}」的文件</p>
+              )}
             </div>
             <div
               className="file-sidebar-resizer"
@@ -513,7 +627,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
               </div>
               <ul>
                 {headings.map((heading, index) => (
-                  <li key={heading.id} style={{ '--outline-level': heading.level - 1 }}>
+                  <li key={heading.id} className={index === activeHeading ? 'is-active' : ''} style={{ '--outline-level': heading.level - 1 }}>
                     <button type="button" onClick={() => jumpToHeading(index)} title={heading.text}>
                       {heading.text}
                     </button>
@@ -570,10 +684,19 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
                       <div className="content-skeleton" role="status"><span>正在载入技能详情…</span><i /><i /><i /><i /></div>
                     ) : content ? (
                       <article className="markdown-document">
-                        {documentParts.frontmatter && (
-                          <details className="frontmatter">
-                            <summary>Frontmatter</summary>
-                            <pre>{documentParts.frontmatter}</pre>
+                        {frontmatterPairs.length > 0 && (
+                          <details className="frontmatter frontmatter-table">
+                            <summary>属性</summary>
+                            <table>
+                              <tbody>
+                                {frontmatterPairs.map((pair) => (
+                                  <tr key={pair.key}>
+                                    <th>{pair.key}</th>
+                                    <td>{pair.value}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                           </details>
                         )}
                         <div dangerouslySetInnerHTML={{ __html: renderedMarkdown }} />
@@ -588,12 +711,26 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
                 )}
               </>
             ) : (
-            <form className="skill-editor" onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
+            <form className={`skill-editor${livePreview ? ' with-preview' : ''}`} onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
               <div className="editor-fields">
                 <label>技能名称<input value={name} onChange={(event) => setName(event.target.value)} required /></label>
                 <label>简短描述<input value={description} onChange={(event) => setDescription(event.target.value)} /></label>
               </div>
-              <label>SKILL.md<textarea value={content} onChange={(event) => setContent(event.target.value)} rows={24} spellCheck="false" /></label>
+              <div className="editor-toolbar">
+                <label className="live-preview-toggle">
+                  <input type="checkbox" checked={livePreview} onChange={(event) => setLivePreview(event.target.checked)} />
+                  实时预览
+                </label>
+                <span className="editor-hint">切换到预览时自动保存</span>
+              </div>
+              <div className="editor-split">
+                <label className="editor-source">SKILL.md<textarea value={content} onChange={(event) => setContent(event.target.value)} rows={24} spellCheck="false" /></label>
+                {livePreview && (
+                  <div className="editor-preview markdown-document" aria-label="实时预览">
+                    <div dangerouslySetInnerHTML={{ __html: liveRenderedMarkdown }} />
+                  </div>
+                )}
+              </div>
             </form>
           )}
           </div>

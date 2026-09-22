@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Terminal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Command, Terminal } from 'lucide-react';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
 import SkillDetail from './components/SkillDetail';
+import CommandPalette from './components/CommandPalette';
+import ToastContainer from './components/Toast';
+import { showToast } from './components/toastBus';
 import { AgentSetupModal, MoveSkillModal, NewSkillModal, PasteSkillModal } from './components/Modals';
 
 async function requestJson(url, options) {
@@ -14,22 +17,44 @@ async function requestJson(url, options) {
   return payload;
 }
 
+// D1: 状态记忆（localStorage 持久化）
+function usePersistedState(key, initial) {
+  const [value, setValue] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(`skillhub:${key}`);
+      return saved === null ? initial : JSON.parse(saved);
+    } catch {
+      return initial;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(`skillhub:${key}`, JSON.stringify(value));
+    } catch { /* 存储不可用则静默降级为内存态 */ }
+  }, [key, value]);
+  return [value, setValue];
+}
+
 export default function App() {
   const [currentFolder, setCurrentFolder] = useState('inbox');
   const [currentTag, setCurrentTag] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('updated');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState('sidebar-collapsed', false);
+  const [recentSkillIds, setRecentSkillIds] = usePersistedState('recent-skills', []);
   const [skills, setSkills] = useState([]);
   const [stats, setStats] = useState({ inbox: 0, starred: 0, all: 0, trash: 0 });
   const [folders, setFolders] = useState([]);
   const [tags, setTags] = useState([]);
   const [selectedSkillId, setSelectedSkillId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [lastSelectedIndex, setLastSelectedIndex] = useState(null);
   const [loading, setLoading] = useState(true);
   const [appError, setAppError] = useState('');
   const [showNewModal, setShowNewModal] = useState(false);
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [showSetupModal, setShowSetupModal] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
   const [moveSkillTarget, setMoveSkillTarget] = useState(null);
 
   const fetchFoldersAndStats = useCallback(async () => {
@@ -61,6 +86,7 @@ export default function App() {
         if (previousId && list.some((skill) => skill.id === previousId)) return previousId;
         return list[0]?.id ?? null;
       });
+      setSelectedIds(new Set());
     } catch (error) {
       setSkills([]);
       setSelectedSkillId(null);
@@ -99,6 +125,24 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [fetchSkills]);
 
+  // A1: ⌘K / Ctrl+K 命令面板
+  useEffect(() => {
+    const onKey = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setShowPalette((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // A4: 最近浏览记录
+  useEffect(() => {
+    if (selectedSkillId == null) return;
+    setRecentSkillIds((prev) => [selectedSkillId, ...prev.filter((id) => id !== selectedSkillId)].slice(0, 8));
+  }, [selectedSkillId, setRecentSkillIds]);
+
   const refreshAll = useCallback(async () => {
     await Promise.all([fetchSkills(), fetchFoldersAndStats()]);
   }, [fetchFoldersAndStats, fetchSkills]);
@@ -110,7 +154,7 @@ export default function App() {
       if (refresh) await refreshAll();
       return result;
     } catch (error) {
-      setAppError(error.message);
+      showToast(error.message);
       return null;
     }
   };
@@ -138,15 +182,66 @@ export default function App() {
 
   const handleToggleStar = (skillId) => runMutation(`/api/skills/${skillId}/star`, { method: 'POST' });
 
-  const handleMoveSkill = (skillId, targetFolder) => runMutation(`/api/skills/${skillId}/move`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ target_folder: targetFolder }),
-  });
+  // C3: 拖拽/移动带 Toast 撤销
+  const handleMoveSkill = async (skillId, targetFolder) => {
+    const skill = skills.find((s) => s.id === skillId);
+    await runMutation(`/api/skills/${skillId}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_folder: targetFolder }),
+    });
+    if (skill) {
+      showToast(`已移动「${skill.name}」到 ${targetFolder}`, {
+        actionLabel: '撤销',
+        onAction: () => runMutation(`/api/skills/${skillId}/move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_folder: skill.folder_path }),
+        }),
+      });
+    }
+  };
 
+  // C1: 废纸篓改为 Toast + 撤销，去掉 confirm
   const handleTrashSkill = async (skillId) => {
-    if (!window.confirm('将这个技能移入废纸篓？')) return;
+    const skill = skills.find((s) => s.id === skillId);
     await runMutation(`/api/skills/${skillId}/trash`, { method: 'POST' });
+    showToast(`已将「${skill?.name ?? '技能'}」移入废纸篓`, {
+      actionLabel: '撤销',
+      onAction: () => runMutation(`/api/skills/${skillId}/restore`, { method: 'POST' }),
+    });
+  };
+
+  // C4: 批量操作
+  const handleBatchMove = async (targetFolder) => {
+    const ids = [...selectedIds];
+    const targets = ids.map((id) => skills.find((s) => s.id === id)).filter(Boolean);
+    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_folder: targetFolder }),
+    }).catch(() => null)));
+    await refreshAll();
+    showToast(`已移动 ${ids.length} 个技能到 ${targetFolder}`, {
+      actionLabel: '撤销',
+      onAction: () => Promise.all(targets.map((s) => requestJson(`/api/skills/${s.id}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_folder: s.folder_path }),
+      }).catch(() => null))).then(() => refreshAll()),
+    });
+    setSelectedIds(new Set());
+  };
+
+  const handleBatchTrash = async () => {
+    const ids = [...selectedIds];
+    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/trash`, { method: 'POST' }).catch(() => null)));
+    await refreshAll();
+    showToast(`已将 ${ids.length} 个技能移入废纸篓`, {
+      actionLabel: '撤销',
+      onAction: () => Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/restore`, { method: 'POST' }).catch(() => null))).then(() => refreshAll()),
+    });
+    setSelectedIds(new Set());
   };
 
   const handlePermanentDelete = async (skillId) => {
@@ -170,12 +265,59 @@ export default function App() {
     body: JSON.stringify(updatedData),
   }));
 
+  // C4: 多选（Cmd 点选 / Shift 范围选）
+  const handleSelectSkill = (id, event) => {
+    if (event && (event.metaKey || event.ctrlKey)) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+      return;
+    }
+    if (event && event.shiftKey && lastSelectedIndex != null) {
+      const currentIdx = skills.findIndex((s) => s.id === id);
+      if (currentIdx !== -1) {
+        const [from, to] = lastSelectedIndex < currentIdx ? [lastSelectedIndex, currentIdx] : [currentIdx, lastSelectedIndex];
+        setSelectedIds(new Set(skills.slice(from, to + 1).map((s) => s.id)));
+        return;
+      }
+    }
+    setSelectedSkillId(id);
+    setSelectedIds(new Set([id]));
+    setLastSelectedIndex(skills.findIndex((s) => s.id === id));
+  };
+
   const sortedSkills = useMemo(() => [...skills].sort((a, b) => {
     if (sortBy === 'name') return a.name.localeCompare(b.name, 'zh-CN');
     return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
   }), [skills, sortBy]);
 
+  const recentSkills = useMemo(
+    () => recentSkillIds.map((id) => skills.find((s) => s.id === id)).filter(Boolean).slice(0, 5),
+    [recentSkillIds, skills],
+  );
+
   const selectedSkill = skills.find((skill) => skill.id === selectedSkillId) || null;
+
+  // C3: 拖拽技能到目录
+  const handleDropOnFolder = (event, folderPath) => {
+    event.preventDefault();
+    const rawId = event.dataTransfer.getData('text/skill-id');
+    if (rawId) {
+      handleMoveSkill(Number(rawId), folderPath);
+      return;
+    }
+    const rawIds = event.dataTransfer.getData('text/skill-ids');
+    if (rawIds) {
+      JSON.parse(rawIds).forEach((id) => runMutation(`/api/skills/${id}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_folder: folderPath }),
+      }));
+    }
+  };
 
   return (
     <div className="app-shell">
@@ -203,6 +345,15 @@ export default function App() {
               </div>
               <button
                 type="button"
+                className="icon-button palette-trigger"
+                onClick={() => setShowPalette(true)}
+                aria-label="打开命令面板"
+                title="命令面板 (⌘K)"
+              >
+                <Command size={15} />
+              </button>
+              <button
+                type="button"
                 className="icon-button sidebar-collapse-toggle"
                 onClick={() => setSidebarCollapsed(true)}
                 aria-label="收起分类导航"
@@ -228,6 +379,9 @@ export default function App() {
             onNewSkill={() => setShowNewModal(true)}
             onPasteImport={() => setShowPasteModal(true)}
             onOpenSetup={() => setShowSetupModal(true)}
+            recentSkills={recentSkills}
+            onSelectRecentSkill={(id) => setSelectedSkillId(id)}
+            onDropOnFolder={handleDropOnFolder}
           />
         )}
       </aside>
@@ -236,7 +390,8 @@ export default function App() {
         <SkillList
           skills={sortedSkills}
           selectedSkillId={selectedSkillId}
-          onSelectSkill={setSelectedSkillId}
+          selectedIds={selectedIds}
+          onSelectSkill={handleSelectSkill}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           currentFolder={currentFolder}
@@ -249,6 +404,10 @@ export default function App() {
           onRestoreSkill={(id) => runMutation(`/api/skills/${id}/restore`, { method: 'POST' })}
           onPermanentDelete={handlePermanentDelete}
           onNewSkill={() => setShowNewModal(true)}
+          onBatchMove={handleBatchMove}
+          onBatchTrash={handleBatchTrash}
+          folders={folders}
+          onClearSelection={() => setSelectedIds(new Set())}
           loading={loading}
           error={appError}
           onRetry={refreshAll}
@@ -274,9 +433,28 @@ export default function App() {
           <div className="detail-empty">
             <p>{loading ? '正在载入技能…' : '选择一个技能查看详情'}</p>
             {!loading && <span>技能内容、关联文件和操作会显示在这里。</span>}
+            {!loading && (
+              <div className="empty-actions">
+                <button type="button" className="primary-button" onClick={() => setShowNewModal(true)}>新建技能</button>
+                <button type="button" className="secondary-button" onClick={() => setShowPasteModal(true)}>粘贴导入</button>
+              </div>
+            )}
           </div>
         )}
       </main>
+
+      <CommandPalette
+        isOpen={showPalette}
+        onClose={() => setShowPalette(false)}
+        skills={skills}
+        folders={folders}
+        onSelectSkill={(id) => { setSelectedSkillId(id); const s = skills.find((x) => x.id === id); if (s && !['inbox', 'all', 'starred', 'trash'].includes(s.folder_path)) setCurrentFolder('all'); }}
+        onSelectFolder={handleSelectFolder}
+        onNewSkill={() => setShowNewModal(true)}
+        onPasteImport={() => setShowPasteModal(true)}
+        onOpenSetup={() => setShowSetupModal(true)}
+        onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
+      />
 
       <NewSkillModal
         isOpen={showNewModal}
@@ -301,6 +479,7 @@ export default function App() {
         isOpen={showSetupModal}
         onClose={() => setShowSetupModal(false)}
       />
+      <ToastContainer />
     </div>
   );
 }

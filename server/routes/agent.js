@@ -95,12 +95,20 @@ mkdir -p "\$INSTALL_DIR"
 echo "目标安装目录: \$INSTALL_DIR"
 
 # 尝试下载完整归档 (包含脚本 scripts/ 与文档 references/)
+# 归档顶层带 <slug>/ 目录，--strip-components=1 去掉，避免嵌套成 <slug>/<slug>/
 echo "正在从云端拉取完整技能包..."
-if curl -fsSL "\$BASE_URL/s/\$SKILL_NAME/archive.tar.gz" | tar -xz -C "\$INSTALL_DIR" 2>/dev/null; then
+if curl -fsSL "\$BASE_URL/s/\$SKILL_NAME/archive.tar.gz" | tar -xz -C "\$INSTALL_DIR" --strip-components=1 2>/dev/null; then
     echo "✓ 完整技能归档解压成功"
 else
     echo "注意：未找到多文件归档，正在拉取核心 SKILL.md..."
     curl -fsSL "\$BASE_URL/s/\$SKILL_NAME.md" -o "\$INSTALL_DIR/SKILL.md"
+fi
+
+# 兼容旧版脚本安装过的嵌套目录：<INSTALL_DIR>/<slug>/... 拍平到根
+if [ -d "\$INSTALL_DIR/\$SKILL_NAME" ]; then
+    mv "\$INSTALL_DIR/\$SKILL_NAME"/* "\$INSTALL_DIR/" 2>/dev/null || true
+    rmdir "\$INSTALL_DIR/\$SKILL_NAME" 2>/dev/null || true
+    echo "✓ 已修正历史版本的嵌套目录结构"
 fi
 
 # 如果有 scripts 目录，自动赋予执行权限

@@ -256,11 +256,19 @@ export function AgentSetupModal({ isOpen, onClose }) {
   };
 
   return (
-    <DialogShell title="终端接入" description="安装 SkillHub 命令后，可在终端拉取、搜索和推送技能。" onClose={onClose} size="medium">
+    <DialogShell title="终端接入" description="两步完成接入：先安装命令，再把引导指令发给 Agent。" onClose={onClose} size="medium">
       <div className="dialog-body setup-content">
         {error && <div className="inline-error" role="alert">{error}</div>}
-        <section><div><h3>安装命令</h3><button type="button" onClick={() => copyText(setupCommand, 'command')}>{copied === 'command' ? <Check size={14} /> : <Copy size={14} />}{copied === 'command' ? '已复制' : '复制'}</button></div><pre><code>{setupCommand}</code></pre></section>
-        <section><div><h3>Agent 引导指令</h3><button type="button" onClick={() => copyText(agentPrompt, 'prompt')}>{copied === 'prompt' ? <Check size={14} /> : <Copy size={14} />}{copied === 'prompt' ? '已复制' : '复制'}</button></div><pre><code>{agentPrompt}</code></pre></section>
+        <section>
+          <div><h3><span className="step-badge" aria-hidden="true">1</span>安装命令</h3><button type="button" onClick={() => copyText(setupCommand, 'command')}>{copied === 'command' ? <Check size={14} /> : <Copy size={14} />}{copied === 'command' ? '已复制' : '复制'}</button></div>
+          <pre><code>{setupCommand}</code></pre>
+          <p className="step-note">在终端执行，安装 <code>skillhub</code> 命令行工具。</p>
+        </section>
+        <section>
+          <div><h3><span className="step-badge" aria-hidden="true">2</span>Agent 引导指令</h3><button type="button" onClick={() => copyText(agentPrompt, 'prompt')}>{copied === 'prompt' ? <Check size={14} /> : <Copy size={14} />}{copied === 'prompt' ? '已复制' : '复制'}</button></div>
+          <pre><code>{agentPrompt}</code></pre>
+          <p className="step-note">发给任意 Agent 对话窗，让 Agent 知道如何使用 skillhub。两步都需要完成。</p>
+        </section>
         <footer className="dialog-footer"><button type="button" className="primary-button" onClick={onClose}>完成</button></footer>
       </div>
     </DialogShell>
