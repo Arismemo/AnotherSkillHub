@@ -3,6 +3,8 @@ import {
   ArrowDownAZ,
   Clock3,
   FolderInput,
+  Download,
+  Package,
   Plus,
   RotateCcw,
   Search,
@@ -37,6 +39,7 @@ export default function SkillList({
   onSortChange,
   onToggleStar,
   onTrashSkill,
+  onAddToBundle,
   onRestoreSkill,
   onPermanentDelete,
   onNewSkill,
@@ -180,15 +183,18 @@ export default function SkillList({
                               value=""
                               onChange={(path) => path && onBatchMove(path, [skill.id])}
                               placeholder={<FolderInput size={14} />}
+                              title="移动到文件夹"
                               compact
                               iconOnly
                             />
-                            <button type="button" className="icon-button danger-button" onClick={(event) => { event.stopPropagation(); onTrashSkill(skill.id); }} aria-label={`将 ${skill.name} 移入废纸篓`}><Trash2 size={14} /></button>
+                            <button type="button" className="icon-button" onClick={(event) => { event.stopPropagation(); onAddToBundle?.(skill.id); }} aria-label={`将 ${skill.name} 加入技能组合`} title="加入技能组合"><Package size={14} /></button>
+                            <a className="icon-button" href={`/s/${skill.slug}/archive.tar.gz`} download aria-label={`下载 ${skill.name} 完整技能包`} title="下载技能包 (.tar.gz)"><Download size={14} /></a>
+                            <button type="button" className="icon-button danger-button" onClick={(event) => { event.stopPropagation(); onTrashSkill(skill.id); }} aria-label={`将 ${skill.name} 移入废纸篓`} title="移入废纸篓"><Trash2 size={14} /></button>
                           </>
                         ) : (
                           <>
-                            <button type="button" className="icon-button" onClick={(event) => { event.stopPropagation(); onRestoreSkill(skill.id); }} aria-label={`恢复 ${skill.name}`}><RotateCcw size={14} /></button>
-                            <button type="button" className="icon-button danger-button" onClick={(event) => { event.stopPropagation(); onPermanentDelete(skill.id); }} aria-label={`永久删除 ${skill.name}`}><Trash2 size={14} /></button>
+                            <button type="button" className="icon-button" onClick={(event) => { event.stopPropagation(); onRestoreSkill(skill.id); }} aria-label={`恢复 ${skill.name}`} title="恢复"><RotateCcw size={14} /></button>
+                            <button type="button" className="icon-button danger-button" onClick={(event) => { event.stopPropagation(); onPermanentDelete(skill.id); }} aria-label={`永久删除 ${skill.name}`} title="永久删除"><Trash2 size={14} /></button>
                           </>
                         )}
                       </span>

@@ -7,7 +7,7 @@ import CommandPalette from './components/CommandPalette';
 import ToastContainer from './components/Toast';
 import { showToast } from './components/toastBus';
 import { AgentSetupModal, NewSkillModal, PasteSkillModal } from './components/Modals';
-import { BundleDetail, NewBundleModal } from './components/Bundles';
+import { BundleDetail, NewBundleModal, AddToBundleModal } from './components/Bundles';
 
 async function requestJson(url, options) {
   const response = await fetch(url, options);
@@ -60,6 +60,7 @@ export default function App() {
   const [bundles, setBundles] = useState([]);
   const [activeBundle, setActiveBundle] = useState(null);
   const [showBundleModal, setShowBundleModal] = useState(false);
+  const [addToBundleTarget, setAddToBundleTarget] = useState(null);
   const [showPalette, setShowPalette] = useState(false);
 
   const fetchFoldersAndStats = useCallback(async () => {
@@ -414,6 +415,7 @@ export default function App() {
           onSortChange={setSortBy}
           onToggleStar={handleToggleStar}
           onTrashSkill={handleTrashSkill}
+          onAddToBundle={(skillId) => setAddToBundleTarget(skills.find((x) => x.id === skillId))}
           onRestoreSkill={(id) => runMutation(`/api/skills/${id}/restore`, { method: 'POST' })}
           onPermanentDelete={handlePermanentDelete}
           onNewSkill={() => setShowNewModal(true)}
@@ -485,6 +487,14 @@ export default function App() {
         onClose={() => setActiveBundle(null)}
         onChanged={fetchFoldersAndStats}
         showToast={showToast}
+      />
+      <AddToBundleModal
+        isOpen={Boolean(addToBundleTarget)}
+        skillId={addToBundleTarget?.id}
+        skillName={addToBundleTarget?.name}
+        bundles={bundles}
+        onClose={() => setAddToBundleTarget(null)}
+        onDone={() => { fetchFoldersAndStats(); showToast(`已加入组合`); }}
       />
       <NewBundleModal
         isOpen={showBundleModal}

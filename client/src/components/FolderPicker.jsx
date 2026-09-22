@@ -7,7 +7,7 @@ import { Check, ChevronDown, Search } from 'lucide-react';
 // options 模式: options=[{value,label}], onChange(value)
 export default function FolderPicker({
   folders, options, value, onChange,
-  placeholder = '选择文件夹…', anyLabel, compact = false, iconOnly = false,
+  placeholder = '选择文件夹…', anyLabel, compact = false, iconOnly = false, title,
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -37,13 +37,58 @@ export default function FolderPicker({
       const W = 256; // 16rem
       let left = r.left;
       if (left + W > window.innerWidth - 8) left = Math.max(8, r.right - W);
-      const below = r.bottom + 6;
-      const estH = 280;
-      let top = below;
-      if (top + estH > window.innerHeight - 8) top = Math.max(8, r.top - estH - 6);
+      let top = r.bottom + 6;
+      // 真实高度渲染后二次校准（见下方 requestAnimationFrame）
       setPopStyle({ position: 'fixed', left: `${Math.round(left)}px`, top: `${Math.round(top)}px`, width: `${W}px`, maxWidth: 'calc(100vw - 1rem)', right: 'auto' });
     };
     updatePos();
+    // 渲染后用真实高度校准：向上翻转时保持紧贴 trigger 顶部
+    const raf = requestAnimationFrame(() => {
+      const pop = document.getElementById('ash-folder-popover');
+      const tr = triggerRef.current?.getBoundingClientRect();
+      if (!pop || !tr) return;
+      const w = 256;
+      let left = tr.left;
+      if (left + w > window.innerWidth - 8) left = Math.max(8, tr.right - w);
+      const CHROME = 58; // 搜索框 + padding 占位
+      const spaceBelow = window.innerHeight - tr.bottom - 12;
+      const spaceAbove = tr.top - 12;
+      const naturalH = pop.offsetHeight; // 未限高的自然高度
+      let top;
+      let maxListH;
+      if (spaceBelow >= Math.min(naturalH, 200)) {
+        // 下方放得下：向下展开（紧贴 trigger 下方 6px）
+        top = tr.bottom + 6;
+        maxListH = spaceBelow >= naturalH ? 100000 : Math.max(140, spaceBelow - CHROME);
+      } else if (spaceAbove >= 200) {
+        // 上方更充裕：向上翻转，紧贴 trigger 上方 6px（高度与限高自洽）
+        maxListH = Math.max(140, Math.min(naturalH - CHROME, spaceAbove - CHROME));
+        const hUse = Math.min(naturalH, maxListH + CHROME);
+        top = Math.max(8, tr.top - hUse - 6);
+      } else {
+        top = tr.bottom + 6;
+        maxListH = 200;
+      }
+      const finish = (finalTop) => {
+        setPopStyle({ position: 'fixed', left: `${Math.round(left)}px`, top: `${Math.round(finalTop)}px`, width: `${w}px`, maxWidth: 'calc(100vw - 1rem)', right: 'auto', '--pop-max-list': `${Math.round(maxListH)}px`, visibility: 'visible' });
+      };
+      if (top < tr.bottom) {
+        // 上翻：等限高 var 生效后按真实高度贴底（双通道 rAF + timeout 兜底）
+        const calibrate = () => {
+          const pop2 = document.getElementById('ash-folder-popover');
+          const tr2 = triggerRef.current?.getBoundingClientRect();
+          if (!pop2 || !tr2) { finish(top); return; }
+          const h2 = pop2.offsetHeight;
+          finish(Math.max(8, tr2.top - h2 - 6));
+        };
+        // 先以 hidden 应用限高 var
+        setPopStyle({ position: 'fixed', left: `${Math.round(left)}px`, top: `${Math.round(top)}px`, width: `${w}px`, maxWidth: 'calc(100vw - 1rem)', right: 'auto', '--pop-max-list': `${Math.round(maxListH)}px`, visibility: 'hidden' });
+        requestAnimationFrame(calibrate);
+        window.setTimeout(calibrate, 30);
+      } else {
+        finish(top);
+      }
+    });
     const onDown = (event) => {
       if (!rootRef.current?.contains(event.target) && !document.getElementById('ash-folder-popover')?.contains(event.target)) setOpen(false);
     };
@@ -54,7 +99,7 @@ export default function FolderPicker({
       setQuery('');
       setActiveIndex(0);
     }, 0);
-    return () => { document.removeEventListener('mousedown', onDown); window.removeEventListener('resize', updatePos); window.clearTimeout(t); };
+    return () => { cancelAnimationFrame(raf); document.removeEventListener('mousedown', onDown); window.removeEventListener('resize', updatePos); window.clearTimeout(t); };
   }, [open]);
 
   const pick = (val) => {
@@ -81,6 +126,7 @@ export default function FolderPicker({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="listbox"
+        title={title || (iconOnly ? undefined : current.label)}
       >
         {iconOnly ? (
           <span className="folder-picker-icon" aria-hidden="true">{placeholder}</span>

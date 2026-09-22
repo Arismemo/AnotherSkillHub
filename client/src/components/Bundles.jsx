@@ -143,3 +143,34 @@ export function NewBundleModal({ isOpen, onClose, onCreated }) {
     </DialogShell>
   );
 }
+
+
+// 从技能卡片快速加入组合：选择目标组合（或新建）
+export function AddToBundleModal({ isOpen, skillId, skillName, bundles, onClose, onDone }) {
+  const [busy, setBusy] = useState(false);
+  if (!isOpen) return null;
+  const add = async (bundleId) => {
+    setBusy(true);
+    try {
+      await fetch(`/api/bundles/${bundleId}/skills`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skill_id: skillId }),
+      });
+      onDone?.(bundleId);
+    } finally { setBusy(false); }
+    onClose();
+  };
+  return (
+    <DialogShell title={`加入技能组合`} description={`选择「${skillName}」要加入的组合；组合内是快捷方式，可随时移除。`} onClose={onClose} size="small">
+      <div className="bundle-add-list">
+        {bundles.map((b) => (
+          <button type="button" key={b.id} disabled={busy} onClick={() => add(b.id)}>
+            <Package size={13} />{b.name}<span className="bundle-item-slug">{b.count} 个技能</span>
+          </button>
+        ))}
+        {!bundles.length && <span className="bundle-empty">还没有组合——先在左栏「技能组合」新建一个</span>}
+      </div>
+    </DialogShell>
+  );
+}
