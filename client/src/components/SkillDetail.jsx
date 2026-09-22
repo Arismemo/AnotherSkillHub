@@ -234,6 +234,8 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
   const [description, setDescription] = useState(skill.description || '');
   const [fileTree, setFileTree] = useState([]);
   const [selectedFile, setSelectedFile] = useState('SKILL.md');
+  // 非 md 文件（脚本/json 等）用宽版式：代码行普遍较长，40rem 窄列反而难读
+  const isWideFileView = selectedFile !== 'SKILL.md' && !selectedFile.endsWith('.md');
   const [auxFileContent, setAuxFileContent] = useState('');
   const [loadingDetail, setLoadingDetail] = useState(!skill.content);
   const [loadingFile, setLoadingFile] = useState(false);
@@ -677,7 +679,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
               <List size={14} />
             </button>
           )}
-          <div className="detail-content">
+          <div className={`detail-content${isWideFileView ? ' is-wide-file' : ''}`}>
             <div className="sr-only" aria-live="polite">{copied ? '内容已复制' : ''}</div>
             {detailError && <div className="inline-error" role="alert">{detailError}</div>}
 
