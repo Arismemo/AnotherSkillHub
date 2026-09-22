@@ -1,7 +1,26 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import './hljs-theme.css';
+
+/* highlight.js GitHub Dark 主题——直接内联（Tailwind v3 CLI 不合并外链 @import，
+   之前用 @import 导致 .hljs-* 规则静默丢失、高亮无色） */
+pre code.hljs { display: block; overflow-x: auto; padding: 1em; }
+code.hljs { padding: 3px 5px; }
+.hljs { color: #c9d1d9; background: #0d1117; }
+.hljs-doctag, .hljs-keyword, .hljs-meta .hljs-keyword, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-variable.language_ { color: #ff7b72; }
+.hljs-title, .hljs-title.class_, .hljs-title.class_.inherited__, .hljs-title.function_ { color: #d2a8ff; }
+.hljs-attr, .hljs-attribute, .hljs-literal, .hljs-meta, .hljs-number, .hljs-operator, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .hljs-variable { color: #79c0ff; }
+.hljs-meta .hljs-string, .hljs-regexp, .hljs-string { color: #a5d6ff; }
+.hljs-built_in, .hljs-symbol { color: #ffa657; }
+.hljs-code, .hljs-comment, .hljs-formula { color: #8b949e; }
+.hljs-name, .hljs-quote, .hljs-selector-pseudo, .hljs-selector-tag { color: #7ee787; }
+.hljs-subst { color: #c9d1d9; }
+.hljs-section { color: #1f6feb; font-weight: 700; }
+.hljs-bullet { color: #f2cc60; }
+.hljs-emphasis { color: #c9d1d9; font-style: italic; }
+.hljs-strong { color: #c9d1d9; font-weight: 700; }
+.hljs-addition { color: #aff5b4; background-color: #033a16; }
+.hljs-deletion { color: #ffdcd7; background-color: #67060c; }
 
 :root {
   color-scheme: dark;
@@ -306,6 +325,11 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .file-viewer > header button { border: 0; background: transparent; color: var(--accent); font-size: .7rem; }
 .file-viewer-markdown { padding: 1.1rem 1.4rem 1.6rem; }
 .file-viewer pre { min-height: 18rem; margin: 0; border: 0; border-radius: 0; }
+
+/* 代码文件行号：CSS counter 逐行编号 */
+.code-with-linenos code { display: block; counter-reset: line-number; }
+.code-with-linenos .code-line { display: block; min-height: 1.35em; counter-increment: line-number; }
+.code-with-linenos .code-line::before { content: counter(line-number); display: inline-block; width: 3rem; margin-right: 1rem; color: var(--text-subtle); opacity: .55; text-align: right; user-select: none; font-variant-numeric: tabular-nums; }
 .content-skeleton { display: grid; gap: .75rem; padding: 2rem; border: 1px solid var(--border-muted); border-radius: .5rem; }
 .content-skeleton span { color: var(--text-muted); font-size: .72rem; }
 .content-skeleton i:nth-of-type(1) { width: 78%; }.content-skeleton i:nth-of-type(2) { width: 92%; }.content-skeleton i:nth-of-type(3) { width: 64%; }.content-skeleton i:nth-of-type(4) { width: 84%; }

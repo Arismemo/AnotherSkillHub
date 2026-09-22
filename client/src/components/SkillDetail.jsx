@@ -359,13 +359,19 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
     [auxFileContent, selectedFile],
   );
 
-  // 文件查看器（非 markdown）的语法高亮 HTML
-  const fileHighlighted = useMemo(
-    () => (selectedFile !== 'SKILL.md' && !selectedFile.endsWith('.md')
-      ? highlightCode(auxFileContent || '', languageForPath(selectedFile))
-      : ''),
-    [auxFileContent, selectedFile],
-  );
+  // 文件查看器（非 markdown）的语法高亮 HTML + 行号
+  // 逐行高亮：每行包 <span class="code-line">，行号由 CSS counter 渲染
+  const fileHighlightedLines = useMemo(() => {
+    if (selectedFile === 'SKILL.md' || selectedFile.endsWith('.md')) return [];
+    const raw = auxFileContent || '';
+    if (!raw) return [];
+    const language = languageForPath(selectedFile);
+    const lines = raw.replace(/\n$/, '').split('\n');
+    return lines.map((line) => {
+      const highlighted = highlightCode(line, language);
+      return highlighted || '&nbsp;';
+    });
+  }, [auxFileContent, selectedFile]);
 
   // C2: 编辑模式实时预览渲染（防抖由 useMemo 天然提供——content 变更才重算）
   // 注意：必须声明在下方 DOM 补丁 effect 之前——effect 的依赖数组在组件执行时求值
@@ -668,7 +674,11 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
                         <div dangerouslySetInnerHTML={{ __html: auxRendered }} />
                       </div>
                     ) : (
-                      <pre data-lang={languageForPath(selectedFile) || (selectedFile.split('.').pop() || 'text')}><code dangerouslySetInnerHTML={{ __html: fileHighlighted || '// 文件为空' }} /></pre>
+                      <pre className="code-with-linenos" data-lang={languageForPath(selectedFile) || (selectedFile.split('.').pop() || 'text')}><code>
+                        {fileHighlightedLines.length > 0
+                          ? fileHighlightedLines.map((line, i) => (<span key={i} className="code-line" dangerouslySetInnerHTML={{ __html: line }} />))
+                          : '// 文件为空'}
+                      </code></pre>
                     )}
                   </section>
                 ) : (
