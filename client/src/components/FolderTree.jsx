@@ -15,7 +15,9 @@ export default function FolderTree({
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
-  onNewSkill
+  onNewSkill,
+  onPasteImport,
+  onOpenSetup
 }) {
   const [expanded, setExpanded] = useState({ 'inbox': true, 'ADL4': true });
   const [menuOpen, setMenuOpen] = useState(null);
@@ -175,6 +177,35 @@ export default function FolderTree({
           title="创建新技能"
         >
           <Plus size={16} />
+        </button>
+      </div>
+
+      {/* 快捷操作栏：大厂高频工具 */}
+      <div className="px-3 py-2.5 grid grid-cols-3 gap-1.5 border-b border-slate-800/80 bg-slate-950">
+        <button
+          onClick={onNewSkill}
+          className="px-2 py-1.5 bg-slate-900 hover:bg-slate-800/90 border border-slate-800 rounded-lg text-[11px] font-medium text-slate-300 hover:text-white flex items-center justify-center space-x-1 transition-all"
+          title="手动新建技能"
+        >
+          <Plus size={12} className="text-slate-400" />
+          <span>新建</span>
+        </button>
+
+        <button
+          onClick={onPasteImport}
+          className="px-2 py-1.5 bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-500/40 rounded-lg text-[11px] font-medium text-indigo-300 hover:text-white flex items-center justify-center space-x-1 transition-all"
+          title="直接粘贴整段 Markdown 自动解析创建技能"
+        >
+          <span>📋 粘贴</span>
+        </button>
+
+        <button
+          onClick={onOpenSetup}
+          className="px-2 py-1.5 bg-slate-900 hover:bg-slate-800/90 border border-slate-800 rounded-lg text-[11px] font-medium text-emerald-400 hover:text-emerald-300 flex items-center justify-center space-x-1 transition-all"
+          title="获取任意终端 Agent 一键接入命令"
+        >
+          <Terminal size={12} />
+          <span>接入</span>
         </button>
       </div>
 

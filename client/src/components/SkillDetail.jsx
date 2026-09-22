@@ -63,6 +63,10 @@ export default function SkillDetail({
   const [isSaving, setIsSaving] = useState(false);
 
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [fileTree, setFileTree] = useState([]);
+  const [selectedFile, setSelectedFile] = useState('SKILL.md');
+  const [auxFileContent, setAuxFileContent] = useState('');
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
 
   useEffect(() => {
     setName(skill.name || '');
@@ -80,12 +84,28 @@ export default function SkillDetail({
             setContent(data.content);
             if (data.name) setName(data.name);
             if (data.description) setDescription(data.description);
+            if (data.file_tree) setFileTree(data.file_tree);
           }
         })
         .catch(err => console.error('Failed to load full skill content:', err))
         .finally(() => setIsLoadingDetail(false));
     }
   }, [skill.id, skill.content]);
+
+  useEffect(() => {
+    if (selectedFile === 'SKILL.md') {
+      setAuxFileContent('');
+      return;
+    }
+    setIsLoadingFile(true);
+    fetch(`/api/skills/${skill.id}/file?path=${encodeURIComponent(selectedFile)}`)
+      .then(res => res.json())
+      .then(data => {
+        setAuxFileContent(data.content || '');
+      })
+      .catch(err => setAuxFileContent('// 加载文件失败: ' + err.message))
+      .finally(() => setIsLoadingFile(false));
+  }, [selectedFile, skill.id]);
 
   const origin = window.location.origin;
   const agentUrl = `${origin}/s/${skill.slug}`;
@@ -126,74 +146,103 @@ export default function SkillDetail({
 
   return (
     <div className="flex-1 h-full bg-slate-950 flex flex-col overflow-hidden select-text">
-      {/* 顶栏控制条 */}
-      <div className="px-6 py-3.5 border-b border-slate-800 bg-slate-950/80 backdrop-blur flex items-center justify-between gap-4">
-        {/* 左侧：标题与归档状态 */}
+      {/* 顶栏控制条：大厂极简风格 */}
+      <div className="px-6 py-3 border-b border-slate-800/80 bg-slate-950 flex items-center justify-between gap-4">
+        {/* 左侧：面包屑与标题 */}
         <div className="flex items-center space-x-3 min-w-0">
           <div className="flex flex-col min-w-0">
-            <div className="flex items-center space-x-2">
-              <h2 className="text-base font-bold text-white tracking-tight truncate">
+            <div className="flex items-center space-x-2 text-[11px] text-slate-500 font-mono">
+              <span>SkillHub</span>
+              <span>/</span>
+              <span className={isInbox ? "text-amber-400 font-medium" : "text-slate-400"}>{skill.folder_path}</span>
+              <span>/</span>
+              <span className="text-indigo-400 font-semibold">{skill.slug}</span>
+            </div>
+            <div className="flex items-center space-x-2 mt-0.5">
+              <h2 className="text-base font-semibold text-slate-100 tracking-tight truncate">
                 {skill.name}
               </h2>
               {skill.version && (
-                <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700/60">
                   v{skill.version}
                 </span>
               )}
             </div>
-
-            <div className="flex items-center space-x-2 text-xs text-slate-400 mt-0.5">
-              <span className="font-mono text-indigo-400">/{skill.slug}</span>
-              <span>•</span>
-              <div className="flex items-center space-x-1">
-                <Folder size={12} className={isInbox ? 'text-amber-400' : 'text-slate-400'} />
-                <span className={isInbox ? 'text-amber-300 font-medium' : 'text-slate-300'}>
-                  {skill.folder_path}
-                </span>
-              </div>
-            </div>
           </div>
         </div>
 
-        {/* 右侧：动作按钮 */}
+        {/* 右侧：操作按钮组 (清晰、克制、大厂质感) */}
         <div className="flex items-center space-x-2">
-          {/* 移动到其他文件夹下拉 */}
-          <div className="relative">
-            <select
-              value={skill.folder_path}
-              onChange={(e) => onMoveFolder(skill.id, e.target.value)}
-              className="bg-slate-900 border border-slate-700 text-slate-300 hover:text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
-            >
-              <option value="inbox">📁 放入收件箱 (inbox)</option>
-              {folders
-                .filter(f => f.path !== 'inbox')
-                .map(f => (
-                  <option key={f.path} value={f.path}>
-                    📂 移至 {f.path}
-                  </option>
-                ))
-              }
-            </select>
-          </div>
+          {/* 复制 Agent 指令 */}
+          <button
+            onClick={() => copyToClipboard(agentPrompt, 'agent')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center space-x-1.5 ${
+              copiedAgent 
+                ? 'bg-emerald-600 text-white shadow-sm' 
+                : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm shadow-indigo-600/20'
+            }`}
+            title="复制指令直接发给任意 Agent"
+          >
+            {copiedAgent ? <Check size={13} /> : <Copy size={13} />}
+            <span>{copiedAgent ? '已复制指令' : '复制 Agent 指令'}</span>
+          </button>
 
-          {/* 预览 / 编辑切换 */}
+          {/* 复制 CLI 安装命令 */}
+          <button
+            onClick={() => copyToClipboard(cliCmd, 'cli')}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center space-x-1.5 ${
+              copiedCli 
+                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40' 
+                : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800 hover:text-white'
+            }`}
+            title="复制终端一键安装命令"
+          >
+            {copiedCli ? <Check size={13} /> : <Terminal size={13} />}
+            <span>{copiedCli ? '已复制命令' : '复制 CLI'}</span>
+          </button>
+
+          {/* 下载 tar.gz 完整包 */}
+          <a
+            href={`/s/${skill.slug}/archive.tar.gz`}
+            download
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800 transition-all text-xs flex items-center"
+            title="下载完整技能包 (含 scripts 脚本与 references 资料)"
+          >
+            <Download size={13} />
+          </a>
+
+          <div className="h-4 w-px bg-slate-800 mx-1"></div>
+
+          {/* 文件夹移动下拉 */}
+          <select
+            value={skill.folder_path}
+            onChange={(e) => onMoveFolder(skill.id, e.target.value)}
+            className="bg-slate-900 border border-slate-800 text-slate-300 hover:text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
+          >
+            <option value="inbox">📥 收件箱 (inbox)</option>
+            {folders.filter(f => f.path !== 'inbox').map(f => (
+              <option key={f.path} value={f.path}>📁 {f.path}</option>
+            ))}
+          </select>
+
+          {/* 编辑 / 预览 */}
           <div className="bg-slate-900 border border-slate-800 p-0.5 rounded-lg flex items-center">
             <button
               onClick={() => setMode('preview')}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center space-x-1 ${
-                mode === 'preview' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              className={`px-2 py-1 rounded-md text-xs font-medium transition-all flex items-center space-x-1 ${
+                mode === 'preview' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Eye size={13} />
+              <Eye size={12} />
               <span>预览</span>
             </button>
             <button
               onClick={() => setMode('edit')}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center space-x-1 ${
-                mode === 'edit' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+              className={`px-2 py-1 rounded-md text-xs font-medium transition-all flex items-center space-x-1 ${
+                mode === 'edit' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Edit3 size={13} />
+              <Edit3 size={12} />
               <span>编辑</span>
             </button>
           </div>
@@ -202,88 +251,12 @@ export default function SkillDetail({
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition-all flex items-center space-x-1 shadow-sm"
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition-all flex items-center space-x-1"
             >
               <Save size={13} />
-              <span>{isSaving ? '保存中...' : '保存修改'}</span>
+              <span>{isSaving ? '保存中...' : '保存'}</span>
             </button>
           )}
-        </div>
-      </div>
-
-      {/* 核心操作横幅：一键复制给 Agent */}
-      <div className="bg-gradient-to-r from-indigo-950/60 via-slate-900 to-slate-950 border-b border-indigo-900/30 p-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <div className="flex items-start space-x-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-300 shrink-0">
-              <Sparkles size={18} />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-bold text-indigo-200">直接发给 Agent 使用</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-500/20 text-indigo-300 font-mono">
-                  Prompt / CLI 通用
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5 max-w-xl">
-                点击下方按钮复制指令或链接，发送到任意 Agent（Hermes、Codex、Claude 等）即可直接调用。
-              </p>
-            </div>
-          </div>
-
-          {/* 操作按钮组 */}
-          <div className="flex items-center space-x-2 flex-wrap gap-y-2">
-            {/* 核心大按钮：复制 Agent 加载指令 */}
-            <button
-              onClick={() => copyToClipboard(agentPrompt, 'agent')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center space-x-1.5 shadow-md ${
-                copiedAgent 
-                  ? 'bg-emerald-600 text-white shadow-emerald-900/40' 
-                  : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-900/40 hover:scale-[1.02]'
-              }`}
-            >
-              {copiedAgent ? <Check size={14} /> : <Copy size={14} />}
-              <span>{copiedAgent ? '已复制 Agent 指令！' : '📋 复制 Agent 指令'}</span>
-            </button>
-
-            {/* 复制 CLI 安装命令 */}
-            <button
-              onClick={() => copyToClipboard(cliCmd, 'cli')}
-              className={`px-3 py-2 rounded-xl text-xs font-medium border transition-all flex items-center space-x-1.5 ${
-                copiedCli 
-                  ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/50' 
-                  : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
-              }`}
-              title="复制 curl 安装到终端的命令"
-            >
-              {copiedCli ? <Check size={13} /> : <Terminal size={13} />}
-              <span>{copiedCli ? '已复制 CLI 命令' : '⚡ 复制安装命令'}</span>
-            </button>
-
-            {/* 复制原始链接 */}
-            <button
-              onClick={() => copyToClipboard(agentUrl, 'link')}
-              className={`px-2.5 py-2 rounded-xl text-xs border transition-all flex items-center space-x-1 ${
-                copiedLink 
-                  ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/50' 
-                  : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800 hover:text-white'
-              }`}
-              title="复制技能 URL"
-            >
-              {copiedLink ? <Check size={13} /> : <Share2 size={13} />}
-            </button>
-
-            {/* 打开原始 Markdown */}
-            <a
-              href={`${agentUrl}.md`}
-              target="_blank"
-              rel="noreferrer"
-              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800 transition-all text-xs flex items-center"
-              title="直接查看原始 Markdown"
-            >
-              <ExternalLink size={13} />
-            </a>
-          </div>
         </div>
       </div>
 
@@ -291,6 +264,68 @@ export default function SkillDetail({
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {mode === 'preview' ? (
           <div className="max-w-4xl mx-auto space-y-6">
+            {/* 多文件浏览条 (当 skill 有除 SKILL.md 外的 scripts / references 时展示) */}
+            {fileTree && fileTree.length > 1 && (
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-2.5">
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80 px-1">
+                  <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider flex items-center space-x-1">
+                    <span>📦 技能包关联文件与脚本</span>
+                    <span className="text-slate-600 font-mono">({fileTree.length} 个文件)</span>
+                  </span>
+                  <a
+                    href={`/s/${skill.slug}/archive.tar.gz`}
+                    download
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors flex items-center space-x-1"
+                  >
+                    <span>打包下载全部</span>
+                    <span>&darr;</span>
+                  </a>
+                </div>
+                <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 text-xs font-mono">
+                  {fileTree.map(f => (
+                    <button
+                      key={f.path}
+                      onClick={() => setSelectedFile(f.path)}
+                      className={`px-2.5 py-1 rounded-lg transition-all flex items-center space-x-1.5 shrink-0 ${
+                        selectedFile === f.path 
+                          ? 'bg-indigo-600/30 text-indigo-200 border border-indigo-500/50 font-semibold' 
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 border border-transparent'
+                      }`}
+                    >
+                      <span>{f.path.endsWith('.sh') || f.path.endsWith('.py') ? '📜' : f.path.endsWith('.md') ? '📄' : '📁'}</span>
+                      <span>{f.path}</span>
+                      <span className="text-[10px] text-slate-600">({(f.size / 1024).toFixed(1)}k)</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 如果选中的不是 SKILL.md，而是 scripts/install.sh 或 references/ 等附属文件，直接展示该文件代码 */}
+            {selectedFile !== 'SKILL.md' ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center space-x-2 text-xs font-mono text-slate-300">
+                    <span>查看文件:</span>
+                    <span className="text-indigo-300 font-semibold bg-slate-900 px-2 py-0.5 rounded border border-slate-800">{selectedFile}</span>
+                  </div>
+                  <button
+                    onClick={() => setSelectedFile('SKILL.md')}
+                    className="text-xs text-slate-400 hover:text-white transition-colors flex items-center space-x-1"
+                  >
+                    <span>&larr; 返回 SKILL.md 说明</span>
+                  </button>
+                </div>
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 overflow-x-auto font-mono text-xs text-slate-200 leading-relaxed">
+                  {isLoadingFile ? (
+                    <p className="text-slate-500 animate-pulse">正在加载文件内容...</p>
+                  ) : (
+                    <pre><code>{auxFileContent || '// 文件内容为空'}</code></pre>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <>
             {/* 元信息卡片 */}
             <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
               <div className="flex items-start justify-between">
@@ -351,6 +386,8 @@ export default function SkillDetail({
                 <p className="text-sm font-medium text-slate-400">暂无详细正文说明</p>
                 <p className="text-xs text-slate-600 mt-1">点击右上角“编辑”按钮即可开始编写 SKILL.md 文档与指令</p>
               </div>
+            )}
+              </>
             )}
           </div>
         ) : (

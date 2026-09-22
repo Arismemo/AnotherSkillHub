@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { saveSkillToDisk, moveSkillOnDisk, parseSkillContent } = require('../storage');
+const { saveSkillToDisk, moveSkillOnDisk, parseSkillContent, getSkillFileTree, getSkillFileContent } = require('../storage');
 
 // 获取统计数据 (用于左侧栏 badge)
 router.get('/stats', (req, res) => {
@@ -108,7 +108,31 @@ router.get('/:id', (req, res) => {
 
     skill.tags = JSON.parse(skill.tags || '[]');
     skill.files = JSON.parse(skill.files || '[]');
+    skill.file_tree = getSkillFileTree(skill.folder_path, skill.slug);
     res.json(skill);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 读取 skill 附属文件（scripts, references 等）
+router.get('/:id/file', (req, res) => {
+  try {
+    const { id } = req.params;
+    const filePath = req.query.path;
+    if (!filePath) {
+      return res.status(400).json({ error: 'path query parameter is required' });
+    }
+    const skill = isNaN(id) 
+      ? db.prepare(`SELECT * FROM skills WHERE slug = ?`).get(id)
+      : db.prepare(`SELECT * FROM skills WHERE id = ? OR slug = ?`).get(id, id);
+    if (!skill) return res.status(404).json({ error: 'Skill not found' });
+
+    const content = getSkillFileContent(skill.folder_path, skill.slug, filePath);
+    if (content === null) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    res.json({ path: filePath, content });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

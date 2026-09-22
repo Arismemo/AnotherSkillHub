@@ -57,6 +57,68 @@ function parseSkillContent(rawContent) {
   }
 }
 
+// 获取 skill 的所有文件树
+function getSkillFileTree(folderPath, slug) {
+  const targetDir = path.join(baseStorageDir, folderPath || 'inbox', slug);
+  if (!fs.existsSync(targetDir)) return [];
+  
+  const results = [];
+  function scan(dir, rel) {
+    const list = fs.readdirSync(dir);
+    for (const item of list) {
+      if (item === '.git') continue;
+      const fullP = path.join(dir, item);
+      const relP = rel ? `${rel}/${item}` : item;
+      const stat = fs.statSync(fullP);
+      if (stat.isDirectory()) {
+        scan(fullP, relP);
+      } else {
+        results.push({
+          path: relP,
+          name: item,
+          size: stat.size,
+          isScript: relP.startsWith('scripts/') || item.endsWith('.sh') || item.endsWith('.py') || item.endsWith('.js'),
+          isReference: relP.startsWith('references/') || item.endsWith('.md') || item.endsWith('.json') || item.endsWith('.yaml'),
+          isMain: item === 'SKILL.md'
+        });
+      }
+    }
+  }
+  scan(targetDir, '');
+  return results;
+}
+
+// 读取具体文件内容
+function getSkillFileContent(folderPath, slug, relativePath) {
+  const safeRel = path.normalize(relativePath).replace(/^(\.\.[\/\\])+/, '');
+  const fullPath = path.join(baseStorageDir, folderPath || 'inbox', slug, safeRel);
+  if (!fs.existsSync(fullPath) || fs.statSync(fullPath).isDirectory()) {
+    return null;
+  }
+  return fs.readFileSync(fullPath, 'utf8');
+}
+
+// 打包为 tar.gz 流（极度适合 curl | tar -xz）
+function createSkillTarGzArchive(folderPath, slug, res) {
+  const targetDir = path.join(baseStorageDir, folderPath || 'inbox', slug);
+  const archive = archiver('tar', {
+    gzip: true,
+    gzipOptions: { level: 9 }
+  });
+
+  archive.on('error', (err) => {
+    res.status(500).send({ error: err.message });
+  });
+
+  archive.pipe(res);
+  if (fs.existsSync(targetDir)) {
+    archive.directory(targetDir, false);
+  } else {
+    archive.append('# Skill file not found on disk', { name: 'SKILL.md' });
+  }
+  archive.finalize();
+}
+
 // 打包为 zip 流
 function createSkillArchive(folderPath, slug, res) {
   const targetDir = path.join(baseStorageDir, folderPath || 'inbox', slug);
@@ -77,5 +139,8 @@ module.exports = {
   saveSkillToDisk,
   moveSkillOnDisk,
   parseSkillContent,
-  createSkillArchive
+  createSkillArchive,
+  createSkillTarGzArchive,
+  getSkillFileTree,
+  getSkillFileContent
 };

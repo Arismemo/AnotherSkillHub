@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
 import SkillDetail from './components/SkillDetail';
-import { NewSkillModal, MoveSkillModal } from './components/Modals';
+import { NewSkillModal, MoveSkillModal, PasteSkillModal, AgentSetupModal } from './components/Modals';
 
 export default function App() {
   const [currentFolder, setCurrentFolder] = useState('inbox');
@@ -18,6 +18,8 @@ export default function App() {
 
   const [loading, setLoading] = useState(true);
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showPasteModal, setShowPasteModal] = useState(false);
+  const [showSetupModal, setShowSetupModal] = useState(false);
   const [moveSkillTarget, setMoveSkillTarget] = useState(null);
 
   // 加载统计与文件夹树
@@ -76,6 +78,21 @@ export default function App() {
 
   useEffect(() => {
     fetchFoldersAndStats();
+
+    // 优先检测 URL 中的 ?skill= 参数，实现一键直达
+    const params = new URLSearchParams(window.location.search);
+    const targetSlug = params.get('skill');
+    if (targetSlug) {
+      fetch(`/api/skills/${targetSlug}`)
+        .then(res => res.json())
+        .then(skill => {
+          if (skill && skill.id) {
+            setCurrentFolder(skill.folder_path || 'all');
+            setSelectedSkillId(skill.id);
+          }
+        })
+        .catch(err => console.error('Failed to locate target skill by slug:', err));
+    }
   }, []);
 
   useEffect(() => {
@@ -147,9 +164,9 @@ export default function App() {
   const selectedSkill = skills.find(s => s.id === selectedSkillId) || null;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans text-slate-800">
+    <div className="flex h-screen w-screen overflow-hidden bg-slate-950 font-sans text-slate-200">
       {/* 1. 左栏：分类与多级文件夹树 */}
-      <aside className="w-64 flex-shrink-0 border-r border-slate-200 bg-white">
+      <aside className="w-64 flex-shrink-0 border-r border-slate-800 bg-slate-950">
         <FolderTree
           currentFolder={currentFolder}
           onSelectFolder={handleSelectFolder}
@@ -159,6 +176,9 @@ export default function App() {
           currentTag={currentTag}
           onSelectTag={handleSelectTag}
           onCreateFolder={handleCreateFolder}
+          onNewSkill={() => setShowNewModal(true)}
+          onPasteImport={() => setShowPasteModal(true)}
+          onOpenSetup={() => setShowSetupModal(true)}
           onRefresh={() => { fetchFoldersAndStats(); fetchSkills(); }}
         />
       </aside>

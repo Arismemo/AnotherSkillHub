@@ -161,25 +161,68 @@ app.use('/api/folders', foldersRoutes);
 app.use('/s', agentRoutes);
 app.use('/api/agent', agentRoutes);
 
-// CLI 快速安装脚本
-app.get('/cli.sh', (req, res) => {
+// CLI 快速安装脚本与万能初始化命令 (/setup.sh 或 /cli.sh)
+app.get(['/setup.sh', '/cli.sh'], (req, res) => {
   const host = req.get('x-forwarded-host') || req.get('host');
   const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
-  const baseUrl = `${proto}://${host}`;
+  const serverUrl = `${proto}://${host}`;
 
   const cliScript = `#!/bin/bash
-# SkillHub Client CLI
-# Usage:
-#   skillhub pull <slug>
-#   skillhub push <path_to_skill_folder_or_file>
+# SkillHub Unified Agent CLI & Setup Script
+set -e
 
-SERVER_URL="${baseUrl}"
+SERVER_URL="${serverUrl}"
 
-function show_help() {
+# 如果用户直接通过 curl | bash 执行且无其他参数，自动进行全局命令安装与环境注入
+if [ "$0" = "bash" ] || [ "$0" = "sh" ] || [ "$1" = "install" ] || [ -z "$1" ]; then
+    echo "========================================================="
+    echo "  🚀 正在为当前系统/Agent 安装 SkillHub 命令行工具..."
+    echo "========================================================="
+
+    TARGET_BIN="/usr/local/bin/skillhub"
+    USE_SUDO=""
+    if [ ! -w "/usr/local/bin" ]; then
+        if command -v sudo >/dev/null 2>&1; then
+            USE_SUDO="sudo"
+        else
+            mkdir -p "\$HOME/.local/bin"
+            TARGET_BIN="\$HOME/.local/bin/skillhub"
+        fi
+    fi
+
+    echo "正在写入全局命令到: \$TARGET_BIN"
+    TMP_FILE=\$(mktemp /tmp/skillhub.XXXXXX)
+    curl -fsSL "\$SERVER_URL/cli.sh" -o "\$TMP_FILE"
+    chmod +x "\$TMP_FILE"
+
+    if [ -n "\$USE_SUDO" ]; then
+        sudo mv "\$TMP_FILE" "\$TARGET_BIN"
+    else
+        mv "\$TMP_FILE" "\$TARGET_BIN"
+    fi
+
+    echo "========================================================="
+    echo "✅ SkillHub 安装就绪！终端与 Agent 已可全局调度。"
+    echo "========================================================="
+    echo "常用指令:"
+    echo "  skillhub pull <slug>       # 一键拉取并安装技能包"
+    echo "  skillhub push <dir/file>   # 将本地技能推送到云端收件箱"
+    echo "  skillhub list              # 列出云端全部技能"
+    echo "  skillhub search <kw>       # 终端搜索技能"
+    echo "  skillhub open              # 在浏览器中打开管理后台"
+    echo "========================================================="
+    exit 0
+fi
+
+show_help() {
   echo "SkillHub CLI 客户端"
+  echo "服务地址: $SERVER_URL"
+  echo ""
   echo "使用方法:"
   echo "  skillhub pull <slug>       下载并安装指定技能"
   echo "  skillhub push <file/dir>   推送本地技能到 SkillHub 收件箱"
+  echo "  skillhub list              查看云端全部技能"
+  echo "  skillhub search <keyword>  快速搜索技能"
   echo "  skillhub open              在浏览器中打开 SkillHub"
 }
 
@@ -189,6 +232,15 @@ if [ "$1" = "pull" ]; then
     exit 1
   fi
   curl -fsSL "$SERVER_URL/s/$2/install.sh" | bash
+elif [ "$1" = "list" ]; then
+  echo "正在获取云端技能列表..."
+  curl -fsSL "$SERVER_URL/api/skills"
+elif [ "$1" = "search" ]; then
+  if [ -z "$2" ]; then
+    echo "错误: 请提供搜索关键词"
+    exit 1
+  fi
+  curl -fsSL "$SERVER_URL/api/skills?search=$2"
 elif [ "$1" = "push" ]; then
   TARGET="$2"
   if [ -z "$TARGET" ]; then

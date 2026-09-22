@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const db = require('../db');
-const { parseSkillContent, saveSkillToDisk, createSkillArchive } = require('../storage');
+const { parseSkillContent, saveSkillToDisk, createSkillArchive, createSkillTarGzArchive } = require('../storage');
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -57,7 +57,7 @@ router.get('/:slug', (req, res) => {
   }
 });
 
-// 一键安装脚本：/s/:slug/install.sh
+// 一键安装脚本：/s/:slug/install.sh (自动完整安装技能目录，包含附属脚本与文档)
 router.get('/:slug/install.sh', (req, res) => {
   try {
     const slug = req.params.slug;
@@ -79,10 +79,10 @@ echo "================================================="
 
 # 检测本地已有的技能目录
 INSTALL_DIR=""
-if [ -d "\$HOME/.hermes/skills" ]; then
-    INSTALL_DIR="\$HOME/.hermes/skills/\$SKILL_NAME"
-elif [ -d "\$HOME/.hermes/profiles/inceptio-general/skills" ]; then
+if [ -d "\$HOME/.hermes/profiles/inceptio-general/skills" ]; then
     INSTALL_DIR="\$HOME/.hermes/profiles/inceptio-general/skills/\$SKILL_NAME"
+elif [ -d "\$HOME/.hermes/skills" ]; then
+    INSTALL_DIR="\$HOME/.hermes/skills/\$SKILL_NAME"
 elif [ -d "\$HOME/.agents/skills" ]; then
     INSTALL_DIR="\$HOME/.agents/skills/\$SKILL_NAME"
 else
@@ -92,18 +92,46 @@ else
 fi
 
 mkdir -p "\$INSTALL_DIR"
+echo "目标安装目录: \$INSTALL_DIR"
 
-echo "正在将技能下载到: \$INSTALL_DIR"
-curl -fsSL "\$BASE_URL/s/\$SKILL_NAME.md" -o "\$INSTALL_DIR/SKILL.md"
+# 尝试下载完整归档 (包含脚本 scripts/ 与文档 references/)
+echo "正在从云端拉取完整技能包..."
+if curl -fsSL "\$BASE_URL/s/\$SKILL_NAME/archive.tar.gz" | tar -xz -C "\$INSTALL_DIR" 2>/dev/null; then
+    echo "✓ 完整技能归档解压成功"
+else
+    echo "注意：未找到多文件归档，正在拉取核心 SKILL.md..."
+    curl -fsSL "\$BASE_URL/s/\$SKILL_NAME.md" -o "\$INSTALL_DIR/SKILL.md"
+fi
 
-echo "✅ 技能 [\$SKILL_NAME] 安装成功！"
-echo "👉 在 Agent 中已可直接调用。无需重启。"
+# 如果有 scripts 目录，自动赋予执行权限
+if [ -d "\$INSTALL_DIR/scripts" ]; then
+    chmod +x "\$INSTALL_DIR/scripts"/* 2>/dev/null || true
+    echo "✓ 已自动赋予脚本执行权限 (chmod +x scripts/*)"
+fi
+
+echo "================================================="
+echo "✅ 技能 [\$SKILL_NAME] 安装完毕，开箱即用！"
+echo "================================================="
 `;
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.send(script);
   } catch (err) {
     res.status(500).send('#!/bin/bash\necho "Server error"\nexit 1\n');
+  }
+});
+
+// 打包下载 tar.gz：/s/:slug/archive.tar.gz (专为终端与 Agent 流式解压设计)
+router.get('/:slug/archive.tar.gz', (req, res) => {
+  try {
+    const slug = req.params.slug;
+    const skill = db.prepare(`SELECT * FROM skills WHERE slug = ?`).get(slug);
+    if (!skill) return res.status(404).send('Skill not found');
+
+    res.attachment(`${slug}.tar.gz`);
+    createSkillTarGzArchive(skill.folder_path, slug, res);
+  } catch (err) {
+    res.status(500).send('Error archiving skill: ' + err.message);
   }
 });
 
