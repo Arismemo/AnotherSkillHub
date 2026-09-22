@@ -285,6 +285,9 @@ elif [ "$1" = "push" ]; then
     rm -f "\$ARCHIVE"
     echo "\$RESP"
     echo ""
+    if echo "\$RESP" | grep -q '"warning"'; then
+      echo "⚠️  \$(echo "\$RESP" | grep -o '"warning":"[^"]*"' | cut -d'"' -f4)"
+    fi
     echo "✅ 完整技能包（含附属文件）已推送并存入 AnotherSkillHub 收件箱 (Inbox)！"
   else
     FILE="\$TARGET"

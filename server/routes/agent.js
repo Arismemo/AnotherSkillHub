@@ -164,45 +164,87 @@ router.get('/:slug/download', (req, res) => {
 // 解包技能归档（tar.gz/tgz）：返回 { content, files }——SKILL.md 为正文，其余为附属文件
 function extractSkillArchive(buffer) {
   const os = require('os');
+  const MAX_TOTAL_TEXT = 4 * 1024 * 1024;   // 附属文本总量 4MB
+  const MAX_FILES = 200;                     // 附属文件数上限
+  const MAX_FILE = 512 * 1024;               // 单文件 512KB
+
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ash-archive-'));
-  const tmpTar = path.join(tmpDir, 'skill.tgz');
-  fs.writeFileSync(tmpTar, buffer);
-  execSync(`tar -xzf ${shellQuote(tmpTar)} -C ${shellQuote(tmpDir)}`, { stdio: 'pipe' });
-  // 若解包后只有一个根目录（skill-name/），下钻一层
-  let root = tmpDir;
-  const entries = fs.readdirSync(tmpDir).filter((e) => e !== 'skill.tgz' && !e.startsWith('ash-push.'));
-  if (entries.length === 1) {
-    const only = path.join(tmpDir, entries[0]);
-    if (fs.statSync(only).isDirectory()) root = only;
-  }
-  // 找 SKILL.md（根目录或一层子目录）
-  let skillMdPath = null;
-  const rootFiles = fs.readdirSync(root);
-  if (rootFiles.includes('SKILL.md')) skillMdPath = path.join(root, 'SKILL.md');
-  else {
-    for (const e of rootFiles) {
-      const sub = path.join(root, e);
-      if (fs.statSync(sub).isDirectory() && fs.existsSync(path.join(sub, 'SKILL.md'))) { skillMdPath = path.join(sub, 'SKILL.md'); root = sub; break; }
+  try {
+    const tmpTar = path.join(tmpDir, 'skill.tgz');
+    fs.writeFileSync(tmpTar, buffer);
+    // 路径穿越防护：先列出成员校验再解包
+    let listing = '';
+    try {
+      listing = execSync(`tar -tzf ${shellQuote(tmpTar)}`, { stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 8 * 1024 * 1024 }).toString();
+    } catch {
+      return { error: '归档损坏或不是有效的 tar.gz' };
     }
-  }
-  if (!skillMdPath) { fs.rmSync(tmpDir, { recursive: true, force: true }); return null; }
-  const content = fs.readFileSync(skillMdPath, 'utf8');
-  // 收集其余文本文件（跳过二进制 >512KB 与敏感/无关目录）
-  const files = [];
-  (function walk(dir, rel) {
-    for (const item of fs.readdirSync(dir)) {
-      if (item === '.git' || item === 'node_modules' || item === '__pycache__' || item === 'skill.tgz' || item === '.DS_Store' || item.startsWith('._') || item.startsWith('ash-push.')) continue;
-      const full = path.join(dir, item);
-      const relP = rel ? `${rel}/${item}` : item;
-      const stat = fs.statSync(full);
-      if (stat.isDirectory()) walk(full, relP);
-      else if (item !== 'SKILL.md' && stat.size <= 512 * 1024) {
-        files.push({ path: relP, content: fs.readFileSync(full, 'utf8') });
+    const members = listing.split('\n').filter(Boolean);
+    for (const m of members) {
+      const norm = path.posix.normalize(m.replace(/\/$/, ''));
+      if (norm === '..' || norm.startsWith('../') || path.posix.isAbsolute(norm)) {
+        return { error: `归档包含非法路径: ${m}` };
       }
     }
-  })(root, '');
-  fs.rmSync(tmpDir, { recursive: true, force: true });
-  return { content, files };
+    if (members.length > MAX_FILES + 50) {
+      return { error: `归档文件数过多（${members.length} > ${MAX_FILES + 50}）` };
+    }
+    execSync(`tar -xzf ${shellQuote(tmpTar)} -C ${shellQuote(tmpDir)}`, { stdio: 'pipe' });
+
+    // 若解包后只有一个根目录（skill-name/），下钻一层
+    let root = tmpDir;
+    const entries = fs.readdirSync(tmpDir).filter((e) => e !== 'skill.tgz' && !e.startsWith('ash-push.'));
+    if (entries.length === 1) {
+      const only = path.join(tmpDir, entries[0]);
+      if (fs.statSync(only).isDirectory()) root = only;
+    }
+
+    // 找 SKILL.md（大小写兼容：SKILL.md / skill.md / Skill.md）
+    const findSkillMd = (dir) => fs.readdirSync(dir).find((f) => f.toLowerCase() === 'skill.md' && fs.statSync(path.join(dir, f)).isFile());
+    let skillMdPath = null;
+    const rootHit = findSkillMd(root);
+    if (rootHit) {
+      skillMdPath = path.join(root, rootHit);
+    } else {
+      // 容错：一层子目录里的 skill.md（单根目录包装场景）
+      for (const e of fs.readdirSync(root)) {
+        const sub = path.join(root, e);
+        if (fs.statSync(sub).isDirectory()) {
+          const hit = findSkillMd(sub);
+          if (hit) { skillMdPath = path.join(sub, hit); root = sub; break; }
+        }
+      }
+    }
+    if (!skillMdPath) return { error: '归档根目录（或唯一子目录）缺少 SKILL.md——技能必须以 SKILL.md 作为入口文件' };
+
+    const content = fs.readFileSync(skillMdPath, 'utf8');
+
+    // 收集附属文本文件；超限即报错（不静默丢弃）
+    const files = [];
+    let totalBytes = 0;
+    const skipped = [];
+    (function walk(dir, rel) {
+      for (const item of fs.readdirSync(dir).sort()) {
+        if (item === '.git' || item === 'node_modules' || item === '__pycache__' || item === 'skill.tgz' || item === '.DS_Store' || item.startsWith('._') || item.startsWith('ash-push.')) continue;
+        const full = path.join(dir, item);
+        const relP = rel ? `${rel}/${item}` : item;
+        const stat = fs.statSync(full);
+        if (stat.isDirectory()) walk(full, relP);
+        else if (item.toLowerCase() !== 'skill.md') {
+          if (files.length >= MAX_FILES) throw new Error(`附属文件数超过上限 ${MAX_FILES}`);
+          if (stat.size > MAX_FILE) { skipped.push(`${relP} (${Math.round(stat.size / 1024)}KB)`); return; }
+          totalBytes += stat.size;
+          if (totalBytes > MAX_TOTAL_TEXT) throw new Error(`附属文本总量超过上限 4MB`);
+          files.push({ path: relP, content: fs.readFileSync(full, 'utf8') });
+        }
+      }
+    })(root, '');
+    return { content, files, skipped };
+  } catch (e) {
+    return { error: e.message };
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 function shellQuote(p) { return `'${String(p).replace(/'/g, `'\\''`)}'`; }
@@ -219,14 +261,16 @@ router.post('/push', upload.single('file'), (req, res) => {
 
     let fileFallbackName = '';
     let archiveFiles = [];
+    let skippedOversize = [];
     if (req.file && /\.(tar\.gz|tgz|zip)$/i.test(req.file.originalname)) {
       // 归档上传：解包出 SKILL.md + 附属文件
       const extracted = extractSkillArchive(req.file.buffer);
-      if (!extracted) {
-        return res.status(400).json({ error: 'Archive must contain a SKILL.md at root (or one level deep)' });
+      if (!extracted || extracted.error) {
+        return res.status(400).json({ error: (extracted && extracted.error) || '归档解析失败' });
       }
       content = extracted.content;
       archiveFiles = extracted.files;
+      skippedOversize = extracted.skipped || [];
       if (!folderPath || folderPath === 'inbox') {
         // 归档里若有目录名暗示分类，仅作展示参考；仍默认 inbox
       }
@@ -282,6 +326,8 @@ router.post('/push', upload.single('file'), (req, res) => {
         slug,
         folder_path: existing.folder_path,
         files: archiveFiles.length,
+        skipped_oversize: skippedOversize.length ? skippedOversize : undefined,
+        warning: skippedOversize.length ? `已跳过超限文件（>512KB）: ${skippedOversize.join(', ')}` : undefined,
         url: `${getBaseUrl(req)}/s/${slug}`
       });
     }
@@ -300,6 +346,8 @@ router.post('/push', upload.single('file'), (req, res) => {
       slug,
       folder_path: folderPath,
       files: archiveFiles.length,
+      skipped_oversize: skippedOversize.length ? skippedOversize : undefined,
+      warning: skippedOversize.length ? `已跳过超限文件（>512KB）: ${skippedOversize.join(', ')}` : undefined,
       url: `${getBaseUrl(req)}/s/${slug}`,
       install_cmd: `curl -fsSL ${getBaseUrl(req)}/s/${slug}/install.sh | bash`
     });
