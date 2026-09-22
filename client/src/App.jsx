@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Terminal } from 'lucide-react';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
@@ -42,6 +42,8 @@ export default function App() {
   const [sortBy, setSortBy] = useState('updated');
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState('sidebar-collapsed', false);
   const [recentSkillIds, setRecentSkillIds] = usePersistedState('recent-skills', []);
+  const recentIdsRef = useRef([]);
+  useEffect(() => { recentIdsRef.current = recentSkillIds; }, [recentSkillIds]);
   const [skills, setSkills] = useState([]);
   const [stats, setStats] = useState({ inbox: 0, starred: 0, all: 0, trash: 0 });
   const [folders, setFolders] = useState([]);
@@ -81,7 +83,7 @@ export default function App() {
         const all = await requestJson('/api/skills?folder=all');
         const allList = Array.isArray(all) ? all : all.data || [];
         const byId = new Map(allList.map((s) => [s.id, s]));
-        const list = recentSkillIds.map((id) => byId.get(id)).filter(Boolean);
+        const list = recentIdsRef.current.map((id) => byId.get(id)).filter(Boolean);
         setSkills(list);
         setSelectedSkillId((previousId) => {
           if (previousId && list.some((skill) => skill.id === previousId)) return previousId;
@@ -108,7 +110,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [currentFolder, currentTag, searchQuery, recentSkillIds]);
+  }, [currentFolder, currentTag, searchQuery]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchFoldersAndStats, 0);

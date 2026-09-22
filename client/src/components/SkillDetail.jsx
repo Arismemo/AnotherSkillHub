@@ -246,8 +246,10 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
     return saved >= 160 && saved <= 480 ? saved : 240;
   });
   const [outlineHidden, setOutlineHidden] = useState(() => window.localStorage.getItem('ash:outline-hidden') === '1');
-  // 大纲只在滚动区足够宽（≥900px）时悬浮显示，避免挤占小视口正文
+  // 大纲只在滚动区足够宽（≥1000px）时悬浮显示，避免挤占小视口正文
   const [outlineFits, setOutlineFits] = useState(true);
+  // 文件栏在滚动区 <640px 时自动收成细条（点击恢复），正文优先
+  const [fileBarCollapsed, setFileBarCollapsed] = useState(false);
   // A2: 文件树过滤
   const [fileFilter, setFileFilter] = useState('');
   // B1: 大纲当前高亮索引
@@ -259,7 +261,9 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
     const el = scrollRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(() => {
-      setOutlineFits(el.getBoundingClientRect().width >= 1000);
+      const w = el.getBoundingClientRect().width;
+      setOutlineFits(w >= 1000);
+      setFileBarCollapsed(w < 760);
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -571,7 +575,19 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
       </header>
 
       <div className="detail-body">
-        {fileTree.length > 1 && (
+        {fileTree.length > 1 && fileBarCollapsed && (
+          <button
+            type="button"
+            className="file-sidebar-rail"
+            onClick={() => setFileBarCollapsed(false)}
+            aria-label={`展开技能文件（${fileTree.length} 个）`}
+            title="展开技能文件"
+          >
+            <span className="rail-count">{fileTree.length}</span>
+            <span className="rail-label">文件</span>
+          </button>
+        )}
+        {fileTree.length > 1 && !fileBarCollapsed && (
           <aside className="file-sidebar" aria-label="技能文件" style={{ width: fileSidebarWidth }}>
             <div className="attachment-heading">
               <h3 id="attachments-heading">技能文件</h3>

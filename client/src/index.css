@@ -243,6 +243,12 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 /* Detail */
 .detail-panel { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .detail-body { display: flex; flex: 1; min-height: 0; }
+
+/* 窄屏文件栏收成细条：竖排计数 + 「文件」，点击恢复 */
+.file-sidebar-rail { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem; flex: 0 0 auto; width: 2.1rem; border: 0; border-right: 1px solid var(--border-muted); background: var(--surface); color: var(--text-subtle); cursor: pointer; }
+.file-sidebar-rail:hover { color: var(--text); background: var(--surface-hover); }
+.rail-count { font-size: .72rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rail-label { writing-mode: vertical-rl; font-size: .6rem; letter-spacing: .18em; }
 .file-sidebar { position: relative; display: flex; flex-direction: column; flex: 0 0 auto; width: 15rem; min-height: 0; border-right: 1px solid var(--border-muted); background: var(--surface); }
 .file-sidebar-resizer { position: absolute; top: 0; right: -3px; bottom: 0; z-index: 5; width: 6px; cursor: col-resize; background: transparent; }
 .file-sidebar-resizer:hover, .file-sidebar-resizer:focus-visible { background: rgba(68, 147, 248, .35); }
@@ -250,8 +256,8 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .detail-scroll { position: relative; flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
 /* 悬浮大纲占 right:1.1rem + 15rem 宽 —— 正文在其下时右侧留出通道，避免文字被盖住 */
 .detail-scroll.has-outline { --outline-channel: 17.2rem; }
-.detail-content { width: min(100% - 4rem, 82rem); margin: 0 auto; padding: 1.6rem 0 4rem; }
-.detail-scroll.has-outline .detail-content { width: min(100% - var(--outline-channel) - 3rem, 82rem); margin-right: var(--outline-channel); margin-left: auto; }
+.detail-content { width: min(100% - 2.5rem, 82rem); margin: 0 auto; padding: 1.4rem 0 3rem; }
+.detail-scroll.has-outline .detail-content { width: min(100% - var(--outline-channel) - 2rem, 82rem); margin-right: var(--outline-channel); margin-left: auto; }
 .detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.25rem; padding: .65rem 1.25rem; border-bottom: 1px solid var(--border-muted); background: rgba(13, 17, 23, .96); }
 .detail-identity { min-width: 10rem; flex: 1 1 16rem; }
 .breadcrumb { display: flex; align-items: center; gap: .35rem; overflow: hidden; color: var(--text-subtle); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .65rem; white-space: nowrap; text-overflow: ellipsis; }
