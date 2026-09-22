@@ -12,3 +12,5 @@ services:
     environment:
       - PORT=9444
       - NODE_ENV=production
+      - STORAGE_DIR=/app/data/skills_files
+      - DATA_DIR=/app/data

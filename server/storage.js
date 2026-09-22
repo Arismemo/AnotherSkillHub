@@ -3,7 +3,7 @@ const path = require('path');
 const matter = require('gray-matter');
 const archiver = require('archiver');
 
-const baseStorageDir = process.env.STORAGE_DIR || path.join(__dirname, 'data', 'skills_files');
+const baseStorageDir = process.env.STORAGE_DIR || path.join(__dirname, '../data/skills_files');
 if (!fs.existsSync(baseStorageDir)) {
   fs.mkdirSync(baseStorageDir, { recursive: true });
 }
