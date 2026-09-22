@@ -98,25 +98,23 @@ function getSkillFileContent(folderPath, slug, relativePath) {
   return fs.readFileSync(fullPath, 'utf8');
 }
 
-// 打包为 tar.gz 流（极度适合 curl | tar -xz）
+// 打包为 tar.gz 流（使用系统原生 tar，原生保留权限、极速稳定）
 function createSkillTarGzArchive(folderPath, slug, res) {
-  const targetDir = path.join(baseStorageDir, folderPath || 'inbox', slug);
-  const archive = archiver('tar', {
-    gzip: true,
-    gzipOptions: { level: 9 }
-  });
+  const { spawn } = require('child_process');
+  const targetParent = path.join(baseStorageDir, folderPath || 'inbox');
+  const skillDir = path.join(targetParent, slug);
 
-  archive.on('error', (err) => {
-    res.status(500).send({ error: err.message });
-  });
-
-  archive.pipe(res);
-  if (fs.existsSync(targetDir)) {
-    archive.directory(targetDir, false);
-  } else {
-    archive.append('# Skill file not found on disk', { name: 'SKILL.md' });
+  if (!fs.existsSync(skillDir)) {
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), `# ${slug}\nSkill initialized.`);
   }
-  archive.finalize();
+
+  const tar = spawn('tar', ['-czf', '-', '-C', targetParent, slug]);
+  tar.stdout.pipe(res);
+  tar.stderr.on('data', (d) => console.error('tar stderr:', d.toString()));
+  tar.on('error', (err) => {
+    if (!res.headersSent) res.status(500).send('Tar error: ' + err.message);
+  });
 }
 
 // 打包为 zip 流
