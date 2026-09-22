@@ -165,6 +165,8 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .sidebar-scroll, .folder-tree, .folder-tree ul, .nav-list { min-width: 0; }
 .nav-list, .folder-tree, .folder-tree ul { list-style: none; margin: 0; padding: 0; }
 .nav-list { display: grid; gap: .15rem; }
+.nav-divider { display: flex; align-items: center; margin: .55rem .4rem .15rem; color: var(--text-subtle); font-size: .67rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.nav-divider::after { content: ""; flex: 1; height: 1px; margin-left: .5rem; background: var(--border-muted); }
 .nav-item { display: flex; align-items: center; gap: .58rem; width: 100%; min-height: 2.1rem; padding: .35rem .55rem; border: 0; border-radius: .38rem; background: transparent; color: var(--text-muted); font-size: .79rem; text-align: left; transition: .15s ease; }
 .nav-item:hover { background: var(--surface-raised); color: var(--text); }
 .nav-item.is-active { background: var(--surface-hover); color: var(--text); font-weight: 600; }
@@ -255,8 +257,8 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .mode-switch { display: flex; padding: .15rem; border: 1px solid var(--border); border-radius: .42rem; background: #0b0f14; }
 .mode-switch button { display: flex; align-items: center; gap: .28rem; min-height: 1.65rem; padding: 0 .48rem; border: 0; border-radius: .28rem; background: transparent; color: var(--text-muted); font-size: .68rem; }
 .mode-switch button.is-active { background: var(--surface-hover); color: var(--text); }
-.detail-content { width: min(100% - 4rem, 68rem); margin: 0 auto; padding: 1.6rem 0 4rem; }
-/* 68rem ≈ 120 列等宽字符（此前用 120ch，但 ch 随中文字体的 0 字形计算，实际只有 ~85 列） */
+.detail-content { width: min(100% - 4rem, 82rem); margin: 0 auto; padding: 1.6rem 0 4rem; }
+/* 82rem ≈ 145 列等宽字符 */
 .inline-error { padding: .65rem .75rem; border: 1px solid rgba(248, 81, 73, .38); border-radius: .42rem; background: rgba(248, 81, 73, .09); color: #ffb3ad; font-size: .75rem; line-height: 1.45; }
 .detail-content > .inline-error { margin-bottom: 1rem; }
 .attachment-strip { margin-bottom: 1.1rem; padding: .65rem; border: 1px solid var(--border-muted); border-radius: .5rem; background: var(--surface); }

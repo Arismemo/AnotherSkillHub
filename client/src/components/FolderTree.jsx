@@ -60,6 +60,18 @@ export default function FolderTree({
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, []);
 
+  // 点击菜单外部时关闭文件夹操作菜单
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onPointerDown = (event) => {
+      if (!event.target.closest('.folder-menu-wrap')) {
+        setMenuOpen(null);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [menuOpen]);
+
   const tree = useMemo(() => {
     const roots = [];
     const map = {};
@@ -234,29 +246,26 @@ export default function FolderTree({
                 </li>
               );
             })}
+            {recentSkills.length > 0 && (
+              <li className="nav-divider" role="separator" aria-label="最近浏览分组">
+                <span>最近浏览</span>
+              </li>
+            )}
+            {recentSkills.map((skill) => (
+              <li key={`recent-${skill.id}`}>
+                <button
+                  type="button"
+                  className="nav-item"
+                  onClick={() => onSelectRecentSkill(skill.id)}
+                  title={skill.name}
+                >
+                  <Clock3 size={16} aria-hidden="true" />
+                  <span className="truncate">{skill.name}</span>
+                </button>
+              </li>
+            ))}
           </ul>
         </nav>
-
-        {recentSkills.length > 0 && (
-          <section className="sidebar-section" aria-labelledby="recent-heading">
-            <div className="section-heading"><h2 id="recent-heading">最近浏览</h2></div>
-            <ul className="nav-list">
-              {recentSkills.map((skill) => (
-                <li key={`recent-${skill.id}`}>
-                  <button
-                    type="button"
-                    className="nav-item"
-                    onClick={() => onSelectRecentSkill(skill.id)}
-                    title={skill.name}
-                  >
-                    <Clock3 size={15} aria-hidden="true" />
-                    <span className="truncate">{skill.name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
 
         <section className="sidebar-section" aria-labelledby="folders-heading">
           <div className="section-heading">
