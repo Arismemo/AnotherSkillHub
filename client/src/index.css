@@ -105,13 +105,13 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 
 .app-shell {
   display: grid;
-  grid-template-columns: clamp(13rem, 17vw, 15rem) clamp(18rem, 24vw, 22rem) minmax(0, 1fr);
+  grid-template-columns: clamp(11.5rem, 14vw, 13.5rem) clamp(15.5rem, 19vw, 18rem) minmax(0, 1fr);
   width: 100vw;
   height: 100dvh;
   min-width: 56rem;
   background: var(--bg);
 }
-.app-shell:has(.app-sidebar.is-collapsed) { grid-template-columns: 2.6rem clamp(18rem, 24vw, 22rem) minmax(0, 1fr); }
+.app-shell:has(.app-sidebar.is-collapsed) { grid-template-columns: 2.6rem clamp(15.5rem, 19vw, 18rem) minmax(0, 1fr); }
 .app-sidebar, .app-list, .app-detail { min-width: 0; min-height: 0; }
 .app-sidebar { border-right: 1px solid var(--border-muted); background: #0b0f14; overflow-x: hidden; }
 .sidebar-topbar { display: flex; align-items: center; justify-content: space-between; gap: .4rem; min-height: 4.25rem; padding: .8rem .75rem .8rem .9rem; border-bottom: 1px solid var(--border-muted); }
@@ -122,6 +122,16 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 body.is-resizing { cursor: col-resize; user-select: none; }
 body.is-resizing .detail-scroll { pointer-events: none; }
 .app-list { border-right: 1px solid var(--border); background: var(--surface); }
+/* 中栏（技能列表）折叠成细条：grid 列同步收窄 */
+.app-shell:has(.app-list.is-collapsed) { grid-template-columns: clamp(11.5rem, 14vw, 13.5rem) 2.4rem minmax(0, 1fr); }
+.app-shell:has(.app-sidebar.is-collapsed):has(.app-list.is-collapsed) { grid-template-columns: 2.6rem 2.4rem minmax(0, 1fr); }
+.app-list.is-collapsed { display: flex; align-items: stretch; justify-content: center; padding: 0; border-right: 1px solid var(--border); }
+.list-rail { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem; flex: 1; border: 0; background: var(--surface); color: var(--text-subtle); cursor: pointer; }
+.list-rail:hover { color: var(--text); background: var(--surface-hover); }
+.list-rail .rail-count { font-size: .74rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.list-rail .rail-label { writing-mode: vertical-rl; font-size: .6rem; letter-spacing: .18em; }
+.list-collapse-btn { margin-left: auto; }
+
 .app-detail { position: relative; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
 
 .app-error {
@@ -479,6 +489,11 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 
 /* 弹窗步骤标注 */
 .step-badge { display: inline-flex; align-items: center; justify-content: center; width: 1.15rem; height: 1.15rem; margin-right: .35rem; border-radius: 999px; background: var(--accent-muted); color: var(--accent); font-size: .66rem; font-weight: 700; }
+/* iconOnly 触发器：与 icon-button 视觉一致 */
+.folder-picker.iconOnly .folder-picker-trigger { width: 1.7rem; height: 1.7rem; justify-content: center; padding: 0; border-color: transparent; background: transparent; color: var(--text-subtle); }
+.folder-picker.iconOnly .folder-picker-trigger:hover { background: var(--surface-hover); color: var(--text); border-color: transparent; }
+.folder-picker-icon { display: inline-flex; align-items: center; }
+
 /* 可搜索文件夹选择器 */
 .folder-picker { position: relative; }
 .folder-picker-trigger { display: inline-flex; align-items: center; gap: .35rem; max-width: 11rem; height: 2rem; padding: 0 .55rem; border: 1px solid var(--border); border-radius: .4rem; background: var(--surface-raised); color: var(--text-muted); font-size: .7rem; }
@@ -499,7 +514,7 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .step-note { margin: .4rem 0 0; color: var(--text-subtle); font-size: .7rem; }
 .step-note code { color: var(--text-muted); }
 
-@media (max-width: 1100px) {
+@media (max-width: 1300px) {
   .app-shell { grid-template-columns: 12.5rem 18rem minmax(0, 1fr); }
   .detail-toolbar { align-items: flex-start; flex-direction: column; gap: .55rem; padding: .65rem 1rem; }
   .detail-actions { width: 100%; justify-content: flex-start; }

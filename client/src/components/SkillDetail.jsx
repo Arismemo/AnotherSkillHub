@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
 import hljs from 'highlight.js/lib/common';
-import FolderPicker from './FolderPicker';
 import {
   Check,
   ChevronDown,
@@ -225,7 +224,7 @@ function highlightMarkdownHtml(html) {
   return container.innerHTML;
 }
 
-export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
+export default function SkillDetail({ skill, onSave, onMoveFolder }) {
   const [mode, setMode] = useState('preview');
   const [content, setContent] = useState(skill.content || '');
   const [name, setName] = useState(skill.name || '');
@@ -262,7 +261,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(() => {
       const w = el.getBoundingClientRect().width;
-      setOutlineFits(w >= 1000);
+      setOutlineFits(w >= 1300);
       setFileBarCollapsed(w < 760);
     });
     observer.observe(el);
@@ -561,12 +560,6 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
           <a className="icon-button bordered-button" href={`/s/${skill.slug}/archive.tar.gz`} download aria-label={`下载 ${skill.name} 完整技能包`}>
             <Download size={15} />
           </a>
-          <FolderPicker
-            folders={folders}
-            value={skill.folder_path}
-            onChange={(path) => onMoveFolder(skill.id, path)}
-            compact
-          />
           <div className="mode-switch" aria-label="详情模式">
             <button type="button" className={mode === 'preview' ? 'is-active' : ''} onClick={() => switchMode('preview')} aria-pressed={mode === 'preview'}><Eye size={14} />预览</button>
             <button type="button" className={mode === 'edit' ? 'is-active' : ''} onClick={() => switchMode('edit')} aria-pressed={mode === 'edit'} disabled={saving}><Edit3 size={14} />{saving ? '保存中…' : '编辑'}</button>

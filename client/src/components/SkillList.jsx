@@ -3,6 +3,7 @@ import {
   ArrowDownAZ,
   Clock3,
   FolderInput,
+  PanelLeftClose,
   Plus,
   RotateCcw,
   Search,
@@ -36,7 +37,6 @@ export default function SkillList({
   sortBy,
   onSortChange,
   onToggleStar,
-  onQuickMove,
   onTrashSkill,
   onRestoreSkill,
   onPermanentDelete,
@@ -45,6 +45,7 @@ export default function SkillList({
   onBatchTrash,
   folders,
   onClearSelection,
+  onCollapse,
   loading,
   error,
   onRetry,
@@ -95,6 +96,11 @@ export default function SkillList({
             {sortBy === 'updated' ? <Clock3 size={13} /> : <ArrowDownAZ size={13} />}
             {sortBy === 'updated' ? '最近更新' : '名称'}
           </button>
+          {onCollapse && (
+            <button type="button" className="icon-button list-collapse-btn" onClick={onCollapse} aria-label="收起技能列表" title="收起技能列表">
+              <PanelLeftClose size={14} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -176,7 +182,14 @@ export default function SkillList({
                       <span className="row-actions">
                         {!isTrash ? (
                           <>
-                            <button type="button" className="icon-button" onClick={(event) => { event.stopPropagation(); onQuickMove(skill); }} aria-label={`移动 ${skill.name}`}><FolderInput size={14} /></button>
+                            <FolderPicker
+                              folders={folders}
+                              value=""
+                              onChange={(path) => path && onBatchMove(path, [skill.id])}
+                              placeholder={<FolderInput size={14} />}
+                              compact
+                              iconOnly
+                            />
                             <button type="button" className="icon-button danger-button" onClick={(event) => { event.stopPropagation(); onTrashSkill(skill.id); }} aria-label={`将 ${skill.name} 移入废纸篓`}><Trash2 size={14} /></button>
                           </>
                         ) : (

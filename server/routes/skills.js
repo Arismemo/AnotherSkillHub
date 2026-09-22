@@ -215,9 +215,14 @@ router.put('/:id', (req, res) => {
     }
 
     const updatedName = name !== undefined ? name : skill.name;
-    const updatedDesc = description !== undefined ? description : skill.description;
-    const updatedTags = tags !== undefined ? JSON.stringify(tags) : skill.tags;
     const updatedContent = content !== undefined ? content : skill.content;
+    // description 为空时从 frontmatter 自动解析，免去重复填写
+    let updatedDesc = description !== undefined ? description : skill.description;
+    if (!updatedDesc) {
+      const parsed = parseSkillContent(updatedContent);
+      if (parsed.data && parsed.data.description) updatedDesc = String(parsed.data.description);
+    }
+    const updatedTags = tags !== undefined ? JSON.stringify(tags) : skill.tags;
     const updatedFiles = files !== undefined ? JSON.stringify(files) : skill.files;
     const updatedSource = terminal_source !== undefined ? terminal_source : skill.terminal_source;
     const updatedStarred = is_starred !== undefined ? (is_starred ? 1 : 0) : skill.is_starred;

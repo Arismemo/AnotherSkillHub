@@ -12,6 +12,7 @@ import {
   Star,
   Trash2,
 } from 'lucide-react';
+import FolderPicker from './FolderPicker';
 
 const navItems = [
   { id: 'inbox', label: '收件箱', icon: Inbox },
@@ -275,13 +276,14 @@ export default function FolderTree({
         {tags.length > 0 && (
           <section className="sidebar-section" aria-labelledby="tags-heading">
             <div className="section-heading"><h2 id="tags-heading">标签</h2></div>
-            <label className="tag-filter">
-              <span className="sr-only">按标签筛选</span>
-              <select value={currentTag || ''} onChange={(event) => onSelectTag(event.target.value || null)}>
-                <option value="">全部标签</option>
-                {tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
-              </select>
-            </label>
+            <FolderPicker
+              options={tags.map((t) => ({ value: t, label: t }))}
+              value={currentTag || ''}
+              onChange={(v) => onSelectTag(v || null)}
+              anyLabel="全部标签"
+              placeholder="全部标签"
+              compact
+            />
           </section>
         )}
       </div>

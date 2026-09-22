@@ -6,7 +6,7 @@ import SkillDetail from './components/SkillDetail';
 import CommandPalette from './components/CommandPalette';
 import ToastContainer from './components/Toast';
 import { showToast } from './components/toastBus';
-import { AgentSetupModal, MoveSkillModal, NewSkillModal, PasteSkillModal } from './components/Modals';
+import { AgentSetupModal, NewSkillModal, PasteSkillModal } from './components/Modals';
 
 async function requestJson(url, options) {
   const response = await fetch(url, options);
@@ -41,6 +41,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('updated');
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState('sidebar-collapsed', false);
+  const [listCollapsed, setListCollapsed] = usePersistedState('list-collapsed', false);
   const [recentSkillIds, setRecentSkillIds] = usePersistedState('recent-skills', []);
   const recentIdsRef = useRef([]);
   useEffect(() => { recentIdsRef.current = recentSkillIds; }, [recentSkillIds]);
@@ -57,7 +58,6 @@ export default function App() {
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [showSetupModal, setShowSetupModal] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
-  const [moveSkillTarget, setMoveSkillTarget] = useState(null);
 
   const fetchFoldersAndStats = useCallback(async () => {
     try {
@@ -229,8 +229,8 @@ export default function App() {
   };
 
   // C4: 批量操作
-  const handleBatchMove = async (targetFolder) => {
-    const ids = [...selectedIds];
+  const handleBatchMove = async (targetFolder, explicitIds) => {
+    const ids = explicitIds && explicitIds.length ? [...explicitIds] : [...selectedIds];
     const targets = ids.map((id) => skills.find((s) => s.id === id)).filter(Boolean);
     await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/move`, {
       method: 'POST',
@@ -392,7 +392,13 @@ export default function App() {
         )}
       </aside>
 
-      <section className="app-list" aria-label="技能列表">
+      <section className={`app-list${listCollapsed ? ' is-collapsed' : ''}`} aria-label="技能列表">
+        {listCollapsed ? (
+          <button type="button" className="list-rail" onClick={() => setListCollapsed(false)} aria-label="展开技能列表" title="展开技能列表">
+            <span className="rail-count">{skills.length}</span>
+            <span className="rail-label">技能</span>
+          </button>
+        ) : (
         <SkillList
           skills={sortedSkills}
           selectedSkillId={selectedSkillId}
@@ -405,7 +411,6 @@ export default function App() {
           sortBy={sortBy}
           onSortChange={setSortBy}
           onToggleStar={handleToggleStar}
-          onQuickMove={setMoveSkillTarget}
           onTrashSkill={handleTrashSkill}
           onRestoreSkill={(id) => runMutation(`/api/skills/${id}/restore`, { method: 'POST' })}
           onPermanentDelete={handlePermanentDelete}
@@ -417,7 +422,9 @@ export default function App() {
           loading={loading}
           error={appError}
           onRetry={refreshAll}
+          onCollapse={() => setListCollapsed(true)}
         />
+        )}
       </section>
 
       <main id="skill-detail" className="app-detail" tabIndex="-1">
@@ -431,7 +438,6 @@ export default function App() {
           <SkillDetail
             key={selectedSkill.id}
             skill={selectedSkill}
-            folders={folders}
             onSave={handleSaveSkill}
             onMoveFolder={handleMoveSkill}
           />
@@ -467,13 +473,6 @@ export default function App() {
         folders={folders}
         onClose={() => setShowNewModal(false)}
         onCreate={handleCreateSkill}
-      />
-      <MoveSkillModal
-        isOpen={Boolean(moveSkillTarget)}
-        skill={moveSkillTarget}
-        folders={folders}
-        onClose={() => setMoveSkillTarget(null)}
-        onMove={handleMoveSkill}
       />
       <PasteSkillModal
         isOpen={showPasteModal}

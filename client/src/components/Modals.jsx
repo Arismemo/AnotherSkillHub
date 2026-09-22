@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, Move, Plus, X } from 'lucide-react';
+import { Check, Copy, Plus, X } from 'lucide-react';
 
 const defaultContent = `---
 name: my-new-skill
@@ -79,7 +79,6 @@ function FolderOptions({ folders }) {
 export function NewSkillModal({ isOpen, onClose, onCreate, folders }) {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
-  const [description, setDescription] = useState('');
   const [folderPath, setFolderPath] = useState('inbox');
   const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState([]);
@@ -113,7 +112,7 @@ export function NewSkillModal({ isOpen, onClose, onCreate, folders }) {
     const created = await onCreate({
       name: name.trim() || slug.trim(),
       slug: slug.trim(),
-      description: description.trim(),
+      description: '',
       folder_path: folderPath,
       tags,
       content,
@@ -136,7 +135,6 @@ export function NewSkillModal({ isOpen, onClose, onCreate, folders }) {
           <label>标签<div className="input-action"><input value={tagInput} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTag(); } }} placeholder="输入后按 Enter" /><button type="button" onClick={addTag}>添加</button></div></label>
         </div>
         {tags.length > 0 && <div className="editable-tags" aria-label="已添加标签">{tags.map((tag) => <button type="button" key={tag} onClick={() => setTags(tags.filter((item) => item !== tag))} aria-label={`移除标签 ${tag}`}>{tag}<span aria-hidden="true">×</span></button>)}</div>}
-        <label>简短描述<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="说明用途和触发条件" /></label>
         <label>SKILL.md<textarea rows={10} value={content} onChange={(event) => setContent(event.target.value)} spellCheck="false" required /></label>
         <footer className="dialog-footer"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button type="submit" className="primary-button" disabled={submitting}><Plus size={14} />{submitting ? '创建中…' : '创建技能'}</button></footer>
       </form>
@@ -144,36 +142,6 @@ export function NewSkillModal({ isOpen, onClose, onCreate, folders }) {
   );
 }
 
-export function MoveSkillModal({ isOpen, onClose, skill, folders, onMove }) {
-  const [moving, setMoving] = useState(false);
-  const [error, setError] = useState('');
-
-  if (!isOpen || !skill) return null;
-
-  const moveTo = async (target) => {
-    setMoving(true);
-    setError('');
-    const result = await onMove(skill.id, target);
-    setMoving(false);
-    if (result) onClose();
-    else setError('移动失败，请重试。');
-  };
-
-  return (
-    <DialogShell title="移动技能" description={`选择“${skill.name}”的新文件夹。`} onClose={onClose} size="small">
-      <div className="dialog-body">
-        {error && <div className="inline-error" role="alert">{error}</div>}
-        <div className="folder-choice-list">
-          {[{ path: 'inbox', name: '收件箱' }, ...folders.filter((folder) => folder.path !== 'inbox')].map((folder) => (
-            <button type="button" key={folder.path} className={skill.folder_path === folder.path ? 'is-active' : ''} onClick={() => moveTo(folder.path)} disabled={moving || skill.folder_path === folder.path}>
-              <Move size={14} /><span>{folder.name || folder.path}</span>{skill.folder_path === folder.path && <small>当前</small>}
-            </button>
-          ))}
-        </div>
-      </div>
-    </DialogShell>
-  );
-}
 
 function parseSkillMarkdown(text) {
   let name = '';
