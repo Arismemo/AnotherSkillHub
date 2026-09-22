@@ -226,6 +226,9 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .skill-row-title h3 { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: #f0f6fc; font-size: .86rem; font-weight: 650; letter-spacing: -.008em; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .star-button { width: 1.65rem; height: 1.65rem; margin-top: -.18rem; }
 .star-button.is-starred { color: #d29922; }
+/* 未收藏时隐藏，悬浮/选中/键盘聚焦才出现；已收藏常驻 */
+.skill-row:not(:hover):not(:focus-within):not(.is-selected) .star-button:not(.is-starred) { opacity: 0; }
+.star-button { transition: opacity .12s ease; }
 .skill-row article > p { display: -webkit-box; margin: .12rem 1.55rem .28rem 0; overflow: hidden; color: var(--text-subtle); font-size: .71rem; font-weight: 400; line-height: 1.55; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .skill-row article > footer { display: flex; align-items: center; min-height: 1.15rem; gap: .4rem; color: var(--text-subtle); font-size: .65rem; }
 .skill-location { max-width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -258,8 +261,8 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .detail-scroll { position: relative; flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
 /* 悬浮大纲占 right:1.1rem + 15rem 宽 —— 正文在其下时右侧留出通道，避免文字被盖住 */
 .detail-scroll.has-outline { --outline-channel: 17.2rem; }
-.detail-content { width: min(100% - 2.5rem, 82rem); margin: 0 auto; padding: 1.4rem 0 3rem; }
-.detail-scroll.has-outline .detail-content { width: min(100% - var(--outline-channel) - 2rem, 82rem); margin-right: var(--outline-channel); margin-left: auto; }
+.detail-content { width: min(100% - 2.5rem, 40rem); margin: 0 auto; padding: 1.4rem 0 3rem; }
+.detail-scroll.has-outline .detail-content { width: min(100% - var(--outline-channel) - 2rem, 40rem); margin-right: var(--outline-channel); margin-left: auto; }
 .detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.25rem; padding: .65rem 1.25rem; border-bottom: 1px solid var(--border-muted); background: rgba(13, 17, 23, .96); }
 .detail-identity { min-width: 10rem; flex: 1 1 16rem; }
 .breadcrumb { display: flex; align-items: center; gap: .35rem; overflow: hidden; color: var(--text-subtle); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .65rem; white-space: nowrap; text-overflow: ellipsis; }
@@ -275,7 +278,7 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .mode-switch { display: flex; padding: .15rem; border: 1px solid var(--border); border-radius: .42rem; background: #0b0f14; }
 .mode-switch button { display: flex; align-items: center; gap: .28rem; min-height: 1.65rem; padding: 0 .48rem; border: 0; border-radius: .28rem; background: transparent; color: var(--text-muted); font-size: .68rem; }
 .mode-switch button.is-active { background: var(--surface-hover); color: var(--text); }
-/* 82rem ≈ 145 列等宽字符 */
+/* 40rem = 640px，对齐 Anthropic 文章正文列（实测 640px @ 20px ≈ 64 CPL；我们 14.4px 下中英混排约 55-65 CPL） */
 .inline-error { padding: .65rem .75rem; border: 1px solid rgba(248, 81, 73, .38); border-radius: .42rem; background: rgba(248, 81, 73, .09); color: #ffb3ad; font-size: .75rem; line-height: 1.45; }
 .detail-content > .inline-error { margin-bottom: 1rem; }
 .attachment-strip { margin-bottom: 1.1rem; padding: .65rem; border: 1px solid var(--border-muted); border-radius: .5rem; background: var(--surface); }
@@ -523,7 +526,7 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
   .compact-action span { display: none; }
   .compact-action { width: 2rem; padding: 0; }
   .doc-outline { display: none; }
-  .detail-scroll.has-outline .detail-content { width: min(100% - 4rem, 82rem); margin-right: auto; margin-left: auto; }
+  .detail-scroll.has-outline .detail-content { width: min(100% - 4rem, 40rem); margin-right: auto; margin-left: auto; }
   .file-sidebar { width: 12rem; }
 }
 
