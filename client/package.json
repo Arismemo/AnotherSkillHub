@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tailwindcss -i ./src/index.css -o ./public/tailwind.css --minify && vite build",
     "lint": "oxlint",
+    "test:ui": "node --test scripts/ui-regression.test.mjs",
+    "check": "npm run lint && npm run test:ui && npm run build",
     "preview": "vite preview"
   },
   "dependencies": {

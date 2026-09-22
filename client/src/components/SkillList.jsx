@@ -1,8 +1,26 @@
-import React from 'react';
-import { 
-  Search, Star, Clock, Folder, Tag, Plus, ArrowUpDown, 
-  Terminal, ShieldCheck, MoreVertical, Copy, Move, Trash2, RotateCcw
+import {
+  ArrowDownAZ,
+  Clock3,
+  Copy,
+  FolderInput,
+  Plus,
+  RotateCcw,
+  Search,
+  Star,
+  Trash2,
 } from 'lucide-react';
+
+const folderLabels = {
+  all: '全部技能',
+  inbox: '收件箱',
+  starred: '收藏',
+  trash: '废纸篓',
+};
+
+function formatDate(value) {
+  if (!value) return '';
+  return new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric' }).format(new Date(value));
+}
 
 export default function SkillList({
   skills,
@@ -20,204 +38,116 @@ export default function SkillList({
   onTrashSkill,
   onRestoreSkill,
   onPermanentDelete,
-  onNewSkill
+  onNewSkill,
+  loading,
+  error,
+  onRetry,
 }) {
   const isTrash = currentFolder === 'trash';
+  const listTitle = currentTag ? `标签：${currentTag}` : folderLabels[currentFolder] || currentFolder;
+
+  const selectFromKeyboard = (event, skillId) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onSelectSkill(skillId);
+    }
+  };
 
   return (
-    <div className="w-80 h-full bg-slate-900 border-r border-slate-800 flex flex-col select-none">
-      {/* 搜索与过滤顶栏 */}
-      <div className="p-3 border-b border-slate-800 space-y-2">
-        <div className="relative">
-          <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
+    <div className="skill-list-panel">
+      <header className="list-toolbar">
+        <label className="search-field">
+          <Search size={15} aria-hidden="true" />
+          <span className="sr-only">搜索技能</span>
           <input
-            type="text"
-            placeholder="搜索技能名称、描述、标签..."
+            type="search"
+            placeholder="搜索技能"
             value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700/80 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+            onChange={(event) => onSearchChange(event.target.value)}
           />
-        </div>
-
-        <div className="flex items-center justify-between text-xs text-slate-400">
-          <div className="flex items-center space-x-1">
-            <span className="font-medium text-slate-300">
-              {currentTag ? `#${currentTag}` : currentFolder === 'all' ? '全部技能' : currentFolder === 'inbox' ? '收件箱' : currentFolder}
-            </span>
-            <span className="text-[11px] text-slate-500">({skills.length})</span>
+        </label>
+        <div className="list-heading-row">
+          <div>
+            <h2>{listTitle}</h2>
+            <span>{loading ? '载入中' : `${skills.length} 个技能`}</span>
           </div>
-
-          <div className="flex items-center space-x-1">
-            <button
-              onClick={() => onSortChange(sortBy === 'time' ? 'name' : 'time')}
-              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-300 hover:text-white flex items-center space-x-1 text-[11px]"
-              title="切换排序"
-            >
-              <ArrowUpDown size={11} />
-              <span>{sortBy === 'time' ? '最新' : '名称'}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            className="sort-button"
+            onClick={() => onSortChange(sortBy === 'updated' ? 'name' : 'updated')}
+            aria-label={`当前按${sortBy === 'updated' ? '更新时间' : '名称'}排序，点击切换`}
+          >
+            {sortBy === 'updated' ? <Clock3 size={14} /> : <ArrowDownAZ size={14} />}
+            <span>{sortBy === 'updated' ? '最近更新' : '名称'}</span>
+          </button>
         </div>
-      </div>
+      </header>
 
-      {/* 列表流 */}
-      <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60 p-2 space-y-1">
-        {skills.length === 0 ? (
-          <div className="h-64 flex flex-col items-center justify-center text-center p-4 text-slate-500">
-            <Terminal size={32} className="mb-2 text-slate-600 stroke-[1.5]" />
-            <p className="text-xs font-medium text-slate-400">暂无匹配技能</p>
-            <p className="text-[11px] text-slate-500 mt-1 max-w-[200px]">
-              可以通过上方搜索不同关键词，或点击下方按钮新建
-            </p>
-            {!isTrash && (
-              <button
-                onClick={onNewSkill}
-                className="mt-3 px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 hover:text-white rounded-lg text-xs font-medium border border-indigo-500/30 transition-all flex items-center space-x-1"
-              >
-                <Plus size={13} />
-                <span>新建技能</span>
-              </button>
-            )}
+      <div className="skill-list-scroll" role="listbox" aria-label={listTitle} aria-busy={loading}>
+        {loading && skills.length === 0 ? (
+          <div className="list-skeleton" role="status" aria-live="polite">
+            <span className="sr-only">正在载入技能</span>
+            {[0, 1, 2, 3].map((item) => <div key={item}><i /><i /><i /></div>)}
+          </div>
+        ) : error && skills.length === 0 ? (
+          <div className="list-state" role="alert">
+            <strong>无法载入技能</strong>
+            <span>{error}</span>
+            <button type="button" onClick={onRetry}>重试</button>
+          </div>
+        ) : skills.length === 0 ? (
+          <div className="list-state">
+            <strong>{searchQuery ? '没有匹配的技能' : isTrash ? '废纸篓为空' : '这里还没有技能'}</strong>
+            <span>{searchQuery ? '尝试缩短关键词或清除筛选。' : isTrash ? '移入废纸篓的技能会显示在这里。' : '创建技能后即可开始整理。'}</span>
+            {!isTrash && !searchQuery && <button type="button" onClick={onNewSkill}><Plus size={14} />新建技能</button>}
           </div>
         ) : (
           skills.map((skill) => {
-            const isSelected = selectedSkillId === skill.id || selectedSkillId === skill.slug;
-            const isInbox = skill.folder_path === 'inbox';
-
+            const selected = selectedSkillId === skill.id;
             return (
-              <div
+              <article
                 key={skill.id}
+                className={`skill-row ${selected ? 'is-selected' : ''}`}
+                role="option"
+                aria-selected={selected}
+                tabIndex={0}
                 onClick={() => onSelectSkill(skill.id)}
-                className={`group relative p-3 rounded-xl transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-indigo-950/70 border border-indigo-500/50 shadow-md shadow-indigo-950/50'
-                    : 'bg-slate-900/50 hover:bg-slate-800/80 border border-transparent'
-                }`}
+                onKeyDown={(event) => selectFromKeyboard(event, skill.id)}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center space-x-1.5">
-                      <h3 className={`text-xs font-semibold truncate ${isSelected ? 'text-indigo-200' : 'text-slate-100 group-hover:text-white'}`}>
-                        {skill.name}
-                      </h3>
-                      {skill.version && (
-                        <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-800 text-slate-400">
-                          v{skill.version}
-                        </span>
-                      )}
-                    </div>
-
-                    <p className="text-[11px] text-slate-400 line-clamp-2 mt-1 leading-relaxed">
-                      {skill.description || '暂无描述信息'}
-                    </p>
-                  </div>
-
-                  {/* 星标按钮 */}
+                <div className="skill-row-title">
+                  <h3>{skill.name}</h3>
                   {!isTrash && (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleStar(skill.id);
-                      }}
-                      className="p-1 text-slate-500 hover:text-yellow-400 transition-colors"
+                      type="button"
+                      className={`icon-button star-button ${skill.is_starred ? 'is-starred' : ''}`}
+                      onClick={(event) => { event.stopPropagation(); onToggleStar(skill.id); }}
+                      aria-label={`${skill.is_starred ? '取消收藏' : '收藏'} ${skill.name}`}
+                      aria-pressed={Boolean(skill.is_starred)}
                     >
-                      <Star 
-                        size={14} 
-                        className={skill.is_starred ? 'text-yellow-400 fill-yellow-400' : 'hover:text-yellow-400'} 
-                      />
+                      <Star size={15} fill={skill.is_starred ? 'currentColor' : 'none'} />
                     </button>
                   )}
                 </div>
-
-                {/* 底部属性标签栏 */}
-                <div className="mt-2.5 flex items-center justify-between text-[10px] text-slate-400">
-                  <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
-                    {/* Inbox 醒目标签 */}
-                    {isInbox && !isTrash && (
-                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-medium border border-amber-500/30 flex items-center space-x-0.5">
-                        <span>待整理</span>
-                      </span>
-                    )}
-
-                    {/* 所属分类 */}
-                    {!isInbox && !isTrash && (
-                      <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 flex items-center space-x-0.5">
-                        <Folder size={10} className="text-slate-400" />
-                        <span className="truncate max-w-[90px]">{skill.folder_path}</span>
-                      </span>
-                    )}
-
-                    {/* 来源终端 */}
-                    {skill.terminal_source && (
-                      <span className="px-1.5 py-0.5 rounded bg-slate-800/80 text-indigo-300 font-mono flex items-center space-x-0.5">
-                        <Terminal size={10} />
-                        <span className="truncate max-w-[70px]">{skill.terminal_source}</span>
-                      </span>
-                    )}
-                  </div>
-
-                  {/* 悬浮快捷操作菜单 */}
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-0.5">
+                <p>{skill.description || '暂无描述'}</p>
+                <footer>
+                  <span className="skill-location">{skill.folder_path === 'inbox' ? '收件箱' : skill.folder_path}</span>
+                  <span className="skill-updated">{formatDate(skill.updated_at)}</span>
+                  <div className="row-actions" aria-label={`${skill.name} 操作`}>
                     {!isTrash ? (
                       <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onQuickMove(skill);
-                          }}
-                          className="p-1 hover:bg-slate-700 text-slate-300 hover:text-white rounded"
-                          title="移动到文件夹"
-                        >
-                          <Move size={12} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onCopySkill(skill);
-                          }}
-                          className="p-1 hover:bg-slate-700 text-slate-300 hover:text-white rounded"
-                          title="克隆副本"
-                        >
-                          <Copy size={12} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onTrashSkill(skill.id);
-                          }}
-                          className="p-1 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded"
-                          title="移入废纸篓"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        <button type="button" className="icon-button" onClick={(event) => { event.stopPropagation(); onQuickMove(skill); }} aria-label={`移动 ${skill.name}`}><FolderInput size={14} /></button>
+                        <button type="button" className="icon-button" onClick={(event) => { event.stopPropagation(); onCopySkill(skill); }} aria-label={`创建 ${skill.name} 的副本`}><Copy size={14} /></button>
+                        <button type="button" className="icon-button danger-button" onClick={(event) => { event.stopPropagation(); onTrashSkill(skill.id); }} aria-label={`将 ${skill.name} 移入废纸篓`}><Trash2 size={14} /></button>
                       </>
                     ) : (
                       <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onRestoreSkill(skill.id);
-                          }}
-                          className="p-1 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 rounded"
-                          title="恢复"
-                        >
-                          <RotateCcw size={12} />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onPermanentDelete(skill.id);
-                          }}
-                          className="p-1 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded"
-                          title="永久删除"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        <button type="button" className="icon-button" onClick={(event) => { event.stopPropagation(); onRestoreSkill(skill.id); }} aria-label={`恢复 ${skill.name}`}><RotateCcw size={14} /></button>
+                        <button type="button" className="icon-button danger-button" onClick={(event) => { event.stopPropagation(); onPermanentDelete(skill.id); }} aria-label={`永久删除 ${skill.name}`}><Trash2 size={14} /></button>
                       </>
                     )}
                   </div>
-                </div>
-              </div>
+                </footer>
+              </article>
             );
           })
         )}

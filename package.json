@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "start": "node server/index.js",
-    "build": "cd client && npm install && npm run build",
+    "build": "npm --prefix client run build",
+    "lint": "npm --prefix client run lint",
+    "test:ui": "npm --prefix client run test:ui",
+    "check": "npm --prefix client run check",
     "dev": "node server/index.js"
   },
   "keywords": [],

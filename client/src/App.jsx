@@ -1,172 +1,193 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
 import SkillDetail from './components/SkillDetail';
-import { NewSkillModal, MoveSkillModal, PasteSkillModal, AgentSetupModal } from './components/Modals';
+import { AgentSetupModal, MoveSkillModal, NewSkillModal, PasteSkillModal } from './components/Modals';
+
+async function requestJson(url, options) {
+  const response = await fetch(url, options);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || `请求失败（${response.status}）`);
+  }
+  return payload;
+}
 
 export default function App() {
   const [currentFolder, setCurrentFolder] = useState('inbox');
   const [currentTag, setCurrentTag] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('updated');
-
   const [skills, setSkills] = useState([]);
   const [stats, setStats] = useState({ inbox: 0, starred: 0, all: 0, trash: 0 });
   const [folders, setFolders] = useState([]);
   const [tags, setTags] = useState([]);
   const [selectedSkillId, setSelectedSkillId] = useState(null);
-
   const [loading, setLoading] = useState(true);
+  const [appError, setAppError] = useState('');
   const [showNewModal, setShowNewModal] = useState(false);
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [showSetupModal, setShowSetupModal] = useState(false);
   const [moveSkillTarget, setMoveSkillTarget] = useState(null);
 
-  // 加载统计与文件夹树
-  const fetchFoldersAndStats = async () => {
+  const fetchFoldersAndStats = useCallback(async () => {
     try {
-      const [resF, resStats] = await Promise.all([
-        fetch('/api/folders'),
-        fetch('/api/stats')
+      const [folderData, statData, tagData] = await Promise.all([
+        requestJson('/api/folders'),
+        requestJson('/api/skills/stats'),
+        requestJson('/api/skills/tags'),
       ]);
-      const dataF = await resF.json();
-      const dataStats = await resStats.json();
-      setFolders(dataF);
-      setStats(dataStats);
-    } catch (e) {
-      console.error('Failed to load folders/stats:', e);
-    }
-  };
-
-  // 加载技能列表
-  const fetchSkills = async () => {
-    setLoading(true);
-    try {
-      let url = `/api/skills?folder=${encodeURIComponent(currentFolder)}`;
-      if (currentTag) url += `&tag=${encodeURIComponent(currentTag)}`;
-      if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
-
-      const res = await fetch(url);
-      const result = await res.json();
-      const list = Array.isArray(result) ? result : (result.data || []);
-      setSkills(list);
-
-      // 提取全局标签
-      const allRes = await fetch('/api/skills?folder=all');
-      const allData = await allRes.json();
-      const allList = Array.isArray(allData) ? allData : (allData.data || []);
-      const tagSet = new Set();
-      allList.forEach(s => {
-        if (Array.isArray(s.tags)) s.tags.forEach(t => tagSet.add(t));
-      });
-      setTags([...tagSet]);
-
-      // 默认选中第一个
-      if (list.length > 0) {
-        if (!selectedSkillId || !list.some(s => s.id === selectedSkillId)) {
-          setSelectedSkillId(list[0].id);
-        }
-      } else {
-        setSelectedSkillId(null);
-      }
-    } catch (e) {
-      console.error('Failed to load skills:', e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchFoldersAndStats();
-
-    // 优先检测 URL 中的 ?skill= 参数，实现一键直达
-    const params = new URLSearchParams(window.location.search);
-    const targetSlug = params.get('skill');
-    if (targetSlug) {
-      fetch(`/api/skills/${targetSlug}`)
-        .then(res => res.json())
-        .then(skill => {
-          if (skill && skill.id) {
-            setCurrentFolder(skill.folder_path || 'all');
-            setSelectedSkillId(skill.id);
-          }
-        })
-        .catch(err => console.error('Failed to locate target skill by slug:', err));
+      setFolders(folderData);
+      setStats(statData);
+      setTags(tagData);
+    } catch (error) {
+      setAppError(error.message);
     }
   }, []);
 
-  useEffect(() => {
-    fetchSkills();
+  const fetchSkills = useCallback(async () => {
+    setLoading(true);
+    setAppError('');
+    try {
+      const params = new URLSearchParams({ folder: currentFolder });
+      if (currentTag) params.set('tag', currentTag);
+      if (searchQuery.trim()) params.set('search', searchQuery.trim());
+      const result = await requestJson(`/api/skills?${params}`);
+      const list = Array.isArray(result) ? result : result.data || [];
+      setSkills(list);
+      setSelectedSkillId((previousId) => {
+        if (previousId && list.some((skill) => skill.id === previousId)) return previousId;
+        return list[0]?.id ?? null;
+      });
+    } catch (error) {
+      setSkills([]);
+      setSelectedSkillId(null);
+      setAppError(error.message);
+    } finally {
+      setLoading(false);
+    }
   }, [currentFolder, currentTag, searchQuery]);
 
-  // 操作处理
-  const handleSelectFolder = (f) => {
-    setCurrentFolder(f);
+  useEffect(() => {
+    const timer = window.setTimeout(fetchFoldersAndStats, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchFoldersAndStats]);
+
+  useEffect(() => {
+    const targetSlug = new URLSearchParams(window.location.search).get('skill');
+    if (!targetSlug) return;
+
+    let cancelled = false;
+    requestJson(`/api/skills/${encodeURIComponent(targetSlug)}`)
+      .then((skill) => {
+        if (cancelled || !skill?.id) return;
+        setCurrentFolder(skill.folder_path || 'all');
+        setSelectedSkillId(skill.id);
+      })
+      .catch((error) => {
+        if (!cancelled) setAppError(error.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(fetchSkills, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchSkills]);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([fetchSkills(), fetchFoldersAndStats()]);
+  }, [fetchFoldersAndStats, fetchSkills]);
+
+  const runMutation = async (url, options, { refresh = true } = {}) => {
+    setAppError('');
+    try {
+      const result = await requestJson(url, options);
+      if (refresh) await refreshAll();
+      return result;
+    } catch (error) {
+      setAppError(error.message);
+      return null;
+    }
+  };
+
+  const handleSelectFolder = (folder) => {
+    setCurrentFolder(folder);
     setCurrentTag(null);
   };
 
-  const handleSelectTag = (t) => {
-    setCurrentTag(t);
+  const handleCreateFolder = (path) => runMutation('/api/folders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  });
+
+  const handleRenameFolder = (oldPath, newPath, newName) => runMutation('/api/folders', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ old_path: oldPath, new_path: newPath, new_name: newName }),
+  });
+
+  const handleDeleteFolder = (path) => runMutation(`/api/folders?path=${encodeURIComponent(path)}`, {
+    method: 'DELETE',
+  });
+
+  const handleToggleStar = (skillId) => runMutation(`/api/skills/${skillId}/star`, { method: 'POST' });
+
+  const handleMoveSkill = (skillId, targetFolder) => runMutation(`/api/skills/${skillId}/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target_folder: targetFolder }),
+  });
+
+  const handleTrashSkill = async (skillId) => {
+    if (!window.confirm('将这个技能移入废纸篓？')) return;
+    await runMutation(`/api/skills/${skillId}/trash`, { method: 'POST' });
   };
 
-  const handleToggleStar = async (skillId) => {
-    try {
-      await fetch(`/api/skills/${skillId}/star`, { method: 'POST' });
-      fetchSkills();
-      fetchFoldersAndStats();
-    } catch (e) {
-      console.error(e);
-    }
+  const handlePermanentDelete = async (skillId) => {
+    if (!window.confirm('永久删除这个技能？此操作无法撤销。')) return;
+    await runMutation(`/api/skills/${skillId}`, { method: 'DELETE' });
   };
 
-  const handleDeleteSkill = async (skillId) => {
-    if (!window.confirm('确定将该技能移入废纸篓吗？')) return;
-    try {
-      await fetch(`/api/skills/${skillId}/trash`, { method: 'POST' });
-      fetchSkills();
-      fetchFoldersAndStats();
-    } catch (e) {
-      console.error(e);
-    }
+  const handleCreateSkill = async (skillData) => {
+    const created = await runMutation('/api/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(skillData),
+    });
+    if (created?.id) setSelectedSkillId(Number(created.id));
+    return Boolean(created);
   };
 
-  const handleSaveSkill = async (updatedData) => {
-    try {
-      const res = await fetch(`/api/skills/${updatedData.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedData)
-      });
-      if (res.ok) {
-        fetchSkills();
-        fetchFoldersAndStats();
-      }
-    } catch (e) {
-      console.error(e);
-    }
+  const handleCopySkill = async (skill) => {
+    const copied = await runMutation(`/api/skills/${skill.id}/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_folder: skill.folder_path }),
+    });
+    if (copied?.id) setSelectedSkillId(Number(copied.id));
   };
 
-  const handleCreateFolder = async (folderPath) => {
-    try {
-      const res = await fetch('/api/folders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: folderPath })
-      });
-      if (res.ok) {
-        fetchFoldersAndStats();
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const handleSaveSkill = async (updatedData) => Boolean(await runMutation(`/api/skills/${updatedData.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updatedData),
+  }));
 
-  const selectedSkill = skills.find(s => s.id === selectedSkillId) || null;
+  const sortedSkills = useMemo(() => [...skills].sort((a, b) => {
+    if (sortBy === 'name') return a.name.localeCompare(b.name, 'zh-CN');
+    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+  }), [skills, sortBy]);
+
+  const selectedSkill = skills.find((skill) => skill.id === selectedSkillId) || null;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-950 font-sans text-slate-200">
-      {/* 1. 左栏：分类与多级文件夹树 */}
-      <aside className="w-64 flex-shrink-0 border-r border-slate-800 bg-slate-950">
+    <div className="app-shell">
+      <a className="skip-link" href="#skill-detail">跳至技能详情</a>
+      <aside className="app-sidebar" aria-label="技能分类导航">
         <FolderTree
           currentFolder={currentFolder}
           onSelectFolder={handleSelectFolder}
@@ -174,131 +195,82 @@ export default function App() {
           stats={stats}
           tags={tags}
           currentTag={currentTag}
-          onSelectTag={handleSelectTag}
+          onSelectTag={setCurrentTag}
           onCreateFolder={handleCreateFolder}
+          onRenameFolder={handleRenameFolder}
+          onDeleteFolder={handleDeleteFolder}
           onNewSkill={() => setShowNewModal(true)}
           onPasteImport={() => setShowPasteModal(true)}
           onOpenSetup={() => setShowSetupModal(true)}
-          onRefresh={() => { fetchFoldersAndStats(); fetchSkills(); }}
         />
       </aside>
 
-      {/* 2. 中栏：技能卡片列表 */}
-      <section className="w-80 flex-shrink-0 border-r border-slate-800 bg-slate-900/80 flex flex-col">
+      <section className="app-list" aria-label="技能列表">
         <SkillList
-          skills={skills}
+          skills={sortedSkills}
           selectedSkillId={selectedSkillId}
-          onSelectSkill={(id) => setSelectedSkillId(id)}
+          onSelectSkill={setSelectedSkillId}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
+          currentFolder={currentFolder}
+          currentTag={currentTag}
           sortBy={sortBy}
           onSortChange={setSortBy}
-          onNewSkill={() => setShowNewModal(true)}
           onToggleStar={handleToggleStar}
-          onDeleteSkill={handleDeleteSkill}
-          onMoveSkill={(skill) => setMoveSkillTarget(skill)}
+          onQuickMove={setMoveSkillTarget}
+          onCopySkill={handleCopySkill}
+          onTrashSkill={handleTrashSkill}
+          onRestoreSkill={(id) => runMutation(`/api/skills/${id}/restore`, { method: 'POST' })}
+          onPermanentDelete={handlePermanentDelete}
+          onNewSkill={() => setShowNewModal(true)}
           loading={loading}
-          currentFolder={currentFolder}
+          error={appError}
+          onRetry={refreshAll}
         />
       </section>
 
-      {/* 3. 右栏：详情与操作中心 */}
-      <main className="flex-1 flex flex-col min-w-0 bg-slate-950 overflow-hidden">
+      <main id="skill-detail" className="app-detail" tabIndex="-1">
+        {appError && selectedSkill && (
+          <div className="app-error" role="alert">
+            <span>{appError}</span>
+            <button type="button" onClick={refreshAll}>重试</button>
+          </div>
+        )}
         {selectedSkill ? (
           <SkillDetail
+            key={selectedSkill.id}
             skill={selectedSkill}
             folders={folders}
             onSave={handleSaveSkill}
-            onToggleStar={() => handleToggleStar(selectedSkill.id)}
-            onDelete={() => handleDeleteSkill(selectedSkill.id)}
-            onMove={() => setMoveSkillTarget(selectedSkill)}
-            onRefresh={() => { fetchSkills(); fetchFoldersAndStats(); }}
+            onMoveFolder={handleMoveSkill}
           />
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-500 bg-slate-950 p-8 select-none">
-            <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-indigo-400 mb-4 shadow-lg">
-              <span className="text-2xl">⚡</span>
-            </div>
-            <p className="text-sm font-medium text-slate-300">请从左侧或中栏选择技能查看详情</p>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm text-center leading-relaxed">
-              支持点击一键复制指令发给 Agent，或在中栏顶部新建自定义技能
-            </p>
+          <div className="detail-empty">
+            <p>{loading ? '正在载入技能…' : '选择一个技能查看详情'}</p>
+            {!loading && <span>技能内容、关联文件和操作会显示在这里。</span>}
           </div>
         )}
       </main>
 
-      {/* 弹窗：新建技能 */}
       <NewSkillModal
         isOpen={showNewModal}
         folders={folders}
         onClose={() => setShowNewModal(false)}
-        onCreate={async (skillData) => {
-          try {
-            const res = await fetch('/api/skills', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(skillData)
-            });
-            if (res.ok) {
-              const created = await res.json();
-              fetchSkills();
-              fetchFoldersAndStats();
-              if (created.id) setSelectedSkillId(created.id);
-            }
-          } catch (e) {
-            console.error(e);
-          }
-        }}
+        onCreate={handleCreateSkill}
       />
-
-      {/* 弹窗：移动技能 */}
       <MoveSkillModal
-        isOpen={!!moveSkillTarget}
+        isOpen={Boolean(moveSkillTarget)}
         skill={moveSkillTarget}
         folders={folders}
         onClose={() => setMoveSkillTarget(null)}
-        onMove={async (skillId, targetFolder) => {
-          try {
-            const res = await fetch(`/api/skills/${skillId}/move`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ target_folder: targetFolder })
-            });
-            if (res.ok) {
-              fetchSkills();
-              fetchFoldersAndStats();
-            }
-          } catch (e) {
-            console.error(e);
-          }
-        }}
+        onMove={handleMoveSkill}
       />
-
-      {/* 弹窗：快速粘贴导入 */}
       <PasteSkillModal
         isOpen={showPasteModal}
         folders={folders}
         onClose={() => setShowPasteModal(false)}
-        onImport={async (skillData) => {
-          try {
-            const res = await fetch('/api/skills', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(skillData)
-            });
-            if (res.ok) {
-              const created = await res.json();
-              fetchSkills();
-              fetchFoldersAndStats();
-              if (created.id) setSelectedSkillId(created.id);
-            }
-          } catch (e) {
-            console.error(e);
-          }
-        }}
+        onImport={handleCreateSkill}
       />
-
-      {/* 弹窗：Agent 终端接入命令 */}
       <AgentSetupModal
         isOpen={showSetupModal}
         onClose={() => setShowSetupModal(false)}
