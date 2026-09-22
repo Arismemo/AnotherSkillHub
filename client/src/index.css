@@ -234,7 +234,7 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .skill-location { max-width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .skill-updated { font-variant-numeric: tabular-nums; }
 .row-actions { display: flex; margin-left: auto; opacity: 0; transition: opacity .12s ease; }
-.skill-row:hover .row-actions, .skill-row:focus-within .row-actions, .skill-row.is-selected .row-actions { opacity: 1; }
+.skill-row:hover .row-actions, .skill-row:focus-within .row-actions { opacity: 1; }
 .row-actions .icon-button { width: 1.6rem; height: 1.6rem; }
 .list-state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 15rem; padding: 1.5rem; text-align: center; }
 .list-state strong { color: var(--text); font-size: .8rem; }
@@ -528,7 +528,8 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .folder-picker-trigger { display: inline-flex; align-items: center; gap: .35rem; max-width: 11rem; height: 2rem; padding: 0 .55rem; border: 1px solid var(--border); border-radius: .4rem; background: var(--surface-raised); color: var(--text-muted); font-size: .7rem; }
 .folder-picker-trigger:hover { color: var(--text); border-color: #484f58; }
 .folder-picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.folder-picker-popover { position: absolute; top: calc(100% + .3rem); right: 0; z-index: 40; width: 16rem; border: 1px solid #3d444d; border-radius: .5rem; background: #1b2129; box-shadow: 0 14px 38px rgba(0, 0, 0, .5); overflow: hidden; }
+/* 浮层默认右对齐锚定触发器；窄容器（sidebar/iconOnly）改向右展开，并 clamp 不出视口 */
+.folder-picker-popover { position: absolute; top: calc(100% + .3rem); right: 0; z-index: 300; width: 16rem; max-width: calc(100vw - 1rem); border: 1px solid #3d444d; border-radius: .5rem; background: #1b2129; box-shadow: 0 14px 38px rgba(0, 0, 0, .5); overflow: hidden; }
 .folder-picker-search { display: flex; align-items: center; gap: .4rem; padding: .5rem .6rem; border-bottom: 1px solid var(--border-muted); color: var(--text-subtle); }
 .folder-picker-search input { flex: 1; border: 0; background: transparent; color: var(--text); font-size: .75rem; outline: none; }
 .folder-picker-popover ul { list-style: none; margin: 0; padding: .3rem; max-height: 16rem; overflow-y: auto; }

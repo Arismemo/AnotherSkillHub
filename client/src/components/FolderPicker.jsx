@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Search } from 'lucide-react';
 
 // 可搜索的选择器（文件夹/标签通用）：深色主题、输入过滤、键盘导航
@@ -12,7 +13,9 @@ export default function FolderPicker({
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef(null);
+  const triggerRef = useRef(null);
   const inputRef = useRef(null);
+  const [popStyle, setPopStyle] = useState(null);
 
   const items = useMemo(() => {
     let list;
@@ -28,16 +31,30 @@ export default function FolderPicker({
 
   useEffect(() => {
     if (!open) return undefined;
+    const updatePos = () => {
+      const r = triggerRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const W = 256; // 16rem
+      let left = r.left;
+      if (left + W > window.innerWidth - 8) left = Math.max(8, r.right - W);
+      const below = r.bottom + 6;
+      const estH = 280;
+      let top = below;
+      if (top + estH > window.innerHeight - 8) top = Math.max(8, r.top - estH - 6);
+      setPopStyle({ position: 'fixed', left: `${Math.round(left)}px`, top: `${Math.round(top)}px`, width: `${W}px`, maxWidth: 'calc(100vw - 1rem)', right: 'auto' });
+    };
+    updatePos();
     const onDown = (event) => {
-      if (!rootRef.current?.contains(event.target)) setOpen(false);
+      if (!rootRef.current?.contains(event.target) && !document.getElementById('ash-folder-popover')?.contains(event.target)) setOpen(false);
     };
     document.addEventListener('mousedown', onDown);
+    window.addEventListener('resize', updatePos);
     const t = window.setTimeout(() => {
       inputRef.current?.focus();
       setQuery('');
       setActiveIndex(0);
     }, 0);
-    return () => { document.removeEventListener('mousedown', onDown); window.clearTimeout(t); };
+    return () => { document.removeEventListener('mousedown', onDown); window.removeEventListener('resize', updatePos); window.clearTimeout(t); };
   }, [open]);
 
   const pick = (val) => {
@@ -56,10 +73,11 @@ export default function FolderPicker({
   const current = items.find((o) => o.value === value) || { label: value || anyLabel || placeholder };
 
   return (
-    <div className={`folder-picker${compact ? ' is-compact' : ''}`} ref={rootRef}>
+    <div className={`folder-picker${compact ? ' is-compact' : ''}${iconOnly ? ' iconOnly' : ''}`} ref={rootRef}>
       <button
         type="button"
         className="folder-picker-trigger"
+        ref={triggerRef}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="listbox"
@@ -71,8 +89,8 @@ export default function FolderPicker({
         )}
         {!iconOnly && <ChevronDown size={13} aria-hidden="true" />}
       </button>
-      {open && (
-        <div className="folder-picker-popover" role="listbox">
+      {open && createPortal(
+        <div id="ash-folder-popover" className="folder-picker-popover" role="listbox" style={popStyle || undefined}>
           <div className="folder-picker-search">
             <Search size={13} aria-hidden="true" />
             <input
@@ -115,7 +133,8 @@ export default function FolderPicker({
               </li>
             ))}
           </ul>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
