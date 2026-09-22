@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Command, Terminal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Terminal } from 'lucide-react';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
 import SkillDetail from './components/SkillDetail';
@@ -343,15 +343,6 @@ export default function App() {
                   <p>Agent 技能库</p>
                 </div>
               </div>
-              <button
-                type="button"
-                className="icon-button palette-trigger"
-                onClick={() => setShowPalette(true)}
-                aria-label="打开命令面板"
-                title="命令面板 (⌘K)"
-              >
-                <Command size={15} />
-              </button>
               <button
                 type="button"
                 className="icon-button sidebar-collapse-toggle"

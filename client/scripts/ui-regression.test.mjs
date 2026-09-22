@@ -48,6 +48,6 @@ test('three-pane shell and readable Markdown styles remain present', async () =>
   const css = await source('src/index.css');
   assert.match(css, /grid-template-columns:\s*clamp\(13rem, 17vw, 15rem\)\s*clamp\(18rem, 24vw, 22rem\)\s*minmax\(0, 1fr\)/);
   assert.match(css, /\.markdown-document\s*\{[^}]*line-height:\s*1\.8/s);
-  assert.match(css, /\.detail-content\s*\{[^}]*min\(100% - 4rem,\s*120ch\)/s);
+  assert.match(css, /\.detail-content\s*\{[^}]*min\(100% - 4rem,\s*68rem\)/s);
   assert.ok(css.includes(':focus-visible'));
 });

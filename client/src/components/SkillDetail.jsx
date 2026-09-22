@@ -249,8 +249,6 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
   const [fileFilter, setFileFilter] = useState('');
   // B1: 大纲当前高亮索引
   const [activeHeading, setActiveHeading] = useState(0);
-  // C2: 编辑模式实时预览
-  const [livePreview, setLivePreview] = useState(true);
   const scrollRef = useRef(null);
   const resizingRef = useRef(null);
 
@@ -373,13 +371,6 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
     });
   }, [auxFileContent, selectedFile]);
 
-  // C2: 编辑模式实时预览渲染（防抖由 useMemo 天然提供——content 变更才重算）
-  // 注意：必须声明在下方 DOM 补丁 effect 之前——effect 的依赖数组在组件执行时求值
-  const liveRenderedMarkdown = useMemo(
-    () => highlightMarkdownHtml(marked.parse(splitFrontmatter(content).body || content || '')),
-    [content],
-  );
-
   // 渲染后为标题 DOM 补 id，与大纲的 slug 保持一致（marked v18 renderer 回调
   // 内部没有 parser 引用，覆写 heading renderer 会在运行时崩溃，故改为 DOM 补丁）
   // B3: 同时为代码块注入「复制」按钮（事件委托，避免重复绑定）
@@ -413,7 +404,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
       pre.appendChild(btn);
     });
     return undefined;
-  }, [renderedMarkdown, auxRendered, selectedFile, liveRenderedMarkdown, mode]);
+  }, [renderedMarkdown, auxRendered, selectedFile, mode]);
 
   // B1: 大纲跟随滚动高亮（scroll-spy）：当前视口顶部所在章节即高亮项
   useEffect(() => {
@@ -721,26 +712,13 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
                 )}
               </>
             ) : (
-            <form className={`skill-editor${livePreview ? ' with-preview' : ''}`} onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
+            <form className="skill-editor" onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
               <div className="editor-fields">
                 <label>技能名称<input value={name} onChange={(event) => setName(event.target.value)} required /></label>
                 <label>简短描述<input value={description} onChange={(event) => setDescription(event.target.value)} /></label>
               </div>
-              <div className="editor-toolbar">
-                <label className="live-preview-toggle">
-                  <input type="checkbox" checked={livePreview} onChange={(event) => setLivePreview(event.target.checked)} />
-                  实时预览
-                </label>
-                <span className="editor-hint">切换到预览时自动保存</span>
-              </div>
-              <div className="editor-split">
-                <label className="editor-source">SKILL.md<textarea value={content} onChange={(event) => setContent(event.target.value)} rows={24} spellCheck="false" /></label>
-                {livePreview && (
-                  <div className="editor-preview markdown-document" aria-label="实时预览">
-                    <div dangerouslySetInnerHTML={{ __html: liveRenderedMarkdown }} />
-                  </div>
-                )}
-              </div>
+              <label>SKILL.md<textarea value={content} onChange={(event) => setContent(event.target.value)} rows={24} spellCheck="false" /></label>
+              <p className="editor-hint">切换到预览时自动保存</p>
             </form>
           )}
           </div>
