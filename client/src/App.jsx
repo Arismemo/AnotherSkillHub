@@ -164,7 +164,7 @@ export default function App() {
       </aside>
 
       {/* 2. 中栏：技能卡片列表 */}
-      <section className="w-80 flex-shrink-0 border-r border-slate-200 bg-white flex flex-col">
+      <section className="w-80 flex-shrink-0 border-r border-slate-800 bg-slate-900/80 flex flex-col">
         <SkillList
           skills={skills}
           selectedSkillId={selectedSkillId}
@@ -183,7 +183,7 @@ export default function App() {
       </section>
 
       {/* 3. 右栏：详情与操作中心 */}
-      <main className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-hidden">
+      <main className="flex-1 flex flex-col min-w-0 bg-slate-950 overflow-hidden">
         {selectedSkill ? (
           <SkillDetail
             skill={selectedSkill}
@@ -195,10 +195,14 @@ export default function App() {
             onRefresh={() => { fetchSkills(); fetchFoldersAndStats(); }}
           />
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
-            <div className="text-4xl mb-3">📬</div>
-            <p className="text-base font-medium">请从左侧选择一个技能查看详情</p>
-            <p className="text-xs text-slate-400 mt-1">或点击中栏顶部的“新建技能”</p>
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-500 bg-slate-950 p-8 select-none">
+            <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-indigo-400 mb-4 shadow-lg">
+              <span className="text-2xl">⚡</span>
+            </div>
+            <p className="text-sm font-medium text-slate-300">请从左侧或中栏选择技能查看详情</p>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm text-center leading-relaxed">
+              支持点击一键复制指令发给 Agent，或在中栏顶部新建自定义技能
+            </p>
           </div>
         )}
       </main>
