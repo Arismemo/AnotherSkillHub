@@ -8,9 +8,11 @@ import {
   Download,
   Edit3,
   Eye,
+  EyeOff,
   FileCode2,
   FileText,
   Folder,
+  List,
   Terminal,
 } from 'lucide-react';
 
@@ -173,7 +175,39 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
   const [fileError, setFileError] = useState('');
   const [copied, setCopied] = useState('');
   const [openDirs, setOpenDirs] = useState(() => new Set());
+  const [fileSidebarWidth, setFileSidebarWidth] = useState(240);
+  const [outlineHidden, setOutlineHidden] = useState(false);
   const scrollRef = useRef(null);
+  const resizingRef = useRef(null);
+
+  // 技能文件栏拖拽调宽
+  useEffect(() => {
+    const onMove = (event) => {
+      if (!resizingRef.current) return;
+      const startX = resizingRef.current.startX;
+      const startWidth = resizingRef.current.startWidth;
+      const next = Math.min(Math.max(startWidth + event.clientX - startX, 160), 480);
+      setFileSidebarWidth(next);
+    };
+    const onUp = () => {
+      if (resizingRef.current) {
+        resizingRef.current = null;
+        document.body.classList.remove('is-resizing');
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  const startResize = (event) => {
+    resizingRef.current = { startX: event.clientX, startWidth: fileSidebarWidth };
+    document.body.classList.add('is-resizing');
+    event.preventDefault();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -276,10 +310,12 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
     return false;
   };
 
-  const jumpToHeading = (id) => {
+  const jumpToHeading = (index) => {
     const container = scrollRef.current;
-    const target = container?.querySelector(`#${CSS.escape(id)}`);
-    if (!container || !target) return;
+    if (!container) return;
+    const nodes = container.querySelectorAll('.markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4');
+    const target = nodes[index];
+    if (!target) return;
     // offsetTop 的参照系是 offsetParent（.app-detail），不是滚动容器；
     // 用 rect 相对差值计算真实滚动位置
     const delta = target.getBoundingClientRect().top - container.getBoundingClientRect().top;
@@ -368,7 +404,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
 
       <div className="detail-body">
         {fileTree.length > 1 && (
-          <aside className="file-sidebar" aria-label="技能文件">
+          <aside className="file-sidebar" aria-label="技能文件" style={{ width: fileSidebarWidth }}>
             <div className="attachment-heading">
               <h3 id="attachments-heading">技能文件</h3>
               <span>{fileTree.length} 个</span>
@@ -384,26 +420,58 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
                 hasSelectionInside={hasSelectionInside}
               />
             </div>
+            <div
+              className="file-sidebar-resizer"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整技能文件栏宽度"
+              tabIndex="0"
+              onMouseDown={startResize}
+              onDoubleClick={() => setFileSidebarWidth(240)}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowLeft') setFileSidebarWidth((w) => Math.max(160, w - 24));
+                if (event.key === 'ArrowRight') setFileSidebarWidth((w) => Math.min(480, w + 24));
+              }}
+            />
           </aside>
         )}
 
         <div className="detail-scroll" ref={scrollRef}>
-          {headings.length > 1 && (
+          {mode === 'preview' && !outlineHidden && headings.length > 1 && (
             <nav className="doc-outline" aria-label="文档大纲">
               <div className="doc-outline-header">
                 <span>大纲</span>
-                <small>{headings.length} 个标题</small>
+                <button
+                  type="button"
+                  className="doc-outline-toggle"
+                  onClick={() => setOutlineHidden(true)}
+                  aria-label="隐藏大纲"
+                  title="隐藏大纲"
+                >
+                  <EyeOff size={13} />
+                </button>
               </div>
               <ul>
-                {headings.map((heading) => (
+                {headings.map((heading, index) => (
                   <li key={heading.id} style={{ '--outline-level': heading.level - 1 }}>
-                    <button type="button" onClick={() => jumpToHeading(heading.id)} title={heading.text}>
+                    <button type="button" onClick={() => jumpToHeading(index)} title={heading.text}>
                       {heading.text}
                     </button>
                   </li>
                 ))}
               </ul>
             </nav>
+          )}
+          {mode === 'preview' && outlineHidden && headings.length > 1 && (
+            <button
+              type="button"
+              className="doc-outline-restore"
+              onClick={() => setOutlineHidden(false)}
+              aria-label="显示大纲"
+              title="显示大纲"
+            >
+              <List size={14} />
+            </button>
           )}
           <div className="detail-content">
             <div className="sr-only" aria-live="polite">{copied ? '内容已复制' : ''}</div>

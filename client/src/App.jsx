@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
 import SkillDetail from './components/SkillDetail';
@@ -18,6 +19,7 @@ export default function App() {
   const [currentTag, setCurrentTag] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('updated');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [skills, setSkills] = useState([]);
   const [stats, setStats] = useState({ inbox: 0, starred: 0, all: 0, trash: 0 });
   const [folders, setFolders] = useState([]);
@@ -178,22 +180,35 @@ export default function App() {
   return (
     <div className="app-shell">
       <a className="skip-link" href="#skill-detail">跳至技能详情</a>
-      <aside className="app-sidebar" aria-label="技能分类导航">
-        <FolderTree
-          currentFolder={currentFolder}
-          onSelectFolder={handleSelectFolder}
-          folders={folders}
-          stats={stats}
-          tags={tags}
-          currentTag={currentTag}
-          onSelectTag={setCurrentTag}
-          onCreateFolder={handleCreateFolder}
-          onRenameFolder={handleRenameFolder}
-          onDeleteFolder={handleDeleteFolder}
-          onNewSkill={() => setShowNewModal(true)}
-          onPasteImport={() => setShowPasteModal(true)}
-          onOpenSetup={() => setShowSetupModal(true)}
-        />
+      <aside className={`app-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`} aria-label="技能分类导航">
+        {!sidebarCollapsed && (
+          <FolderTree
+            currentFolder={currentFolder}
+            onSelectFolder={handleSelectFolder}
+            folders={folders}
+            stats={stats}
+            tags={tags}
+            currentTag={currentTag}
+            onSelectTag={setCurrentTag}
+            onCreateFolder={handleCreateFolder}
+            onRenameFolder={handleRenameFolder}
+            onDeleteFolder={handleDeleteFolder}
+            onNewSkill={() => setShowNewModal(true)}
+            onPasteImport={() => setShowPasteModal(true)}
+            onOpenSetup={() => setShowSetupModal(true)}
+          />
+        )}
+        <button
+          type="button"
+          className="sidebar-collapse-toggle"
+          onClick={() => setSidebarCollapsed((v) => !v)}
+          aria-label={sidebarCollapsed ? '展开分类导航' : '收起分类导航'}
+          aria-expanded={!sidebarCollapsed}
+          title={sidebarCollapsed ? '展开分类导航' : '收起分类导航'}
+        >
+          <ChevronLeft size={15} className="collapse-icon" />
+          {!sidebarCollapsed && <span>收起</span>}
+        </button>
       </aside>
 
       <section className="app-list" aria-label="技能列表">
