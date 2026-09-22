@@ -168,11 +168,12 @@ router.post('/push', upload.single('file'), (req, res) => {
     let terminalSource = req.body.terminal || req.body.terminal_source || 'Agent-CLI';
     let folderPath = req.body.folder || req.body.folder_path || 'inbox'; // 默认进入 inbox
 
+    let fileFallbackName = '';
     if (req.file) {
       content = req.file.buffer.toString('utf8');
-      if (!name && req.file.originalname) {
-        name = req.file.originalname.replace(/\.md$/i, '');
-      }
+      // 文件名（如 SKILL.md）只做兜底，且 SKILL/README 这类通用名不用
+      const base = req.file.originalname.replace(/\.md$/i, '').trim();
+      if (base && !/^(skill|readme|untitled)$/i.test(base)) fileFallbackName = base;
     } else if (req.body.content) {
       content = req.body.content;
     }
@@ -182,13 +183,18 @@ router.post('/push', upload.single('file'), (req, res) => {
     }
 
     const parsed = parseSkillContent(content);
+    // 名称优先级：显式传入 > 正文 H1（人话标题）> frontmatter name > 文件名兜底 > slug
+    if (!name) {
+      const h1 = (content.match(/^#\s+(.+)$/m) || [])[1];
+      if (h1) name = h1.trim();
+    }
     if (!name && parsed.data.name) name = parsed.data.name;
     if (!description && parsed.data.description) description = parsed.data.description;
     if (!slug && parsed.data.name) slug = parsed.data.name;
     if (!slug && name) slug = name;
 
     slug = (slug || 'skill-' + Date.now()).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-    name = name || slug;
+    name = name || fileFallbackName || slug;
 
     // 检查是否已有同名
     const existing = db.prepare(`SELECT id, folder_path FROM skills WHERE slug = ?`).get(slug);
