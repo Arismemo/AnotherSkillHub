@@ -374,20 +374,36 @@ export function MoveSkillModal({ isOpen, onClose, skill, folders, onMove }) {
               />
               </div>
 
-              <div className="pt-2 flex justify-end space-x-3 flex-shrink-0">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
-              >
-                取消
-              </button>
-              <button
-                type="submit"
-                className="px-5 py-2 rounded-xl text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20 transition-all flex items-center space-x-1.5"
-              >
-                <span>立即导入入库</span>
-              </button>
+              <div className="pt-2 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center space-x-2 text-xs text-slate-400">
+                  <span>归档至:</span>
+                  <select
+                    value={folderPath}
+                    onChange={(e) => setFolderPath(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500"
+                  >
+                    <option value="inbox">📥 收件箱 (inbox)</option>
+                    {folders.filter(f => f.path !== 'inbox').map(f => (
+                      <option key={f.path} value={f.path}>📁 {f.path}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center space-x-2.5">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20 transition-all flex items-center space-x-1.5"
+                  >
+                    <span>立即导入入库</span>
+                  </button>
+                </div>
               </div>
               </form>
               </div>
