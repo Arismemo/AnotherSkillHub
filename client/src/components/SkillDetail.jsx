@@ -216,17 +216,31 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
 
   const documentParts = useMemo(() => splitFrontmatter(content), [content]);
 
+  // 大纲跟随当前查看的文件：SKILL.md 用主文档；其他 .md 用附件内容；非 markdown 不出大纲
+  const activeMarkdownBody = useMemo(() => {
+    if (selectedFile === 'SKILL.md') return documentParts.body || '';
+    if (selectedFile.endsWith('.md')) return splitFrontmatter(auxFileContent || '').body || '';
+    return '';
+  }, [selectedFile, documentParts.body, auxFileContent]);
+
   const headings = useMemo(() => {
     const used = new Set();
-    return extractHeadings(documentParts.body || '').map((heading) => ({
+    return extractHeadings(activeMarkdownBody).map((heading) => ({
       ...heading,
       id: slugifyHeading(heading.text, used),
     }));
-  }, [documentParts.body]);
+  }, [activeMarkdownBody]);
 
   const renderedMarkdown = useMemo(
     () => marked.parse(documentParts.body || content || ''),
     [content, documentParts.body],
+  );
+
+  const auxRendered = useMemo(
+    () => (selectedFile !== 'SKILL.md' && selectedFile.endsWith('.md')
+      ? marked.parse(splitFrontmatter(auxFileContent || '').body || '')
+      : ''),
+    [auxFileContent, selectedFile],
   );
 
   // 渲染后为标题 DOM 补 id，与大纲的 slug 保持一致（marked v18 renderer 回调
@@ -240,7 +254,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
       node.id = slugifyHeading(text, used);
     });
     return undefined;
-  }, [renderedMarkdown, selectedFile]);
+  }, [renderedMarkdown, auxRendered, selectedFile]);
 
   const treeData = useMemo(() => buildFileTree(fileTree), [fileTree]);
 
@@ -352,93 +366,100 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
         </div>
       </header>
 
-      <div className="detail-scroll" ref={scrollRef}>
-        {headings.length > 1 && (
-          <nav className="doc-outline" aria-label="文档大纲">
-            <div className="doc-outline-header">
-              <span>大纲</span>
-              <small>{headings.length} 个标题</small>
+      <div className="detail-body">
+        {fileTree.length > 1 && (
+          <aside className="file-sidebar" aria-label="技能文件">
+            <div className="attachment-heading">
+              <h3 id="attachments-heading">技能文件</h3>
+              <span>{fileTree.length} 个</span>
             </div>
-            <ul>
-              {headings.map((heading) => (
-                <li key={heading.id} style={{ '--outline-level': heading.level - 1 }}>
-                  <button type="button" onClick={() => jumpToHeading(heading.id)} title={heading.text}>
-                    {heading.text}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </nav>
+            <div className="file-sidebar-scroll">
+              <FileTreeNode
+                node={treeData}
+                depth={0}
+                selectedFile={selectedFile}
+                openFile={openFile}
+                openDirs={openDirs}
+                toggleDir={toggleDir}
+                hasSelectionInside={hasSelectionInside}
+              />
+            </div>
+          </aside>
         )}
-        <div className="detail-content">
-          <div className="sr-only" aria-live="polite">{copied ? '内容已复制' : ''}</div>
-          {detailError && <div className="inline-error" role="alert">{detailError}</div>}
 
-          {mode === 'preview' ? (
-            <>
-              {fileTree.length > 1 && (
-                <section className="attachment-strip" aria-labelledby="attachments-heading">
-                  <div className="attachment-heading">
-                    <h3 id="attachments-heading">技能文件</h3>
-                    <span>{fileTree.length} 个</span>
-                  </div>
-                  <FileTreeNode
-                    node={treeData}
-                    depth={0}
-                    selectedFile={selectedFile}
-                    openFile={openFile}
-                    openDirs={openDirs}
-                    toggleDir={toggleDir}
-                    hasSelectionInside={hasSelectionInside}
-                  />
-                </section>
-              )}
+        <div className="detail-scroll" ref={scrollRef}>
+          {headings.length > 1 && (
+            <nav className="doc-outline" aria-label="文档大纲">
+              <div className="doc-outline-header">
+                <span>大纲</span>
+                <small>{headings.length} 个标题</small>
+              </div>
+              <ul>
+                {headings.map((heading) => (
+                  <li key={heading.id} style={{ '--outline-level': heading.level - 1 }}>
+                    <button type="button" onClick={() => jumpToHeading(heading.id)} title={heading.text}>
+                      {heading.text}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
+          <div className="detail-content">
+            <div className="sr-only" aria-live="polite">{copied ? '内容已复制' : ''}</div>
+            {detailError && <div className="inline-error" role="alert">{detailError}</div>}
 
-              {selectedFile !== 'SKILL.md' ? (
-                <section className="file-viewer" aria-label={selectedFile}>
-                  <header>
-                    <div><FileCode2 size={15} /><strong>{selectedFile}</strong></div>
-                    <button type="button" onClick={() => openFile('SKILL.md')}>返回说明</button>
-                  </header>
-                  {loadingFile ? (
-                    <div className="content-skeleton" role="status"><span>正在载入文件…</span><i /><i /><i /></div>
-                  ) : fileError ? (
-                    <div className="inline-error" role="alert">{fileError}</div>
-                  ) : (
-                    <pre><code>{auxFileContent || '// 文件为空'}</code></pre>
-                  )}
-                </section>
-              ) : (
-                <>
-                  {(description || skill.tags?.length > 0) && (
-                    <section className="skill-summary" aria-label="技能摘要">
-                      {description && <p>{description}</p>}
-                      {skill.tags?.length > 0 && <div>{skill.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
-                    </section>
-                  )}
+            {mode === 'preview' ? (
+              <>
+                {selectedFile !== 'SKILL.md' ? (
+                  <section className="file-viewer" aria-label={selectedFile}>
+                    <header>
+                      <div><FileCode2 size={15} /><strong>{selectedFile}</strong></div>
+                      <button type="button" onClick={() => openFile('SKILL.md')}>返回说明</button>
+                    </header>
+                    {loadingFile ? (
+                      <div className="content-skeleton" role="status"><span>正在载入文件…</span><i /><i /><i /></div>
+                    ) : fileError ? (
+                      <div className="inline-error" role="alert">{fileError}</div>
+                    ) : selectedFile.endsWith('.md') ? (
+                      <div className="file-viewer-markdown markdown-document">
+                        <div dangerouslySetInnerHTML={{ __html: auxRendered }} />
+                      </div>
+                    ) : (
+                      <pre><code>{auxFileContent || '// 文件为空'}</code></pre>
+                    )}
+                  </section>
+                ) : (
+                  <>
+                    {(description || skill.tags?.length > 0) && (
+                      <section className="skill-summary" aria-label="技能摘要">
+                        {description && <p>{description}</p>}
+                        {skill.tags?.length > 0 && <div>{skill.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+                      </section>
+                    )}
 
-                  {loadingDetail && !content ? (
-                    <div className="content-skeleton" role="status"><span>正在载入技能详情…</span><i /><i /><i /><i /></div>
-                  ) : content ? (
-                    <article className="markdown-document">
-                      {documentParts.frontmatter && (
-                        <details className="frontmatter">
-                          <summary>Frontmatter</summary>
-                          <pre>{documentParts.frontmatter}</pre>
-                        </details>
-                      )}
-                      <div dangerouslySetInnerHTML={{ __html: renderedMarkdown }} />
-                    </article>
-                  ) : (
-                    <div className="detail-state">
-                      <strong>暂无正文</strong>
-                      <span>切换到编辑模式添加 SKILL.md 内容。</span>
-                    </div>
-                  )}
-                </>
-              )}
-            </>
-          ) : (
+                    {loadingDetail && !content ? (
+                      <div className="content-skeleton" role="status"><span>正在载入技能详情…</span><i /><i /><i /><i /></div>
+                    ) : content ? (
+                      <article className="markdown-document">
+                        {documentParts.frontmatter && (
+                          <details className="frontmatter">
+                            <summary>Frontmatter</summary>
+                            <pre>{documentParts.frontmatter}</pre>
+                          </details>
+                        )}
+                        <div dangerouslySetInnerHTML={{ __html: renderedMarkdown }} />
+                      </article>
+                    ) : (
+                      <div className="detail-state">
+                        <strong>暂无正文</strong>
+                        <span>切换到编辑模式添加 SKILL.md 内容。</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            ) : (
             <form className="skill-editor" onSubmit={(event) => { event.preventDefault(); handleSave(); }}>
               <div className="editor-fields">
                 <label>技能名称<input value={name} onChange={(event) => setName(event.target.value)} required /></label>
@@ -447,6 +468,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
               <label>SKILL.md<textarea value={content} onChange={(event) => setContent(event.target.value)} rows={24} spellCheck="false" /></label>
             </form>
           )}
+          </div>
         </div>
       </div>
     </div>
