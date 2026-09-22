@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
 import {
   Check,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   Edit3,
   Eye,
   FileCode2,
   FileText,
-  Save,
+  Folder,
   Terminal,
 } from 'lucide-react';
 
@@ -24,6 +26,129 @@ function splitFrontmatter(text) {
     frontmatter: trimmed.slice(3, end).trim(),
     body: trimmed.slice(end + 3).trim(),
   };
+}
+
+function extractHeadings(markdown) {
+  const lines = markdown.split('\n');
+  const headings = [];
+  let inFence = false;
+  let fenceMarker = '';
+  for (const line of lines) {
+    const fenceMatch = line.match(/^\s*(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = fenceMatch[1][0];
+      } else if (fenceMatch[1][0] === fenceMarker) {
+        inFence = false;
+      }
+      continue;
+    }
+    if (inFence) continue;
+    const match = line.match(/^(#{1,4})\s+(.+?)\s*#*\s*$/);
+    if (match) {
+      headings.push({ level: match[1].length, text: match[2].trim() });
+    }
+  }
+  return headings;
+}
+
+function slugifyHeading(text, used) {
+  const base = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .trim()
+    .replace(/\s+/g, '-') || 'section';
+  let slug = base;
+  let index = 2;
+  while (used.has(slug)) {
+    slug = `${base}-${index}`;
+    index += 1;
+  }
+  used.add(slug);
+  return slug;
+}
+
+function buildFileTree(files) {
+  const root = { name: '', path: '', children: new Map(), file: null };
+  for (const file of files) {
+    const parts = file.path.split('/');
+    let node = root;
+    parts.forEach((part, depth) => {
+      const isLeaf = depth === parts.length - 1;
+      if (!node.children.has(part)) {
+        node.children.set(part, { name: part, path: parts.slice(0, depth + 1).join('/'), children: new Map(), file: null });
+      }
+      node = node.children.get(part);
+      if (isLeaf) node.file = file;
+    });
+  }
+  return root;
+}
+
+function FileTreeNode({ node, depth, selectedFile, openFile, openDirs, toggleDir, hasSelectionInside }) {
+  const dirEntries = [...node.children.values()].sort((a, b) => {
+    const aDir = a.children.size > 0;
+    const bDir = b.children.size > 0;
+    if (aDir !== bDir) return aDir ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return (
+    <ul className="file-tree" role={depth === 0 ? 'tree' : 'group'} aria-label={depth === 0 ? '技能文件目录' : undefined}>
+      {dirEntries.map((entry) => {
+        const isDir = entry.children.size > 0;
+        const expanded = openDirs.has(entry.path);
+        if (isDir) {
+          return (
+            <li key={entry.path} role="none">
+              <button
+                type="button"
+                className="file-tree-row file-tree-dir"
+                style={{ '--tree-depth': depth }}
+                aria-expanded={expanded}
+                onClick={() => toggleDir(entry.path)}
+              >
+                {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                <Folder size={13} />
+                <span>{entry.name}</span>
+              </button>
+              {(expanded || hasSelectionInside(entry)) && (
+                <FileTreeNode
+                  node={entry}
+                  depth={depth + 1}
+                  selectedFile={selectedFile}
+                  openFile={openFile}
+                  openDirs={openDirs}
+                  toggleDir={toggleDir}
+                  hasSelectionInside={hasSelectionInside}
+                />
+              )}
+            </li>
+          );
+        }
+        const file = entry.file;
+        const active = selectedFile === file.path;
+        return (
+          <li key={file.path} role="none">
+            <button
+              type="button"
+              role="treeitem"
+              aria-selected={active}
+              className={`file-tree-row file-tree-file${active ? ' is-active' : ''}`}
+              style={{ '--tree-depth': depth }}
+              onClick={() => openFile(file.path)}
+            >
+              <span className="file-tree-leaf-spacer" aria-hidden="true" />
+              {file.isMain || file.path.endsWith('.md') ? <FileText size={13} /> : <FileCode2 size={13} />}
+              <span>{file.name}</span>
+              <small>{Math.max(1, Math.round(file.size / 1024))} KB</small>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 async function getJson(url) {
@@ -47,6 +172,8 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
   const [detailError, setDetailError] = useState('');
   const [fileError, setFileError] = useState('');
   const [copied, setCopied] = useState('');
+  const [openDirs, setOpenDirs] = useState(() => new Set());
+  const scrollRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,10 +215,63 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
   }, [selectedFile, skill.id]);
 
   const documentParts = useMemo(() => splitFrontmatter(content), [content]);
+
+  const headings = useMemo(() => {
+    const used = new Set();
+    return extractHeadings(documentParts.body || '').map((heading) => ({
+      ...heading,
+      id: slugifyHeading(heading.text, used),
+    }));
+  }, [documentParts.body]);
+
   const renderedMarkdown = useMemo(
     () => marked.parse(documentParts.body || content || ''),
     [content, documentParts.body],
   );
+
+  // 渲染后为标题 DOM 补 id，与大纲的 slug 保持一致（marked v18 renderer 回调
+  // 内部没有 parser 引用，覆写 heading renderer 会在运行时崩溃，故改为 DOM 补丁）
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return undefined;
+    const used = new Set();
+    container.querySelectorAll('.markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4').forEach((node) => {
+      const text = node.textContent || '';
+      node.id = slugifyHeading(text, used);
+    });
+    return undefined;
+  }, [renderedMarkdown, selectedFile]);
+
+  const treeData = useMemo(() => buildFileTree(fileTree), [fileTree]);
+
+  const toggleDir = (dirPath) => {
+    setOpenDirs((prev) => {
+      const next = new Set(prev);
+      if (next.has(dirPath)) next.delete(dirPath);
+      else next.add(dirPath);
+      return next;
+    });
+  };
+
+  const hasSelectionInside = (node) => {
+    if (!selectedFile) return false;
+    if (node.file && node.file.path === selectedFile) return true;
+    for (const child of node.children.values()) {
+      if (hasSelectionInside(child)) return true;
+    }
+    return false;
+  };
+
+  const jumpToHeading = (id) => {
+    const container = scrollRef.current;
+    const target = container?.querySelector(`#${CSS.escape(id)}`);
+    if (!container || !target) return;
+    // offsetTop 的参照系是 offsetParent（.app-detail），不是滚动容器；
+    // 用 rect 相对差值计算真实滚动位置
+    const delta = target.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    container.scrollTo({ top: container.scrollTop + delta - 12, behavior: 'smooth' });
+  };
+
   const origin = window.location.origin;
   const agentPrompt = `请加载并使用技能：${origin}/s/${skill.slug}`;
   const cliCommand = `curl -fsSL ${origin}/s/${skill.slug}/install.sh | bash`;
@@ -111,6 +291,20 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
     const saved = await onSave({ ...skill, name, description, content });
     setSaving(false);
     if (saved) setMode('preview');
+  };
+
+  const switchMode = (nextMode) => {
+    if (nextMode === mode) return;
+    if (nextMode === 'preview') {
+      const dirty = name !== (skill.name || '') || description !== (skill.description || '') || content !== (skill.content || '');
+      if (dirty) {
+        handleSave();
+      } else {
+        setMode('preview');
+      }
+    } else {
+      setMode('edit');
+    }
   };
 
   const openFile = (path) => {
@@ -152,18 +346,30 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
             </select>
           </label>
           <div className="mode-switch" aria-label="详情模式">
-            <button type="button" className={mode === 'preview' ? 'is-active' : ''} onClick={() => setMode('preview')} aria-pressed={mode === 'preview'}><Eye size={14} />预览</button>
-            <button type="button" className={mode === 'edit' ? 'is-active' : ''} onClick={() => setMode('edit')} aria-pressed={mode === 'edit'}><Edit3 size={14} />编辑</button>
+            <button type="button" className={mode === 'preview' ? 'is-active' : ''} onClick={() => switchMode('preview')} aria-pressed={mode === 'preview'}><Eye size={14} />预览</button>
+            <button type="button" className={mode === 'edit' ? 'is-active' : ''} onClick={() => switchMode('edit')} aria-pressed={mode === 'edit'} disabled={saving}><Edit3 size={14} />{saving ? '保存中…' : '编辑'}</button>
           </div>
-          {mode === 'edit' && (
-            <button type="button" className="primary-button" onClick={handleSave} disabled={saving}>
-              <Save size={14} />{saving ? '保存中…' : '保存'}
-            </button>
-          )}
         </div>
       </header>
 
-      <div className="detail-scroll">
+      <div className="detail-scroll" ref={scrollRef}>
+        {headings.length > 1 && (
+          <nav className="doc-outline" aria-label="文档大纲">
+            <div className="doc-outline-header">
+              <span>大纲</span>
+              <small>{headings.length} 个标题</small>
+            </div>
+            <ul>
+              {headings.map((heading) => (
+                <li key={heading.id} style={{ '--outline-level': heading.level - 1 }}>
+                  <button type="button" onClick={() => jumpToHeading(heading.id)} title={heading.text}>
+                    {heading.text}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
         <div className="detail-content">
           <div className="sr-only" aria-live="polite">{copied ? '内容已复制' : ''}</div>
           {detailError && <div className="inline-error" role="alert">{detailError}</div>}
@@ -176,21 +382,15 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
                     <h3 id="attachments-heading">技能文件</h3>
                     <span>{fileTree.length} 个</span>
                   </div>
-                  <div className="attachment-list">
-                    {fileTree.map((file) => (
-                      <button
-                        type="button"
-                        key={file.path}
-                        className={selectedFile === file.path ? 'is-active' : ''}
-                        onClick={() => openFile(file.path)}
-                        aria-pressed={selectedFile === file.path}
-                      >
-                        {file.isMain || file.path.endsWith('.md') ? <FileText size={14} /> : <FileCode2 size={14} />}
-                        <span>{file.path}</span>
-                        <small>{Math.max(1, Math.round(file.size / 1024))} KB</small>
-                      </button>
-                    ))}
-                  </div>
+                  <FileTreeNode
+                    node={treeData}
+                    depth={0}
+                    selectedFile={selectedFile}
+                    openFile={openFile}
+                    openDirs={openDirs}
+                    toggleDir={toggleDir}
+                    hasSelectionInside={hasSelectionInside}
+                  />
                 </section>
               )}
 

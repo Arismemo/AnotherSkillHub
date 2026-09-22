@@ -1,7 +1,6 @@
 import {
   ArrowDownAZ,
   Clock3,
-  Copy,
   FolderInput,
   Plus,
   RotateCcw,
@@ -34,7 +33,6 @@ export default function SkillList({
   onSortChange,
   onToggleStar,
   onQuickMove,
-  onCopySkill,
   onTrashSkill,
   onRestoreSkill,
   onPermanentDelete,
@@ -136,7 +134,6 @@ export default function SkillList({
                     {!isTrash ? (
                       <>
                         <button type="button" className="icon-button" onClick={(event) => { event.stopPropagation(); onQuickMove(skill); }} aria-label={`移动 ${skill.name}`}><FolderInput size={14} /></button>
-                        <button type="button" className="icon-button" onClick={(event) => { event.stopPropagation(); onCopySkill(skill); }} aria-label={`创建 ${skill.name} 的副本`}><Copy size={14} /></button>
                         <button type="button" className="icon-button danger-button" onClick={(event) => { event.stopPropagation(); onTrashSkill(skill.id); }} aria-label={`将 ${skill.name} 移入废纸篓`}><Trash2 size={14} /></button>
                       </>
                     ) : (

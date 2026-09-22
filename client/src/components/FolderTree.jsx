@@ -144,9 +144,6 @@ export default function FolderTree({
           <h1>SkillHub</h1>
           <p>Agent 技能库</p>
         </div>
-        <button type="button" className="icon-button create-button" onClick={onNewSkill} aria-label="新建技能">
-          <Plus size={17} />
-        </button>
       </header>
 
       <div className="sidebar-actions" aria-label="快捷操作">

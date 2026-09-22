@@ -10,7 +10,6 @@ test('App wires every interactive component callback to an implementation', asyn
     'onRenameFolder={handleRenameFolder}',
     'onDeleteFolder={handleDeleteFolder}',
     'onQuickMove={setMoveSkillTarget}',
-    'onCopySkill={handleCopySkill}',
     'onTrashSkill={handleTrashSkill}',
     'onRestoreSkill=',
     'onPermanentDelete={handlePermanentDelete}',
@@ -18,6 +17,7 @@ test('App wires every interactive component callback to an implementation', asyn
   ];
   for (const prop of requiredWiring) assert.ok(app.includes(prop), `missing callback wiring: ${prop}`);
   assert.ok(app.includes("requestJson('/api/skills/stats')"), 'stats must use the existing /api/skills/stats contract');
+  assert.ok(!app.includes('onCopySkill'), 'duplicate-skill copy action was removed from the list per product decision');
 });
 
 test('detail always fetches the full record so file_tree stays available', async () => {

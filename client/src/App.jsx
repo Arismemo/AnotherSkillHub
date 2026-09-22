@@ -162,15 +162,6 @@ export default function App() {
     return Boolean(created);
   };
 
-  const handleCopySkill = async (skill) => {
-    const copied = await runMutation(`/api/skills/${skill.id}/copy`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target_folder: skill.folder_path }),
-    });
-    if (copied?.id) setSelectedSkillId(Number(copied.id));
-  };
-
   const handleSaveSkill = async (updatedData) => Boolean(await runMutation(`/api/skills/${updatedData.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -218,7 +209,6 @@ export default function App() {
           onSortChange={setSortBy}
           onToggleStar={handleToggleStar}
           onQuickMove={setMoveSkillTarget}
-          onCopySkill={handleCopySkill}
           onTrashSkill={handleTrashSkill}
           onRestoreSkill={(id) => runMutation(`/api/skills/${id}/restore`, { method: 'POST' })}
           onPermanentDelete={handlePermanentDelete}
