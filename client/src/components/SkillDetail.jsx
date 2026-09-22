@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
 import hljs from 'highlight.js/lib/common';
+import { VersionHistoryModal } from './Modals';
 import {
   Check,
   ChevronDown,
@@ -15,6 +16,7 @@ import {
   Folder,
   List,
   Terminal,
+  History,
   PanelLeftClose,
 } from 'lucide-react';
 
@@ -245,6 +247,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
     const saved = Number(window.localStorage.getItem('ash:file-sidebar-width'));
     return saved >= 160 && saved <= 480 ? saved : 240;
   });
+  const [showVersions, setShowVersions] = useState(false);
   const [outlineHidden, setOutlineHidden] = useState(() => window.localStorage.getItem('ash:outline-hidden') === '1');
   // 大纲只在滚动区足够宽（≥1000px）时悬浮显示，避免挤占小视口正文
   const [outlineFits, setOutlineFits] = useState(true);
@@ -262,7 +265,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(() => {
       const w = el.getBoundingClientRect().width;
-      setOutlineFits(w >= 1300);
+      setOutlineFits(w >= 1000);
       if (w < 760) setFileBarCollapsed(true);
     });
     observer.observe(el);
@@ -561,12 +564,19 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
           <a className="icon-button bordered-button" href={`/s/${skill.slug}/archive.tar.gz`} download aria-label={`下载 ${skill.name} 完整技能包`}>
             <Download size={15} />
           </a>
+          <button type="button" className="icon-button bordered-button" onClick={() => setShowVersions(true)} aria-label="历史版本" title="历史版本">
+            <History size={15} />
+          </button>
           <div className="mode-switch" aria-label="详情模式">
             <button type="button" className={mode === 'preview' ? 'is-active' : ''} onClick={() => switchMode('preview')} aria-pressed={mode === 'preview'}><Eye size={14} />预览</button>
             <button type="button" className={mode === 'edit' ? 'is-active' : ''} onClick={() => switchMode('edit')} aria-pressed={mode === 'edit'} disabled={saving}><Edit3 size={14} />{saving ? '保存中…' : '编辑'}</button>
           </div>
         </div>
       </header>
+      <VersionHistoryModal isOpen={showVersions} onClose={() => setShowVersions(false)} skillId={skill.id} onRestored={async () => {
+            const fresh = await fetch(`/api/skills/${skill.id}`).then((r) => r.json()).catch(() => null);
+            if (fresh) { setContent(fresh.content || ''); }
+          }} />
 
       <div className="detail-body">
         {fileTree.length > 1 && fileBarCollapsed && (

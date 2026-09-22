@@ -40,6 +40,20 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS skill_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    skill_id INTEGER NOT NULL,
+    content TEXT NOT NULL,            -- 快照时的 SKILL.md 全文
+    files TEXT DEFAULT '[]',          -- 快照时的附件 JSON array
+    name TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    source TEXT DEFAULT 'web',        -- web | agent | restore
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_skill_versions_skill ON skill_versions(skill_id, created_at DESC);
+
+
   CREATE INDEX IF NOT EXISTS idx_skills_folder ON skills(folder_path);
   CREATE INDEX IF NOT EXISTS idx_skills_deleted ON skills(is_deleted);
   CREATE INDEX IF NOT EXISTS idx_skills_starred ON skills(is_starred);

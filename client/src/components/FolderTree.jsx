@@ -246,8 +246,7 @@ export default function FolderTree({
                 </li>
               );
             })}
-            {recentSkills.length > 0 && (
-              <li>
+                          <li>
                 <button
                   type="button"
                   className={`nav-item ${currentFolder === 'recent' && !currentTag ? 'is-active' : ''}`}
@@ -259,7 +258,6 @@ export default function FolderTree({
                   <span className="nav-count">{recentSkills.length}</span>
                 </button>
               </li>
-            )}
           </ul>
         </nav>
 

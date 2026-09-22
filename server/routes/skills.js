@@ -1,5 +1,15 @@
 const express = require('express');
 const router = express.Router();
+
+// 版本快照：保存技能的当前（旧）内容为历史版本
+function snapshotSkillVersion(skill, source) {
+  try {
+    db.prepare(`INSERT INTO skill_versions (skill_id, content, files, name, description, source) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(skill.id, skill.content, skill.files, skill.name, skill.description, source || 'web');
+  } catch (e) {
+    console.error('snapshot failed:', e.message);
+  }
+}
 const db = require('../db');
 const { saveSkillToDisk, moveSkillOnDisk, parseSkillContent, getSkillFileTree, getSkillFileContent } = require('../storage');
 
@@ -203,6 +213,37 @@ router.post('/', (req, res) => {
   }
 });
 
+// 历史版本列表
+router.get('/:id/versions', (req, res) => {
+  const { id } = req.params;
+  const skill = db.prepare('SELECT id FROM skills WHERE id = ?').get(id);
+  if (!skill) return res.status(404).json({ error: 'Skill not found' });
+  const rows = db.prepare(`
+    SELECT id, name, description, source, created_at, LENGTH(content) AS content_size
+    FROM skill_versions WHERE skill_id = ? ORDER BY created_at DESC, id DESC
+  `).all(id);
+  res.json(rows);
+});
+
+// 恢复历史版本：快照当前版本后，将历史版本内容置为最新
+router.post('/:id/versions/:versionId/restore', (req, res) => {
+  try {
+    const { id, versionId } = req.params;
+    const skill = db.prepare('SELECT * FROM skills WHERE id = ?').get(id);
+    if (!skill) return res.status(404).json({ error: 'Skill not found' });
+    const ver = db.prepare('SELECT * FROM skill_versions WHERE id = ? AND skill_id = ?').get(versionId, Number(id));
+    if (!ver) return res.status(404).json({ error: 'Version not found' });
+
+    snapshotSkillVersion(skill, 'restore-backup');
+    db.prepare('UPDATE skills SET content = ?, files = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(ver.content, ver.files, skill.id);
+    saveSkillToDisk(skill.folder_path, skill.slug, ver.content, JSON.parse(ver.files || '[]'));
+    res.json({ success: true, restored_version_id: ver.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 更新技能
 router.put('/:id', (req, res) => {
   try {
@@ -213,6 +254,9 @@ router.put('/:id', (req, res) => {
     if (!skill) {
       return res.status(404).json({ error: 'Skill not found' });
     }
+
+    // 内容有实质变化才快照历史版本
+    if (content !== undefined && content !== skill.content) snapshotSkillVersion(skill, 'web');
 
     const updatedName = name !== undefined ? name : skill.name;
     const updatedContent = content !== undefined ? content : skill.content;

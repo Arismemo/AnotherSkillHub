@@ -123,14 +123,6 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 body.is-resizing .detail-scroll { pointer-events: none; }
 .app-list { border-right: 1px solid var(--border); background: var(--surface); }
 /* 中栏（技能列表）折叠成细条：grid 列同步收窄 */
-.app-shell:has(.app-list.is-collapsed) { grid-template-columns: clamp(11.5rem, 14vw, 13.5rem) 2.4rem minmax(0, 1fr); }
-.app-shell:has(.app-sidebar.is-collapsed):has(.app-list.is-collapsed) { grid-template-columns: 2.6rem 2.4rem minmax(0, 1fr); }
-.app-list.is-collapsed { display: flex; align-items: stretch; justify-content: center; padding: 0; border-right: 1px solid var(--border); }
-.list-rail { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem; flex: 1; border: 0; background: var(--surface); color: var(--text-subtle); cursor: pointer; }
-.list-rail:hover { color: var(--text); background: var(--surface-hover); }
-.list-rail .rail-count { font-size: .74rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.list-rail .rail-label { writing-mode: vertical-rl; font-size: .6rem; letter-spacing: .18em; }
-.list-collapse-btn { margin-left: auto; }
 
 .app-detail { position: relative; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
 
@@ -493,6 +485,16 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .folder-picker.iconOnly .folder-picker-trigger { width: 1.7rem; height: 1.7rem; justify-content: center; padding: 0; border-color: transparent; background: transparent; color: var(--text-subtle); }
 .folder-picker.iconOnly .folder-picker-trigger:hover { background: var(--surface-hover); color: var(--text); border-color: transparent; }
 .folder-picker-icon { display: inline-flex; align-items: center; }
+
+/* 历史版本列表 */
+.version-list { display: flex; flex-direction: column; gap: .4rem; max-height: 22rem; overflow-y: auto; }
+.version-row { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .55rem .7rem; border: 1px solid var(--border-muted); border-radius: .46rem; }
+.version-row:hover { background: var(--surface-hover); }
+.version-meta { display: flex; align-items: center; gap: .7rem; min-width: 0; font-size: .74rem; color: var(--text-subtle); }
+.version-source { padding: .1rem .45rem; border-radius: .3rem; background: var(--surface-active, #1b2129); color: var(--text-muted); font-size: .66rem; }
+.version-size { font-variant-numeric: tabular-nums; }
+.version-empty, .version-error { color: var(--text-subtle); font-size: .78rem; text-align: center; padding: 1.2rem 0; }
+.version-error { color: #f87171; }
 
 /* 可搜索文件夹选择器 */
 .folder-picker { position: relative; }

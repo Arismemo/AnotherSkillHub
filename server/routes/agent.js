@@ -194,6 +194,14 @@ router.post('/push', upload.single('file'), (req, res) => {
     const existing = db.prepare(`SELECT id, folder_path FROM skills WHERE slug = ?`).get(slug);
 
     if (existing) {
+      // agent 推送覆盖前快照旧版本
+      try {
+        const old = db.prepare('SELECT * FROM skills WHERE id = ?').get(existing.id);
+        if (old && old.content !== content) {
+          db.prepare('INSERT INTO skill_versions (skill_id, content, files, name, description, source) VALUES (?, ?, ?, ?, ?, ?)')
+            .run(old.id, old.content, old.files, old.name, old.description, 'agent');
+        }
+      } catch (e) { console.error('agent snapshot failed:', e.message); }
       db.prepare(`
         UPDATE skills 
         SET name = ?, description = ?, content = ?, terminal_source = ?, updated_at = CURRENT_TIMESTAMP

@@ -242,3 +242,71 @@ export function AgentSetupModal({ isOpen, onClose }) {
     </DialogShell>
   );
 }
+
+// 历史版本：列出全部快照，可恢复任意版本为最新
+export function VersionHistoryModal({ isOpen, onClose, skillId, onRestored }) {
+  const [versions, setVersions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [restoring, setRestoring] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!isOpen || !skillId) return;
+    setLoading(true);
+    setError('');
+    fetch(`/api/skills/${skillId}/versions`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('加载失败'))))
+      .then((data) => setVersions(Array.isArray(data) ? data : []))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [isOpen, skillId]);
+
+  if (!isOpen) return null;
+
+  const restore = async (versionId) => {
+    setRestoring(versionId);
+    setError('');
+    try {
+      const resp = await fetch(`/api/skills/${skillId}/versions/${versionId}/restore`, { method: 'POST' });
+      if (!resp.ok) throw new Error('恢复失败');
+      const data = await fetch(`/api/skills/${skillId}/versions`).then((r) => r.json());
+      setVersions(Array.isArray(data) ? data : []);
+      onRestored?.();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRestoring(null);
+    }
+  };
+
+  const sourceLabel = { web: '网页', agent: 'Agent', 'restore-backup': '恢复前备份' };
+
+  return (
+    <DialogShell title="历史版本" description="每次内容变更前自动保存快照，可恢复任意版本。" onClose={onClose} size="medium">
+      <div className="version-list">
+        {loading && <p className="version-empty">加载中…</p>}
+        {error && <p className="version-error">{error}</p>}
+        {!loading && !error && versions.length === 0 && (
+          <p className="version-empty">暂无历史版本——首次编辑保存后开始记录。</p>
+        )}
+        {versions.map((v) => (
+          <div key={v.id} className="version-row">
+            <div className="version-meta">
+              <span className="version-source">{sourceLabel[v.source] || v.source}</span>
+              <time>{new Date(v.created_at + 'Z').toLocaleString('zh-CN', { hour12: false })}</time>
+              <span className="version-size">{Math.round((v.content_size || 0) / 1024)} KB</span>
+            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={restoring === v.id}
+              onClick={() => restore(v.id)}
+            >
+              {restoring === v.id ? '恢复中…' : '恢复此版本'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </DialogShell>
+  );
+}

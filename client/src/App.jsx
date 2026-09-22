@@ -41,7 +41,6 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('updated');
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState('sidebar-collapsed', false);
-  const [listCollapsed, setListCollapsed] = usePersistedState('list-collapsed', false);
   const [recentSkillIds, setRecentSkillIds] = usePersistedState('recent-skills', []);
   const recentIdsRef = useRef([]);
   useEffect(() => { recentIdsRef.current = recentSkillIds; }, [recentSkillIds]);
@@ -392,13 +391,7 @@ export default function App() {
         )}
       </aside>
 
-      <section className={`app-list${listCollapsed ? ' is-collapsed' : ''}`} aria-label="技能列表">
-        {listCollapsed ? (
-          <button type="button" className="list-rail" onClick={() => setListCollapsed(false)} aria-label="展开技能列表" title="展开技能列表">
-            <span className="rail-count">{skills.length}</span>
-            <span className="rail-label">技能</span>
-          </button>
-        ) : (
+      <section className="app-list" aria-label="技能列表">
         <SkillList
           skills={sortedSkills}
           selectedSkillId={selectedSkillId}
@@ -422,9 +415,7 @@ export default function App() {
           loading={loading}
           error={appError}
           onRetry={refreshAll}
-          onCollapse={() => setListCollapsed(true)}
         />
-        )}
       </section>
 
       <main id="skill-detail" className="app-detail" tabIndex="-1">
