@@ -1,3 +1,4 @@
+import FolderPicker from './FolderPicker';
 import {
   ArrowDownAZ,
   Clock3,
@@ -100,22 +101,13 @@ export default function SkillList({
         <div className="batch-bar" role="toolbar" aria-label={`已选 ${multiCount} 个技能`}>
           <span>已选 {multiCount} 项</span>
           {!isTrash && (
-            <label className="batch-move">
-              <span className="sr-only">批量移动到</span>
-              <select
-                defaultValue=""
-                onChange={(event) => {
-                  if (event.target.value) onBatchMove(event.target.value);
-                  event.target.value = '';
-                }}
-              >
-                <option value="" disabled>移动到…</option>
-                <option value="inbox">收件箱</option>
-                {folders.filter((f) => f.path !== 'inbox').map((f) => (
-                  <option key={f.path} value={f.path}>{f.path}</option>
-                ))}
-              </select>
-            </label>
+            <FolderPicker
+              folders={folders}
+              value=""
+              onChange={(path) => path && onBatchMove(path)}
+              placeholder="移动到…"
+              compact
+            />
           )}
           <button type="button" className="danger-text-button" onClick={onBatchTrash}>
             <Trash2 size={13} />移入废纸篓

@@ -56,6 +56,11 @@ html, body, #root {
 
 button, input, textarea, select { font: inherit; }
 button, select { color: inherit; }
+/* 统一深色 select 样式（原生下拉面板靠 color-scheme:dark 呈深色） */
+select { background-color: var(--surface-raised); color: var(--text); }
+select option { background-color: #161b22; color: #e6edf3; }
+select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 
@@ -171,7 +176,11 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .nav-item:hover { background: var(--surface-raised); color: var(--text); }
 .nav-item.is-active { background: var(--surface-hover); color: var(--text); font-weight: 600; }
 .nav-item.is-active svg { color: var(--accent); }
-.nav-count { margin-left: auto; color: var(--text-subtle); font-size: .67rem; font-variant-numeric: tabular-nums; }
+.nav-count { margin-left: auto; padding-left: .6rem; color: var(--text-subtle); font-size: .67rem; font-variant-numeric: tabular-nums; }
+.nav-count::after { content: ""; display: inline-block; width: .35rem; }
+.nav-item.is-collapsed-group svg { color: var(--text-subtle); }
+.nav-sublist { padding-left: 1.1rem !important; }
+.nav-subitem { min-height: 1.9rem; font-size: .76rem; }
 .sidebar-section { margin-top: 1.35rem; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; min-height: 1.75rem; padding: 0 .4rem; }
 .section-heading h2 { margin: 0; color: var(--text-subtle); font-size: .67rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
@@ -467,6 +476,23 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 
 /* 弹窗步骤标注 */
 .step-badge { display: inline-flex; align-items: center; justify-content: center; width: 1.15rem; height: 1.15rem; margin-right: .35rem; border-radius: 999px; background: var(--accent-muted); color: var(--accent); font-size: .66rem; font-weight: 700; }
+/* 可搜索文件夹选择器 */
+.folder-picker { position: relative; }
+.folder-picker-trigger { display: inline-flex; align-items: center; gap: .35rem; max-width: 11rem; height: 2rem; padding: 0 .55rem; border: 1px solid var(--border); border-radius: .4rem; background: var(--surface-raised); color: var(--text-muted); font-size: .7rem; }
+.folder-picker-trigger:hover { color: var(--text); border-color: #484f58; }
+.folder-picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-picker-popover { position: absolute; top: calc(100% + .3rem); right: 0; z-index: 40; width: 16rem; border: 1px solid #3d444d; border-radius: .5rem; background: #1b2129; box-shadow: 0 14px 38px rgba(0, 0, 0, .5); overflow: hidden; }
+.folder-picker-search { display: flex; align-items: center; gap: .4rem; padding: .5rem .6rem; border-bottom: 1px solid var(--border-muted); color: var(--text-subtle); }
+.folder-picker-search input { flex: 1; border: 0; background: transparent; color: var(--text); font-size: .75rem; outline: none; }
+.folder-picker-popover ul { list-style: none; margin: 0; padding: .3rem; max-height: 16rem; overflow-y: auto; }
+.folder-picker-popover li { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .42rem .55rem; border-radius: .35rem; color: var(--text-muted); font-size: .74rem; cursor: pointer; }
+.folder-picker-popover li.is-active { background: var(--surface-hover); color: var(--text); }
+.folder-picker-popover li[aria-selected="true"] { color: var(--accent); }
+.folder-picker-option-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-picker-empty { justify-content: center; color: var(--text-subtle); cursor: default; }
+
+/* 3fix 结束 */
+
 .step-note { margin: .4rem 0 0; color: var(--text-subtle); font-size: .7rem; }
 .step-note code { color: var(--text-muted); }
 

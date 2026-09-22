@@ -69,6 +69,7 @@ router.get('/:slug/install.sh', (req, res) => {
     const baseUrl = getBaseUrl(req);
     const script = `#!/bin/bash
 set -e
+set -o pipefail
 
 SKILL_NAME="${slug}"
 BASE_URL="${baseUrl}"

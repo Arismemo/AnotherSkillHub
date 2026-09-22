@@ -192,6 +192,7 @@ app.get(['/setup.sh', '/cli.sh'], (req, res) => {
   const cliScript = `#!/bin/bash
 # AnotherSkillHub Unified Agent CLI & Setup Script
 set -e
+set -o pipefail
 
 SERVER_URL="${serverUrl}"
 
