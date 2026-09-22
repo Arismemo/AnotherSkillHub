@@ -1,6 +1,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@import './hljs-theme.css';
 
 :root {
   color-scheme: dark;
@@ -290,7 +291,9 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .markdown-document blockquote { padding: .15rem 1rem; border-left: 3px solid #3d444d; color: var(--text-muted); }
 .markdown-document code, .frontmatter pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .markdown-document :not(pre) > code { padding: .12rem .32rem; border: 1px solid var(--border-muted); border-radius: .28rem; background: var(--surface-raised); color: #f0f3f6; font-size: .84em; }
-.markdown-document pre, .file-viewer pre { overflow-x: auto; margin: 1rem 0; padding: 1rem; border: 1px solid var(--border-muted); border-radius: .48rem; background: #090d12; color: #d0d7de; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .77rem; line-height: 1.65; tab-size: 2; }
+.markdown-document pre, .file-viewer pre { position: relative; overflow-x: auto; margin: 1rem 0; padding: 1rem; border: 1px solid var(--border-muted); border-radius: .48rem; background: #090d12; color: #d0d7de; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .77rem; line-height: 1.65; tab-size: 2; }
+.markdown-document pre[data-lang]::before, .file-viewer pre[data-lang]::before { content: attr(data-lang); position: absolute; top: .4rem; right: .6rem; color: var(--text-subtle); font-size: .62rem; font-family: inherit; text-transform: lowercase; pointer-events: none; }
+.file-viewer pre[data-lang] code, .markdown-document pre code { background: transparent; padding: 0; border: 0; }
 .markdown-document table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: .8rem; }
 .markdown-document th, .markdown-document td { padding: .45rem .65rem; border: 1px solid var(--border); }
 .markdown-document th { background: var(--surface-raised); color: var(--text); text-align: left; }

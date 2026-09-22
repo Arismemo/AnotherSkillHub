@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
+import hljs from 'highlight.js/lib/common';
 import {
   Check,
   ChevronDown,
@@ -160,6 +161,57 @@ async function getJson(url) {
   return payload;
 }
 
+// 扩展名 -> highlight.js 语言（覆盖技能包常见脚本/配置类型）
+const EXT_LANGUAGES = {
+  sh: 'bash', bash: 'bash', zsh: 'bash',
+  py: 'python',
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
+  ts: 'typescript', tsx: 'typescript',
+  json: 'json',
+  yaml: 'yaml', yml: 'yaml',
+  md: 'markdown',
+  html: 'xml', xml: 'xml', svg: 'xml',
+  css: 'css', scss: 'scss',
+  sql: 'sql',
+  ini: 'ini', toml: 'ini', env: 'ini',
+  diff: 'diff', patch: 'diff',
+  go: 'go', rs: 'rust', java: 'java', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp',
+};
+
+function languageForPath(path) {
+  const ext = path.split('.').pop()?.toLowerCase() || '';
+  return EXT_LANGUAGES[ext] || null;
+}
+
+function highlightCode(code, language) {
+  if (!code) return '';
+  try {
+    if (language && hljs.getLanguage(language)) {
+      return hljs.highlight(code, { language, ignoreIllegals: true }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  } catch {
+    return code.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+  }
+}
+
+// 代码块高亮 + 语言标签：对 marked 输出的 HTML 做后处理，比覆写 renderer 稳定（marked v18）
+function highlightMarkdownHtml(html) {
+  if (!html) return '';
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  container.querySelectorAll('pre > code').forEach((block) => {
+    const classMatch = block.className.match(/language-([\w-]+)/);
+    const lang = classMatch ? classMatch[1].toLowerCase() : null;
+    block.innerHTML = highlightCode(block.textContent || '', lang);
+    const pre = block.parentElement;
+    if (pre) {
+      pre.setAttribute('data-lang', lang || 'text');
+    }
+  });
+  return container.innerHTML;
+}
+
 export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
   const [mode, setMode] = useState('preview');
   const [content, setContent] = useState(skill.content || '');
@@ -266,13 +318,21 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
   }, [activeMarkdownBody]);
 
   const renderedMarkdown = useMemo(
-    () => marked.parse(documentParts.body || content || ''),
+    () => highlightMarkdownHtml(marked.parse(documentParts.body || content || '')),
     [content, documentParts.body],
   );
 
   const auxRendered = useMemo(
     () => (selectedFile !== 'SKILL.md' && selectedFile.endsWith('.md')
-      ? marked.parse(splitFrontmatter(auxFileContent || '').body || '')
+      ? highlightMarkdownHtml(marked.parse(splitFrontmatter(auxFileContent || '').body || ''))
+      : ''),
+    [auxFileContent, selectedFile],
+  );
+
+  // 文件查看器（非 markdown）的语法高亮 HTML
+  const fileHighlighted = useMemo(
+    () => (selectedFile !== 'SKILL.md' && !selectedFile.endsWith('.md')
+      ? highlightCode(auxFileContent || '', languageForPath(selectedFile))
       : ''),
     [auxFileContent, selectedFile],
   );
@@ -494,7 +554,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
                         <div dangerouslySetInnerHTML={{ __html: auxRendered }} />
                       </div>
                     ) : (
-                      <pre><code>{auxFileContent || '// 文件为空'}</code></pre>
+                      <pre data-lang={languageForPath(selectedFile) || (selectedFile.split('.').pop() || 'text')}><code dangerouslySetInnerHTML={{ __html: fileHighlighted || '// 文件为空' }} /></pre>
                     )}
                   </section>
                 ) : (
