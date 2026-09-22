@@ -278,7 +278,7 @@ elif [ "$1" = "push" ]; then
       exit 1
     fi
     ARCHIVE="\$(mktemp /tmp/ash-push.XXXXXX).tar.gz"
-    tar -czf "\$ARCHIVE" -C "\$TARGET" .
+    COPYFILE_DISABLE=1 tar -czf "\$ARCHIVE" --exclude='.DS_Store' --exclude='._*' -C "\$TARGET" .
     NFILES=\$(tar -tzf "\$ARCHIVE" | grep -vc '/$' | tr -d ' ')
     echo "正在向 AnotherSkillHub 推送目录: \$TARGET (\${NFILES} 个文件, 来源: \${TERMINAL_NAME})..."
     RESP=\$(curl -fsSL -X POST "$SERVER_URL/api/agent/push" -F "file=@\${ARCHIVE};type=application/gzip" -F "terminal=\${TERMINAL_NAME}")

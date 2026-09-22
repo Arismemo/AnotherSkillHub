@@ -191,7 +191,7 @@ function extractSkillArchive(buffer) {
   const files = [];
   (function walk(dir, rel) {
     for (const item of fs.readdirSync(dir)) {
-      if (item === '.git' || item === 'node_modules' || item === '__pycache__' || item === 'skill.tgz' || item.startsWith('ash-push.')) continue;
+      if (item === '.git' || item === 'node_modules' || item === '__pycache__' || item === 'skill.tgz' || item === '.DS_Store' || item.startsWith('._') || item.startsWith('ash-push.')) continue;
       const full = path.join(dir, item);
       const relP = rel ? `${rel}/${item}` : item;
       const stat = fs.statSync(full);
