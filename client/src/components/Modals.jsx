@@ -244,7 +244,7 @@ export function AgentSetupModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   const setupCommand = `curl -fsSL ${window.location.origin}/setup.sh | bash`;
-  const agentPrompt = `已接入 SkillHub（${window.location.origin}）。\n需要技能时运行 skillhub pull <slug>；搜索技能运行 skillhub search <keyword>。`;
+  const agentPrompt = `已接入 AnotherSkillHub（${window.location.origin}）。\n需要技能时运行 ash pull <slug>；搜索技能运行 ash search <keyword>。`;
   const copyText = async (text, type) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -262,12 +262,12 @@ export function AgentSetupModal({ isOpen, onClose }) {
         <section>
           <div><h3><span className="step-badge" aria-hidden="true">1</span>安装命令</h3><button type="button" onClick={() => copyText(setupCommand, 'command')}>{copied === 'command' ? <Check size={14} /> : <Copy size={14} />}{copied === 'command' ? '已复制' : '复制'}</button></div>
           <pre><code>{setupCommand}</code></pre>
-          <p className="step-note">在终端执行，安装 <code>skillhub</code> 命令行工具。</p>
+          <p className="step-note">在终端执行，安装 <code>ash</code> 命令行工具。</p>
         </section>
         <section>
           <div><h3><span className="step-badge" aria-hidden="true">2</span>Agent 引导指令</h3><button type="button" onClick={() => copyText(agentPrompt, 'prompt')}>{copied === 'prompt' ? <Check size={14} /> : <Copy size={14} />}{copied === 'prompt' ? '已复制' : '复制'}</button></div>
           <pre><code>{agentPrompt}</code></pre>
-          <p className="step-note">发给任意 Agent 对话窗，让 Agent 知道如何使用 skillhub。两步都需要完成。</p>
+          <p className="step-note">发给任意 Agent 对话窗，让 Agent 知道如何使用 ash。两步都需要完成。</p>
         </section>
         <footer className="dialog-footer"><button type="button" className="primary-button" onClick={onClose}>完成</button></footer>
       </div>

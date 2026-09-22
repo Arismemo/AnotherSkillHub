@@ -21,7 +21,7 @@ async function requestJson(url, options) {
 function usePersistedState(key, initial) {
   const [value, setValue] = useState(() => {
     try {
-      const saved = window.localStorage.getItem(`skillhub:${key}`);
+      const saved = window.localStorage.getItem(`ash:${key}`);
       return saved === null ? initial : JSON.parse(saved);
     } catch {
       return initial;
@@ -29,7 +29,7 @@ function usePersistedState(key, initial) {
   });
   useEffect(() => {
     try {
-      window.localStorage.setItem(`skillhub:${key}`, JSON.stringify(value));
+      window.localStorage.setItem(`ash:${key}`, JSON.stringify(value));
     } catch { /* 存储不可用则静默降级为内存态 */ }
   }, [key, value]);
   return [value, setValue];
@@ -339,7 +339,7 @@ export default function App() {
               <div className="sidebar-brand">
                 <div className="brand-mark" aria-hidden="true"><Terminal size={16} /></div>
                 <div className="min-w-0">
-                  <h1>SkillHub</h1>
+                  <h1>AnotherSkillHub</h1>
                   <p>Agent 技能库</p>
                 </div>
               </div>

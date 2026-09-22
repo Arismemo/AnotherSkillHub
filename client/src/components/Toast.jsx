@@ -22,9 +22,9 @@ export default function ToastContainer() {
         setToasts((prev) => prev.filter((t) => t.id !== id));
       }, duration));
     };
-    window.addEventListener('skillhub:toast', onShow);
+    window.addEventListener('ash:toast', onShow);
     return () => {
-      window.removeEventListener('skillhub:toast', onShow);
+      window.removeEventListener('ash:toast', onShow);
       timers.forEach((t) => window.clearTimeout(t));
     };
   }, []);

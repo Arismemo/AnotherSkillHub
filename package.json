@@ -1,7 +1,7 @@
 {
-  "name": "skillhub",
+  "name": "another-skillhub",
   "version": "1.0.0",
-  "description": "",
+  "description": "AnotherSkillHub — a self-hosted skill hub for AI agents",
   "main": "index.js",
   "scripts": {
     "start": "node server/index.js",

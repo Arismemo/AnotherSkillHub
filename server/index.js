@@ -190,31 +190,31 @@ app.get(['/setup.sh', '/cli.sh'], (req, res) => {
   const serverUrl = `${proto}://${host}`;
 
   const cliScript = `#!/bin/bash
-# SkillHub Unified Agent CLI & Setup Script
+# AnotherSkillHub Unified Agent CLI & Setup Script
 set -e
 
 SERVER_URL="${serverUrl}"
 
 # 仅当通过 curl|bash 管道执行（$0 为 bash/sh）或显式传 install 参数时才走安装分支；
-# 已安装后的裸调用（skillhub 无参数）直接显示帮助，不再触发重装
+# 已安装后的裸调用（ash 无参数）直接显示帮助，不再触发重装
 if [ "$0" = "bash" ] || [ "$0" = "sh" ] || [ "$1" = "install" ]; then
     echo "========================================================="
-    echo "  🚀 正在为当前系统/Agent 安装 SkillHub 命令行工具..."
+    echo "  🚀 正在为当前系统/Agent 安装 AnotherSkillHub 命令行工具..."
     echo "========================================================="
 
-    TARGET_BIN="/usr/local/bin/skillhub"
+    TARGET_BIN="/usr/local/bin/ash"
     USE_SUDO=""
     if [ ! -w "/usr/local/bin" ]; then
         if command -v sudo >/dev/null 2>&1; then
             USE_SUDO="sudo"
         else
             mkdir -p "\$HOME/.local/bin"
-            TARGET_BIN="\$HOME/.local/bin/skillhub"
+            TARGET_BIN="\$HOME/.local/bin/ash"
         fi
     fi
 
     echo "正在写入全局命令到: \$TARGET_BIN"
-    TMP_FILE=\$(mktemp /tmp/skillhub.XXXXXX)
+    TMP_FILE=\$(mktemp /tmp/ash.XXXXXX)
     curl -fsSL "\$SERVER_URL/cli.sh" -o "\$TMP_FILE"
     chmod +x "\$TMP_FILE"
 
@@ -225,28 +225,28 @@ if [ "$0" = "bash" ] || [ "$0" = "sh" ] || [ "$1" = "install" ]; then
     fi
 
     echo "========================================================="
-    echo "✅ SkillHub 安装就绪！终端与 Agent 已可全局调度。"
+    echo "✅ AnotherSkillHub 安装就绪！终端与 Agent 已可全局调度。"
     echo "========================================================="
     echo "常用指令:"
-    echo "  skillhub pull <slug>       # 一键拉取并安装技能包"
-    echo "  skillhub push <dir/file>   # 将本地技能推送到云端收件箱"
-    echo "  skillhub list              # 列出云端全部技能"
-    echo "  skillhub search <kw>       # 终端搜索技能"
-    echo "  skillhub open              # 在浏览器中打开管理后台"
+    echo "  ash pull <slug>       # 一键拉取并安装技能包"
+    echo "  ash push <dir/file>   # 将本地技能推送到云端收件箱"
+    echo "  ash list              # 列出云端全部技能"
+    echo "  ash search <kw>       # 终端搜索技能"
+    echo "  ash open              # 在浏览器中打开管理后台"
     echo "========================================================="
     exit 0
 fi
 
 show_help() {
-  echo "SkillHub CLI 客户端"
+  echo "AnotherSkillHub CLI 客户端"
   echo "服务地址: $SERVER_URL"
   echo ""
   echo "使用方法:"
-  echo "  skillhub pull <slug>       下载并安装指定技能"
-  echo "  skillhub push <file/dir>   推送本地技能到 SkillHub 收件箱"
-  echo "  skillhub list              查看云端全部技能"
-  echo "  skillhub search <keyword>  快速搜索技能"
-  echo "  skillhub open              在浏览器中打开 SkillHub"
+  echo "  ash pull <slug>       下载并安装指定技能"
+  echo "  ash push <file/dir>   推送本地技能到 AnotherSkillHub 收件箱"
+  echo "  ash list              查看云端全部技能"
+  echo "  ash search <keyword>  快速搜索技能"
+  echo "  ash open              在浏览器中打开 AnotherSkillHub"
 }
 
 if [ "$1" = "pull" ]; then
@@ -279,12 +279,12 @@ elif [ "$1" = "push" ]; then
     exit 1
   fi
   TERMINAL_NAME="$(hostname 2>/dev/null || echo 'Unknown-Host')"
-  echo "正在向 SkillHub 推送: $FILE (来源: $TERMINAL_NAME)..."
+  echo "正在向 AnotherSkillHub 推送: $FILE (来源: $TERMINAL_NAME)..."
   curl -fsSL -X POST "$SERVER_URL/api/agent/push" \
     -F "file=@$FILE" \
     -F "terminal=$TERMINAL_NAME"
   echo ""
-  echo "✅ 技能已推送并存入 SkillHub 收件箱 (Inbox)！"
+  echo "✅ 技能已推送并存入 AnotherSkillHub 收件箱 (Inbox)！"
 elif [ "$1" = "open" ]; then
   if command -v open >/dev/null 2>&1; then
     open "$SERVER_URL"
@@ -314,10 +314,10 @@ if (fs.existsSync(clientDist)) {
   });
 } else {
   app.get('/', (req, res) => {
-    res.send('<h1>SkillHub API Server is running</h1><p>Client UI is building...</p>');
+    res.send('<h1>AnotherSkillHub API Server is running</h1><p>Client UI is building...</p>');
   });
 }
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 SkillHub Server listening on http://0.0.0.0:${PORT}`);
+  console.log(`🚀 AnotherSkillHub Server listening on http://0.0.0.0:${PORT}`);
 });

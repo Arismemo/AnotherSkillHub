@@ -7,7 +7,7 @@ if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
-const dbPath = path.join(dbDir, 'skillhub.db');
+const dbPath = path.join(dbDir, 'another-skillhub.db');
 const db = new Database(dbPath);
 
 // 开启 WAL 模式提升并发性能

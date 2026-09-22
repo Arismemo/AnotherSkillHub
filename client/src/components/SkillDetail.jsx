@@ -241,10 +241,10 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
   const [openDirs, setOpenDirs] = useState(() => new Set());
   // D1: 面板宽度/大纲显隐持久化
   const [fileSidebarWidth, setFileSidebarWidth] = useState(() => {
-    const saved = Number(window.localStorage.getItem('skillhub:file-sidebar-width'));
+    const saved = Number(window.localStorage.getItem('ash:file-sidebar-width'));
     return saved >= 160 && saved <= 480 ? saved : 240;
   });
-  const [outlineHidden, setOutlineHidden] = useState(() => window.localStorage.getItem('skillhub:outline-hidden') === '1');
+  const [outlineHidden, setOutlineHidden] = useState(() => window.localStorage.getItem('ash:outline-hidden') === '1');
   // A2: 文件树过滤
   const [fileFilter, setFileFilter] = useState('');
   // B1: 大纲当前高亮索引
@@ -253,11 +253,11 @@ export default function SkillDetail({ skill, onSave, onMoveFolder, folders }) {
   const resizingRef = useRef(null);
 
   useEffect(() => {
-    window.localStorage.setItem('skillhub:file-sidebar-width', String(fileSidebarWidth));
+    window.localStorage.setItem('ash:file-sidebar-width', String(fileSidebarWidth));
   }, [fileSidebarWidth]);
 
   useEffect(() => {
-    window.localStorage.setItem('skillhub:outline-hidden', outlineHidden ? '1' : '0');
+    window.localStorage.setItem('ash:outline-hidden', outlineHidden ? '1' : '0');
   }, [outlineHidden]);
 
   // 技能文件栏拖拽调宽

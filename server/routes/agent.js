@@ -74,7 +74,7 @@ SKILL_NAME="${slug}"
 BASE_URL="${baseUrl}"
 
 echo "================================================="
-echo "  📦 SkillHub: 正在安装技能 [\$SKILL_NAME]"
+echo "  📦 AnotherSkillHub: 正在安装技能 [\$SKILL_NAME]"
 echo "================================================="
 
 # 检测本地已有的技能目录
