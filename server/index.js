@@ -179,6 +179,7 @@ initSeedData();
 
 // 挂载 API
 app.use('/api/skills', skillsRoutes);
+app.use('/api/bundles', require('./routes/bundles'));
 app.use('/api/folders', foldersRoutes);
 app.use('/s', agentRoutes);
 app.use('/api/agent', agentRoutes);
@@ -243,19 +244,41 @@ show_help() {
   echo "服务地址: $SERVER_URL"
   echo ""
   echo "使用方法:"
-  echo "  ash pull <slug>       下载并安装指定技能"
+  echo "  ash pull <slug> [--agent hermes|codex|claude] [--dir /path]"
+  echo "                        下载并安装指定技能（可选安装目标）"
+  echo "  ash pull bundle:<name>  一次安装整个技能组合"
   echo "  ash push <file/dir>   推送本地技能到 AnotherSkillHub 收件箱"
   echo "  ash list              查看云端全部技能"
   echo "  ash search <keyword>  快速搜索技能"
   echo "  ash open              在浏览器中打开 AnotherSkillHub"
+  echo "  ash update            更新 ash 自身到最新版"
 }
 
 if [ "$1" = "pull" ]; then
   if [ -z "$2" ]; then
-    echo "错误: 请提供技能代号 (slug)"
+    echo "错误: 请提供技能代号 (slug) 或组合 (bundle:<name>)"
     exit 1
   fi
-  curl -fsSL "$SERVER_URL/s/$2/install.sh" | bash
+  AGENT_FLAG=""; DIR_FLAG=""
+  SLUG="\$2"; shift 2
+  while [ \$# -gt 0 ]; do
+    case "$1" in
+      --agent) AGENT_FLAG="agent=\$2"; shift 2;;
+      --dir) DIR_FLAG="dir=\$2"; shift 2;;
+      *) echo "未知参数: \$1"; exit 1;;
+    esac
+  done
+  Q=""
+  if [ -n "\$AGENT_FLAG" ] && [ -n "\$DIR_FLAG" ]; then Q="?\${AGENT_FLAG}&\${DIR_FLAG}"
+  elif [ -n "\$AGENT_FLAG" ]; then Q="?\${AGENT_FLAG}"
+  elif [ -n "\$DIR_FLAG" ]; then Q="?\${DIR_FLAG}"; fi
+  if [ "\${SLUG#bundle:}" != "\$SLUG" ]; then
+    BUNDLE_NAME="\${SLUG#bundle:}"
+    echo "📦 拉取技能组合: \$BUNDLE_NAME"
+    curl -fsSL "\$SERVER_URL/s/bundle/\$BUNDLE_NAME/install.sh\$Q" | bash
+  else
+    curl -fsSL "\$SERVER_URL/s/\$SLUG/install.sh\$Q" | bash
+  fi
 elif [ "$1" = "list" ]; then
   echo "正在获取云端技能列表..."
   curl -fsSL "$SERVER_URL/api/skills"
@@ -300,6 +323,18 @@ elif [ "$1" = "push" ]; then
     echo ""
     echo "✅ 技能已推送并存入 AnotherSkillHub 收件箱 (Inbox)！"
   fi
+elif [ "$1" = "update" ]; then
+  echo "正在更新 ash CLI..."
+  TMP_FILE=\$(mktemp /tmp/ash.XXXXXX)
+  curl -fsSL "\$SERVER_URL/cli.sh" -o "\$TMP_FILE"
+  chmod +x "\$TMP_FILE"
+  TARGET_BIN="\$(command -v ash || echo /usr/local/bin/ash)"
+  if [ -w "\$(dirname "\$TARGET_BIN")" ]; then
+    mv "\$TMP_FILE" "\$TARGET_BIN"
+  else
+    sudo mv "\$TMP_FILE" "\$TARGET_BIN" 2>/dev/null || { mkdir -p "$HOME/.local/bin"; mv "$TMP_FILE" "$HOME/.local/bin/ash"; echo "已更新到 ~/.local/bin/ash（请确保 PATH 包含该目录）"; }
+  fi
+  echo "✅ ash 已更新到最新版本"
 elif [ "$1" = "open" ]; then
   if command -v open >/dev/null 2>&1; then
     open "$SERVER_URL"

@@ -219,10 +219,19 @@ router.get('/:id/versions', (req, res) => {
   const skill = db.prepare('SELECT id FROM skills WHERE id = ?').get(id);
   if (!skill) return res.status(404).json({ error: 'Skill not found' });
   const rows = db.prepare(`
-    SELECT id, name, description, source, created_at, LENGTH(content) AS content_size
+    SELECT id, name, description, source, created_at, label, LENGTH(content) AS content_size
     FROM skill_versions WHERE skill_id = ? ORDER BY created_at DESC, id DESC
   `).all(id);
   res.json(rows);
+});
+
+// 给历史版本打标签（如 v2.1 稳定版）
+router.put('/:id/versions/:versionId/label', (req, res) => {
+  const { label } = req.body;
+  if (typeof label !== 'string') return res.status(400).json({ error: 'label must be string' });
+  const r = db.prepare('UPDATE skill_versions SET label = ? WHERE id = ? AND skill_id = ?').run(label || null, req.params.versionId, Number(req.params.id));
+  if (!r.changes) return res.status(404).json({ error: 'Version not found' });
+  res.json({ success: true });
 });
 
 // 恢复历史版本：快照当前版本后，将历史版本内容置为最新

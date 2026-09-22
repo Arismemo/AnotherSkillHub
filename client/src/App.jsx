@@ -7,6 +7,7 @@ import CommandPalette from './components/CommandPalette';
 import ToastContainer from './components/Toast';
 import { showToast } from './components/toastBus';
 import { AgentSetupModal, NewSkillModal, PasteSkillModal } from './components/Modals';
+import { BundleDetail, NewBundleModal } from './components/Bundles';
 
 async function requestJson(url, options) {
   const response = await fetch(url, options);
@@ -56,18 +57,23 @@ export default function App() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [showSetupModal, setShowSetupModal] = useState(false);
+  const [bundles, setBundles] = useState([]);
+  const [activeBundle, setActiveBundle] = useState(null);
+  const [showBundleModal, setShowBundleModal] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
 
   const fetchFoldersAndStats = useCallback(async () => {
     try {
-      const [folderData, statData, tagData] = await Promise.all([
+      const [folderData, statData, tagData, bundleData] = await Promise.all([
         requestJson('/api/folders'),
         requestJson('/api/skills/stats'),
         requestJson('/api/skills/tags'),
+        requestJson('/api/bundles').catch(() => []),
       ]);
       setFolders(folderData);
       setStats(statData);
       setTags(tagData);
+      setBundles(Array.isArray(bundleData) ? bundleData : []);
     } catch (error) {
       setAppError(error.message);
     }
@@ -386,6 +392,9 @@ export default function App() {
             onPasteImport={() => setShowPasteModal(true)}
             onOpenSetup={() => setShowSetupModal(true)}
             recentSkills={recentSkills}
+            bundles={bundles}
+            onSelectBundle={setActiveBundle}
+            onNewBundle={() => setShowBundleModal(true)}
             onDropOnFolder={handleDropOnFolder}
           />
         )}
@@ -470,6 +479,17 @@ export default function App() {
         folders={folders}
         onClose={() => setShowPasteModal(false)}
         onImport={handleCreateSkill}
+      />
+      <BundleDetail
+        bundle={activeBundle}
+        onClose={() => setActiveBundle(null)}
+        onChanged={fetchFoldersAndStats}
+        showToast={showToast}
+      />
+      <NewBundleModal
+        isOpen={showBundleModal}
+        onClose={() => setShowBundleModal(false)}
+        onCreated={(b) => { setShowBundleModal(false); setActiveBundle(b); fetchFoldersAndStats(); }}
       />
       <AgentSetupModal
         isOpen={showSetupModal}

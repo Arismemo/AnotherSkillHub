@@ -97,6 +97,56 @@ version: 1.0.0
 | `DATA_DIR` | `./server/data` | SQLite location |
 | `STORAGE_DIR` | `./server/data/skills_files` | Skill files on disk |
 
+## CLI & API examples
+
+`ash` (CLI):
+
+```bash
+ash pull ego-browser                       # 安装技能（自动探测 hermes/codex/claude/dsh 目录）
+ash pull ego-browser --agent claude        # 指定安装到 ~/.claude/skills
+ash pull ego-browser --dir ~/my-skills     # 自定义安装目录
+ash pull bundle:感知工具箱                 # 一次安装整个技能组合
+ash push ./my-skill/                       # 推送整个技能目录（含 references/scripts）
+ash push ./SKILL.md                        # 推送单文件
+ash update                                 # 自更新 CLI
+```
+
+curl (REST):
+
+```bash
+# 搜索
+curl -s 'https://your-host/api/skills?search=browser'
+# 拉取 markdown
+curl -s https://your-host/s/ego-browser.md
+# 推送归档（含附属文件）
+tar -czf pkg.tgz -C ./my-skill . && curl -X POST https://your-host/api/agent/push -F "file=@pkg.tgz"
+# 历史版本
+curl -s https://your-host/api/skills/1/versions
+curl -X POST https://your-host/api/skills/1/versions/3/restore
+```
+
+Python:
+
+```python
+import requests, tarfile, io
+BASE = "https://your-host"
+requests.post(f"{BASE}/api/agent/push",
+    files={"file": ("my-skill.tar.gz", open("pkg.tgz","rb"), "application/gzip")},
+    data={"terminal": "my-machine"})
+skills = requests.get(f"{BASE}/api/skills?folder=all").json()
+```
+
+Bundles (skill combos):
+
+```bash
+curl -X POST https://your-host/api/bundles -H 'Content-Type: application/json' -d '{"name":"感知工具箱"}'
+curl -X POST https://your-host/api/bundles/1/skills -H 'Content-Type: application/json' -d '{"skill_id":4}'
+# Agent 一键安装整个组合：
+curl -fsSL https://your-host/s/bundle/<bundle-slug>/install.sh | bash
+```
+
+Upload whitelist & limits: 扩展名白名单默认为文本类（.md/.json/.py/.sh/.yaml…），可用环境变量 `ASH_ALLOWED_EXTS=.md,.json,…) 覆盖；附属文件单文件 ≤512KB、总量 ≤4MB、数量 ≤200；超限与非白名单文件会被跳过并在响应 `warning` 中提示。推送内容会做轻量安全扫描（curl|sh、反弹 shell、硬编码密钥等模式），命中仅提示不阻塞。
+
 ## Security notes
 
 This project ships **without authentication** by default — it is designed for personal or trusted-team use behind a reverse proxy / VPN. Put it behind your own auth layer (nginx basic auth, Cloudflare Access, Tailscale) before exposing it publicly.

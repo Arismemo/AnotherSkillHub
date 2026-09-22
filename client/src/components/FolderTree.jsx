@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  Package,
   Folder,
   FolderPlus,
   Inbox,
@@ -31,6 +32,10 @@ function findNode(nodes, path) {
 }
 
 export default function FolderTree({
+  bundles = [],
+  onSelectBundle,
+  onNewBundle,
+
   currentFolder,
   onSelectFolder,
   currentTag,
@@ -269,6 +274,30 @@ export default function FolderTree({
             </button>
           </div>
           {tree.length ? <ul className="folder-tree">{tree.map((node) => renderTreeNode(node))}</ul> : <p className="sidebar-empty">暂无文件夹</p>}
+        </section>
+
+        <section className="sidebar-section" aria-labelledby="bundles-heading">
+          <div className="section-heading">
+            <h2 id="bundles-heading">技能组合</h2>
+            <button type="button" className="icon-button" onClick={onNewBundle} aria-label="新建技能组合" title="新建技能组合">
+              <FolderPlus size={15} />
+            </button>
+          </div>
+          {bundles.length ? (
+            <ul className="nav-list">
+              {bundles.map((b) => (
+                <li key={b.id}>
+                  <button type="button" className="nav-item nav-bundle" onClick={() => onSelectBundle(b)} title={b.name}>
+                    <Package size={16} aria-hidden="true" />
+                    <span className="truncate">{b.name}</span>
+                    <span className="nav-count">{b.count}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="sidebar-empty">暂无组合——组合是技能的快捷方式集合，可一次安装全部</p>
+          )}
         </section>
 
         {tags.length > 0 && (

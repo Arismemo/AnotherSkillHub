@@ -302,15 +302,34 @@ export function VersionHistoryModal({ isOpen, onClose, skillId, onRestored }) {
               <span className="version-source">{sourceLabel[v.source] || v.source}</span>
               <time>{new Date(v.created_at + 'Z').toLocaleString('zh-CN', { hour12: false })}</time>
               <span className="version-size">{Math.round((v.content_size || 0) / 1024)} KB</span>
+              {v.label && <span className="version-label-tag">🏷 {v.label}</span>}
             </div>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={restoring === v.id}
-              onClick={() => restore(v.id)}
-            >
-              {restoring === v.id ? '恢复中…' : '恢复此版本'}
-            </button>
+            <div className="version-row-actions">
+              <input
+                className="version-label-input"
+                defaultValue={v.label || ''}
+                placeholder="版本标签…"
+                aria-label={`版本 ${v.id} 标签`}
+                onKeyDown={async (e) => {
+                  if (e.key !== 'Enter') return;
+                  await fetch(`/api/skills/${skillId}/versions/${v.id}/label`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ label: e.target.value.trim() }),
+                  });
+                  const data = await fetch(`/api/skills/${skillId}/versions`).then((r) => r.json());
+                  setVersions(Array.isArray(data) ? data : []);
+                }}
+              />
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={restoring === v.id}
+                onClick={() => restore(v.id)}
+              >
+                {restoring === v.id ? '恢复中…' : '恢复此版本'}
+              </button>
+            </div>
           </div>
         ))}
       </div>

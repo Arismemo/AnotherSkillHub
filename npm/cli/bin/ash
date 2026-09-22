@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# ash — AnotherSkillHub CLI (npm 包装版)
+# 核心逻辑始终来自服务端 /cli.sh，保证行为与部署实例一致；
+# 本包装只负责安装/更新时拉取最新脚本。
+set -e
+SERVER_URL="${ASH_SERVER_URL:-https://ash.709970.xyz}"
+if [ ! -f "$HOME/.ash/cli.sh" ] || [ "${1:-}" = "update" ] || [ "${ASH_ALWAYS_FETCH:-}" = "1" ]; then
+  mkdir -p "$HOME/.ash"
+  curl -fsSL "$SERVER_URL/cli.sh" -o "$HOME/.ash/cli.sh"
+  chmod +x "$HOME/.ash/cli.sh"
+fi
+if [ "${1:-}" = "update" ]; then
+  echo "✅ ash 已更新到最新版本（来源: $SERVER_URL/cli.sh）"
+  exit 0
+fi
+exec bash "$HOME/.ash/cli.sh" "$@"

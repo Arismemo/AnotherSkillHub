@@ -493,6 +493,23 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .folder-picker.iconOnly .folder-picker-trigger:hover { background: var(--surface-hover); color: var(--text); border-color: transparent; }
 .folder-picker-icon { display: inline-flex; align-items: center; }
 
+/* 技能组合 */
+.nav-bundle { color: var(--text-muted); }
+.bundle-detail { display: flex; flex-direction: column; gap: .9rem; }
+.bundle-command { display: flex; align-items: center; gap: .6rem; }
+.bundle-command code { flex: 1; min-width: 0; overflow: hidden; padding: .5rem .7rem; border: 1px solid var(--border-muted); border-radius: .46rem; background: #090d12; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.bundle-items { display: flex; flex-direction: column; gap: .35rem; max-height: 15rem; overflow-y: auto; }
+.bundle-items li { display: flex; align-items: center; gap: .55rem; padding: .5rem .65rem; border: 1px solid var(--border-muted); border-radius: .46rem; font-size: .78rem; }
+.bundle-item-name { color: var(--text); font-weight: 600; }
+.bundle-item-slug { color: var(--text-subtle); font-size: .68rem; }
+.bundle-items li .icon-button { margin-left: auto; }
+.bundle-empty { color: var(--text-subtle); font-size: .74rem; padding: .4rem 0; }
+.bundle-actions { display: flex; gap: .6rem; }
+.bundle-add-list { display: flex; flex-direction: column; gap: .3rem; max-height: 12rem; overflow-y: auto; width: 100%; }
+.bundle-add-list button { display: flex; align-items: center; gap: .45rem; padding: .4rem .55rem; border: 1px solid var(--border-muted); border-radius: .4rem; background: var(--surface); color: var(--text); font-size: .75rem; cursor: pointer; text-align: left; }
+.bundle-add-list button:hover { background: var(--surface-hover); }
+.bundle-new { display: flex; flex-direction: column; gap: .7rem; }
+
 /* 历史版本列表 */
 .version-list { display: flex; flex-direction: column; gap: .4rem; max-height: 22rem; overflow-y: auto; }
 .version-row { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .55rem .7rem; border: 1px solid var(--border-muted); border-radius: .46rem; }
@@ -500,6 +517,9 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .version-meta { display: flex; align-items: center; gap: .7rem; min-width: 0; font-size: .74rem; color: var(--text-subtle); }
 .version-source { padding: .1rem .45rem; border-radius: .3rem; background: var(--surface-active, #1b2129); color: var(--text-muted); font-size: .66rem; }
 .version-size { font-variant-numeric: tabular-nums; }
+.version-row-actions { display: flex; align-items: center; gap: .45rem; }
+.version-label-input { width: 8.5rem; height: 1.7rem; padding: 0 .5rem; border: 1px solid var(--border-muted); border-radius: .4rem; background: var(--surface); color: var(--text); font-size: .7rem; }
+.version-label-tag { padding: .08rem .4rem; border-radius: .3rem; background: #2d2a18; color: #d29922; font-size: .64rem; }
 .version-empty, .version-error { color: var(--text-subtle); font-size: .78rem; text-align: center; padding: 1.2rem 0; }
 .version-error { color: #f87171; }
 

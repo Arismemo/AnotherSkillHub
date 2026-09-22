@@ -53,6 +53,25 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_skill_versions_skill ON skill_versions(skill_id, created_at DESC);
 
+  CREATE TABLE IF NOT EXISTS bundles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS bundle_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    bundle_id INTEGER NOT NULL,
+    skill_id INTEGER NOT NULL,
+    added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(bundle_id, skill_id),
+    FOREIGN KEY (bundle_id) REFERENCES bundles(id) ON DELETE CASCADE,
+    FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+  );
+
+
 
   CREATE INDEX IF NOT EXISTS idx_skills_folder ON skills(folder_path);
   CREATE INDEX IF NOT EXISTS idx_skills_deleted ON skills(is_deleted);
@@ -64,5 +83,11 @@ const ensureFolder = db.prepare(`
   INSERT OR IGNORE INTO folders (path, name, parent_path) VALUES (?, ?, ?)
 `);
 ensureFolder.run('inbox', '收件箱 (Inbox)', '');
+
+// 轻量迁移：老库补列
+try {
+  const cols = db.prepare('PRAGMA table_info(skill_versions)').all().map((c) => c.name);
+  if (!cols.includes('label')) db.exec('ALTER TABLE skill_versions ADD COLUMN label TEXT DEFAULT NULL');
+} catch (e) { console.error('migration:', e.message); }
 
 module.exports = db;
