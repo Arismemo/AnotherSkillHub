@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  skillhub:
+    build: .
+    container_name: skillhub
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9444:9444"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PORT=9444
+      - NODE_ENV=production
