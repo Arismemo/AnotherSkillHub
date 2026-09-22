@@ -121,6 +121,28 @@ version: 2.0.0
 `
     },
     {
+      slug: 'ego-browser',
+      name: 'ego-browser 浏览器自动化与评测',
+      description: '基于 Chromium 的 Agent 自动化浏览器，支持页面截图、DOM Snapshot、交互操作与全流程 Web QA',
+      folder_path: 'inbox',
+      tags: JSON.stringify(['browser', 'automation', 'qa', 'testing']),
+      terminal_source: 'Mac-Hermes',
+      is_starred: 1,
+      version: '2.0.0',
+      content: `# ego-browser\n\n支持通过 Chromium 进行自动化浏览、点击、输入、截图与状态验证。`
+    },
+    {
+      slug: 'systematic-debugging',
+      name: 'Systematic Debugging 4步根因排查法',
+      description: '4-phase root cause debugging: understand bugs before fixing.',
+      folder_path: 'inbox',
+      tags: JSON.stringify(['debug', 'root-cause', 'engineering']),
+      terminal_source: 'Mac-Hermes',
+      is_starred: 1,
+      version: '1.0.0',
+      content: `# Systematic Debugging\n\n4-phase root cause debugging: understand bugs before fixing.`
+    },
+    {
       slug: 'inceptio-work-ops',
       name: 'Inceptio 飞书任务与工作流流转',
       description: '飞书任务状态同步、Meegle 看板跟踪与跨终端交接规范',
