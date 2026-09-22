@@ -255,6 +255,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
   const [outlineFits, setOutlineFits] = useState(true);
   // 文件栏在滚动区 <640px 时自动收成细条（点击恢复），正文优先
   const [fileBarCollapsed, setFileBarCollapsed] = useState(false);
+  const fileBarManualRef = useRef(false); // 用户手动展开过则不再自动收起
   // A2: 文件树过滤
   const [fileFilter, setFileFilter] = useState('');
   // B1: 大纲当前高亮索引
@@ -268,7 +269,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
     const observer = new ResizeObserver(() => {
       const w = el.getBoundingClientRect().width;
       setOutlineFits(w >= 1180);
-      if (w < 760) setFileBarCollapsed(true);
+      if (w < 760 && !fileBarManualRef.current) setFileBarCollapsed(true);
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -585,7 +586,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
           <button
             type="button"
             className="file-sidebar-rail"
-            onClick={() => setFileBarCollapsed(false)}
+            onClick={() => { fileBarManualRef.current = true; setFileBarCollapsed(false); }}
             aria-label={`展开技能文件（${fileTree.length} 个）`}
             title="展开技能文件"
           >
@@ -598,7 +599,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
             <div className="attachment-heading">
               <h3 id="attachments-heading">技能文件</h3>
               <span>{fileTree.length} 个</span>
-              <button type="button" className="icon-button" onClick={() => setFileBarCollapsed(true)} aria-label="收起技能文件" title="收起技能文件">
+              <button type="button" className="icon-button" onClick={() => { fileBarManualRef.current = false; setFileBarCollapsed(true); }} aria-label="收起技能文件" title="收起技能文件">
                 <PanelLeftClose size={13} />
               </button>
             </div>
