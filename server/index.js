@@ -267,25 +267,36 @@ elif [ "$1" = "search" ]; then
   curl -fsSL "$SERVER_URL/api/skills?search=$2"
 elif [ "$1" = "push" ]; then
   TARGET="$2"
-  if [ -z "$TARGET" ]; then
+  if [ -z "\$TARGET" ]; then
     TARGET="./SKILL.md"
   fi
-  if [ -d "$TARGET" ]; then
-    FILE="$TARGET/SKILL.md"
+  TERMINAL_NAME="\$(hostname 2>/dev/null || echo 'Unknown-Host')"
+  if [ -d "\$TARGET" ]; then
+    # 目录模式：整目录打包上传（含 SKILL.md + references/ + scripts/ 等附属资源）
+    if [ ! -f "\$TARGET/SKILL.md" ]; then
+      echo "错误: 目录中缺少 SKILL.md：\$TARGET"
+      exit 1
+    fi
+    ARCHIVE="\$(mktemp /tmp/ash-push.XXXXXX).tar.gz"
+    tar -czf "\$ARCHIVE" -C "\$TARGET" .
+    NFILES=\$(tar -tzf "\$ARCHIVE" | grep -vc '/$' | tr -d ' ')
+    echo "正在向 AnotherSkillHub 推送目录: \$TARGET (\${NFILES} 个文件, 来源: \${TERMINAL_NAME})..."
+    RESP=\$(curl -fsSL -X POST "$SERVER_URL/api/agent/push" -F "file=@\${ARCHIVE};type=application/gzip" -F "terminal=\${TERMINAL_NAME}")
+    rm -f "\$ARCHIVE"
+    echo "\$RESP"
+    echo ""
+    echo "✅ 完整技能包（含附属文件）已推送并存入 AnotherSkillHub 收件箱 (Inbox)！"
   else
-    FILE="$TARGET"
+    FILE="\$TARGET"
+    if [ ! -f "\$FILE" ]; then
+      echo "错误: 找不到技能文件 \$FILE"
+      exit 1
+    fi
+    echo "正在向 AnotherSkillHub 推送: \$FILE (来源: \${TERMINAL_NAME})..."
+    curl -fsSL -X POST "$SERVER_URL/api/agent/push" -F "file=@\${FILE}" -F "terminal=\${TERMINAL_NAME}"
+    echo ""
+    echo "✅ 技能已推送并存入 AnotherSkillHub 收件箱 (Inbox)！"
   fi
-  if [ ! -f "$FILE" ]; then
-    echo "错误: 找不到技能文件 $FILE"
-    exit 1
-  fi
-  TERMINAL_NAME="$(hostname 2>/dev/null || echo 'Unknown-Host')"
-  echo "正在向 AnotherSkillHub 推送: $FILE (来源: $TERMINAL_NAME)..."
-  curl -fsSL -X POST "$SERVER_URL/api/agent/push" \
-    -F "file=@$FILE" \
-    -F "terminal=$TERMINAL_NAME"
-  echo ""
-  echo "✅ 技能已推送并存入 AnotherSkillHub 收件箱 (Inbox)！"
 elif [ "$1" = "open" ]; then
   if command -v open >/dev/null 2>&1; then
     open "$SERVER_URL"

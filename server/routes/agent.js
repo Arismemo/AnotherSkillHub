@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
 const multer = require('multer');
 const db = require('../db');
 const { parseSkillContent, saveSkillToDisk, createSkillArchive, createSkillTarGzArchive } = require('../storage');
 
-const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ limits: { fileSize: 20 * 1024 * 1024 } });
 
 // 获取服务基础主机 URL
 function getBaseUrl(req) {
@@ -158,7 +161,53 @@ router.get('/:slug/download', (req, res) => {
   }
 });
 
-// Agent 一键 Push 上传端点 (支持 JSON 或 FormData 上传)
+// 解包技能归档（tar.gz/tgz）：返回 { content, files }——SKILL.md 为正文，其余为附属文件
+function extractSkillArchive(buffer) {
+  const os = require('os');
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ash-archive-'));
+  const tmpTar = path.join(tmpDir, 'skill.tgz');
+  fs.writeFileSync(tmpTar, buffer);
+  execSync(`tar -xzf ${shellQuote(tmpTar)} -C ${shellQuote(tmpDir)}`, { stdio: 'pipe' });
+  // 若解包后只有一个根目录（skill-name/），下钻一层
+  let root = tmpDir;
+  const entries = fs.readdirSync(tmpDir).filter((e) => e !== 'skill.tgz' && !e.startsWith('ash-push.'));
+  if (entries.length === 1) {
+    const only = path.join(tmpDir, entries[0]);
+    if (fs.statSync(only).isDirectory()) root = only;
+  }
+  // 找 SKILL.md（根目录或一层子目录）
+  let skillMdPath = null;
+  const rootFiles = fs.readdirSync(root);
+  if (rootFiles.includes('SKILL.md')) skillMdPath = path.join(root, 'SKILL.md');
+  else {
+    for (const e of rootFiles) {
+      const sub = path.join(root, e);
+      if (fs.statSync(sub).isDirectory() && fs.existsSync(path.join(sub, 'SKILL.md'))) { skillMdPath = path.join(sub, 'SKILL.md'); root = sub; break; }
+    }
+  }
+  if (!skillMdPath) { fs.rmSync(tmpDir, { recursive: true, force: true }); return null; }
+  const content = fs.readFileSync(skillMdPath, 'utf8');
+  // 收集其余文本文件（跳过二进制 >512KB 与敏感/无关目录）
+  const files = [];
+  (function walk(dir, rel) {
+    for (const item of fs.readdirSync(dir)) {
+      if (item === '.git' || item === 'node_modules' || item === '__pycache__' || item === 'skill.tgz' || item.startsWith('ash-push.')) continue;
+      const full = path.join(dir, item);
+      const relP = rel ? `${rel}/${item}` : item;
+      const stat = fs.statSync(full);
+      if (stat.isDirectory()) walk(full, relP);
+      else if (item !== 'SKILL.md' && stat.size <= 512 * 1024) {
+        files.push({ path: relP, content: fs.readFileSync(full, 'utf8') });
+      }
+    }
+  })(root, '');
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+  return { content, files };
+}
+
+function shellQuote(p) { return `'${String(p).replace(/'/g, `'\\''`)}'`; }
+
+// Agent 一键 Push 上传端点 (支持 JSON、单文件 FormData、归档 tar.gz 上传)
 router.post('/push', upload.single('file'), (req, res) => {
   try {
     let content = '';
@@ -169,7 +218,19 @@ router.post('/push', upload.single('file'), (req, res) => {
     let folderPath = req.body.folder || req.body.folder_path || 'inbox'; // 默认进入 inbox
 
     let fileFallbackName = '';
-    if (req.file) {
+    let archiveFiles = [];
+    if (req.file && /\.(tar\.gz|tgz|zip)$/i.test(req.file.originalname)) {
+      // 归档上传：解包出 SKILL.md + 附属文件
+      const extracted = extractSkillArchive(req.file.buffer);
+      if (!extracted) {
+        return res.status(400).json({ error: 'Archive must contain a SKILL.md at root (or one level deep)' });
+      }
+      content = extracted.content;
+      archiveFiles = extracted.files;
+      if (!folderPath || folderPath === 'inbox') {
+        // 归档里若有目录名暗示分类，仅作展示参考；仍默认 inbox
+      }
+    } else if (req.file) {
       content = req.file.buffer.toString('utf8');
       // 文件名（如 SKILL.md）只做兜底，且 SKILL/README 这类通用名不用
       const base = req.file.originalname.replace(/\.md$/i, '').trim();
@@ -210,33 +271,35 @@ router.post('/push', upload.single('file'), (req, res) => {
       } catch (e) { console.error('agent snapshot failed:', e.message); }
       db.prepare(`
         UPDATE skills 
-        SET name = ?, description = ?, content = ?, terminal_source = ?, updated_at = CURRENT_TIMESTAMP
+        SET name = ?, description = ?, content = ?, files = ?, terminal_source = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(name, description || '', content, terminalSource, existing.id);
+      `).run(name, description || '', content, JSON.stringify(archiveFiles), terminalSource, existing.id);
 
-      saveSkillToDisk(existing.folder_path, slug, content, []);
+      saveSkillToDisk(existing.folder_path, slug, content, archiveFiles);
       return res.json({
         success: true,
         action: 'updated',
         slug,
         folder_path: existing.folder_path,
+        files: archiveFiles.length,
         url: `${getBaseUrl(req)}/s/${slug}`
       });
     }
 
     const stmt = db.prepare(`
-      INSERT INTO skills (slug, name, description, folder_path, tags, content, terminal_source)
-      VALUES (?, ?, ?, ?, '[]', ?, ?)
+      INSERT INTO skills (slug, name, description, folder_path, tags, content, files, terminal_source)
+      VALUES (?, ?, ?, ?, '[]', ?, ?, ?)
     `);
-    stmt.run(slug, name, description || '', folderPath, content, terminalSource);
+    stmt.run(slug, name, description || '', folderPath, content, JSON.stringify(archiveFiles), terminalSource);
 
-    saveSkillToDisk(folderPath, slug, content, []);
+    saveSkillToDisk(folderPath, slug, content, archiveFiles);
 
     res.status(201).json({
       success: true,
       action: 'created',
       slug,
       folder_path: folderPath,
+      files: archiveFiles.length,
       url: `${getBaseUrl(req)}/s/${slug}`,
       install_cmd: `curl -fsSL ${getBaseUrl(req)}/s/${slug}/install.sh | bash`
     });

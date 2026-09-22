@@ -211,8 +211,10 @@ export function AgentSetupModal({ isOpen, onClose }) {
 
   if (!isOpen) return null;
 
-  const setupCommand = `curl -fsSL ${window.location.origin}/setup.sh | bash`;
-  const agentPrompt = `已接入 AnotherSkillHub（${window.location.origin}）。\n需要技能时运行 ash pull <slug>；搜索技能运行 ash search <keyword>。`;
+  const origin = window.location.origin;
+  const setupCommand = `curl -fsSL ${origin}/setup.sh | bash`;
+  const pushExamples = `# 推送整个技能目录（推荐，含附属文件）\nash push ~/.hermes/profiles/<profile>/skills/my-skill/\n\n# 推送单个 SKILL.md\nash push ./SKILL.md`;
+  const agentPrompt = `已接入 AnotherSkillHub（${origin}）。\n- 搜索技能：ash search <keyword>\n- 拉取使用：ash pull <slug>\n- 推送本地技能（整个技能目录，含 references/scripts 附属文件）：ash push <技能目录>\n- 推送单个文件：ash push SKILL.md`;
   const copyText = async (text, type) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -236,6 +238,11 @@ export function AgentSetupModal({ isOpen, onClose }) {
           <div><h3><span className="step-badge" aria-hidden="true">2</span>Agent 引导指令</h3><button type="button" onClick={() => copyText(agentPrompt, 'prompt')}>{copied === 'prompt' ? <Check size={14} /> : <Copy size={14} />}{copied === 'prompt' ? '已复制' : '复制'}</button></div>
           <pre><code>{agentPrompt}</code></pre>
           <p className="step-note">发给任意 Agent 对话窗，让 Agent 知道如何使用 ash。两步都需要完成。</p>
+        </section>
+        <section>
+          <div><h3><span className="step-badge" aria-hidden="true">3</span>推送技能（含附属文件）</h3><button type="button" onClick={() => copyText(pushExamples, 'push')}>{copied === 'push' ? <Check size={14} /> : <Copy size={14} />}{copied === 'push' ? '已复制' : '复制'}</button></div>
+          <pre><code>{pushExamples}</code></pre>
+          <p className="step-note">目录推送会自动打包整个技能（SKILL.md + references/ + scripts/ 等），云端保留完整结构，pull 时原样恢复。</p>
         </section>
         <footer className="dialog-footer"><button type="button" className="primary-button" onClick={onClose}>完成</button></footer>
       </div>
