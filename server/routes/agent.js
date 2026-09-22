@@ -44,7 +44,11 @@ router.get('/bundle/:slug/install.sh', (req, res) => {
   if (!items.length) return res.status(400).send('#!/bin/bash\necho "Bundle is empty"\nexit 1\n');
 
   const baseUrl = getBaseUrl(req);
-  const agentQ = req.query.agent ? `?agent=${encodeURIComponent(req.query.agent)}` : '';
+  // 透传 agent/dir 参数给组合内每个技能的 install.sh
+  const subQuery = new URLSearchParams();
+  if (req.query.agent) subQuery.set('agent', req.query.agent);
+  if (req.query.dir) subQuery.set('dir', req.query.dir);
+  const agentQ = subQuery.toString() ? `?${subQuery.toString()}` : '';
   const installs = items.map((it) => `  echo "--- [\${i}/\${N}] ${it.name} (${it.slug})"; curl -fsSL "\${BASE_URL}/s/${it.slug}/install.sh${agentQ}" | bash`).join('\n');
   const script = `#!/bin/bash
 set -e
