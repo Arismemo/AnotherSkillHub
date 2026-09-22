@@ -18,7 +18,7 @@ version: 1.0.0
 2. 第二步
 `;
 
-function DialogShell({ title, description, onClose, children, size = 'medium' }) {
+export function DialogShell({ title, description, onClose, children, size = 'medium' }) {
   const panelRef = useRef(null);
 
   useEffect(() => {
