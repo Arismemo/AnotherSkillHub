@@ -44,7 +44,7 @@ router.get('/', (req, res) => {
   try {
     const { folder, tag, search, star } = req.query;
 
-    let query = `SELECT id, slug, name, description, folder_path, tags, terminal_source, is_starred, is_deleted, version, created_at, updated_at FROM skills WHERE 1=1`;
+    let query = `SELECT id, slug, name, description, folder_path, tags, content, terminal_source, is_starred, is_deleted, version, created_at, updated_at FROM skills WHERE 1=1`;
     const params = [];
 
     if (folder === 'trash') {

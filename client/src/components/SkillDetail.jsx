@@ -20,6 +20,21 @@ marked.setOptions({
   gfm: true
 });
 
+const splitFrontmatter = (text) => {
+  if (!text) return { frontmatter: '', body: '' };
+  const trimmed = text.trim();
+  if (trimmed.startsWith('---')) {
+    const end = trimmed.indexOf('---', 3);
+    if (end !== -1) {
+      return {
+        frontmatter: trimmed.slice(3, end).trim(),
+        body: trimmed.slice(end + 3).trim()
+      };
+    }
+  }
+  return { frontmatter: '', body: trimmed };
+};
+
 export default function SkillDetail({
   skill,
   onSave,
@@ -47,12 +62,30 @@ export default function SkillDetail({
   const [copiedLink, setCopiedLink] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+
   useEffect(() => {
-    setContent(skill.content || '');
     setName(skill.name || '');
     setDescription(skill.description || '');
     setMode('preview');
-  }, [skill.id]);
+
+    if (skill.content) {
+      setContent(skill.content);
+    } else {
+      setIsLoadingDetail(true);
+      fetch(`/api/skills/${skill.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.content) {
+            setContent(data.content);
+            if (data.name) setName(data.name);
+            if (data.description) setDescription(data.description);
+          }
+        })
+        .catch(err => console.error('Failed to load full skill content:', err))
+        .finally(() => setIsLoadingDetail(false));
+    }
+  }, [skill.id, skill.content]);
 
   const origin = window.location.origin;
   const agentUrl = `${origin}/s/${skill.slug}`;
@@ -286,11 +319,39 @@ export default function SkillDetail({
             </div>
 
             {/* Markdown 正文渲染 */}
-            <div className="prose prose-invert max-w-none prose-pre:bg-slate-900 prose-pre:border prose-pre:border-slate-800 prose-headings:text-slate-100 prose-headings:font-bold prose-a:text-indigo-400 prose-code:text-indigo-300 prose-code:bg-slate-900/80 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none leading-relaxed">
-              <div 
-                dangerouslySetInnerHTML={{ __html: marked.parse(content) }} 
-              />
-            </div>
+            {isLoadingDetail ? (
+              <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-8 text-center text-slate-500 animate-pulse">
+                <div className="h-4 bg-slate-800 rounded w-1/3 mx-auto mb-3"></div>
+                <div className="h-3 bg-slate-800/60 rounded w-2/3 mx-auto mb-2"></div>
+                <div className="h-3 bg-slate-800/40 rounded w-1/2 mx-auto"></div>
+              </div>
+            ) : content ? (
+              <div className="space-y-4">
+                {splitFrontmatter(content).frontmatter && (
+                  <details className="bg-slate-900/40 border border-slate-800/80 rounded-xl p-3 text-xs font-mono text-slate-400">
+                    <summary className="cursor-pointer text-slate-400 hover:text-slate-200 font-sans font-medium flex items-center space-x-1 select-none">
+                      <span>⚙️ 原始 Frontmatter 元数据 (点击展开)</span>
+                    </summary>
+                    <pre className="mt-2.5 p-3 rounded-lg bg-slate-950/80 text-indigo-300 overflow-x-auto text-xs leading-relaxed border border-slate-800/60">
+                      {splitFrontmatter(content).frontmatter}
+                    </pre>
+                  </details>
+                )}
+
+                <div className="prose prose-invert max-w-none prose-pre:bg-slate-900 prose-pre:border prose-pre:border-slate-800 prose-headings:text-slate-100 prose-headings:font-bold prose-a:text-indigo-400 prose-code:text-indigo-300 prose-code:bg-slate-900/80 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none leading-relaxed bg-slate-900/30 p-6 rounded-2xl border border-slate-800/60 shadow-sm">
+                  <div 
+                    dangerouslySetInnerHTML={{ 
+                      __html: marked.parse(splitFrontmatter(content).body || content) 
+                    }} 
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl p-8 text-center text-slate-500">
+                <p className="text-sm font-medium text-slate-400">暂无详细正文说明</p>
+                <p className="text-xs text-slate-600 mt-1">点击右上角“编辑”按钮即可开始编写 SKILL.md 文档与指令</p>
+              </div>
+            )}
           </div>
         ) : (
           /* 编辑模式 */
