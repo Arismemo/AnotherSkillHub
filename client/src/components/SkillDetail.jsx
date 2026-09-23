@@ -28,6 +28,8 @@ marked.setOptions({ breaks: true, gfm: true });
 // 悬浮大纲的视口阈值：与 index.css 的 .doc-outline 收窄断点保持一致
 const OUTLINE_MIN_VIEWPORT = '(min-width: 1280px)';
 
+const HEADING_SELECTOR = '.markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4';
+
 function relativeTime(value) {
   const stamp = new Date(value).getTime();
   if (!Number.isFinite(stamp)) return '';
@@ -469,7 +471,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     const container = scrollRef.current;
     if (!container) return undefined;
     const used = new Set();
-    container.querySelectorAll('.markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4').forEach((node) => {
+    container.querySelectorAll(HEADING_SELECTOR).forEach((node) => {
       const text = node.textContent || '';
       node.id = slugifyHeading(text, used);
     });
@@ -497,32 +499,54 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     return undefined;
   }, [renderedMarkdown, auxRendered, selectedFile, mode]);
 
-  // B1: 大纲跟随滚动高亮（scroll-spy）：当前视口顶部所在章节即高亮项
+  // B1: 大纲跟随滚动高亮（scroll-spy）
+  // 原实现每帧 querySelectorAll + 逐标题 getBoundingClientRect——每次滚动都强制同步布局。
+  // 改成：标题位置只在内容/尺寸变化时量一次，滚动中只比 scrollTop，零 rect 读取。
+  const headingOffsetsRef = useRef([]);
   useEffect(() => {
     const container = scrollRef.current;
     if (!container || headings.length < 2) return undefined;
+
+    const measure = () => {
+      const containerTop = container.getBoundingClientRect().top;
+      headingOffsetsRef.current = [...container.querySelectorAll(HEADING_SELECTOR)]
+        .map((node) => node.getBoundingClientRect().top - containerTop + container.scrollTop);
+    };
+
     let ticking = false;
     const onScroll = () => {
       if (ticking) return;
       ticking = true;
       window.requestAnimationFrame(() => {
-        const nodes = container.querySelectorAll('.markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4');
-        const containerTop = container.getBoundingClientRect().top;
+        ticking = false;
+        const offsets = headingOffsetsRef.current;
+        if (!offsets.length) return;
+        const line = container.scrollTop + 60;
         let current = 0;
-        nodes.forEach((node, index) => {
-          if (node.getBoundingClientRect().top - containerTop <= 60) current = index;
-        });
+        for (let i = 0; i < offsets.length; i += 1) {
+          if (offsets[i] <= line) current = i;
+        }
         // 滚动到底时高亮最后一个标题（末尾内容不足一屏时永远差一点）
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 4 && nodes.length) {
-          current = nodes.length - 1;
+        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 4) {
+          current = offsets.length - 1;
         }
         setActiveHeading(current);
-        ticking = false;
       });
     };
-    container.addEventListener('scroll', onScroll, { passive: true });
+
+    measure();
     onScroll();
-    return () => container.removeEventListener('scroll', onScroll);
+    container.addEventListener('scroll', onScroll, { passive: true });
+    // 字体/图片加载或面板改宽都会挪动标题：重量一次，仍然不碰滚动路径
+    const content = container.querySelector('.detail-content');
+    const observer = content && typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => { measure(); onScroll(); })
+      : null;
+    if (observer && content) observer.observe(content);
+    return () => {
+      container.removeEventListener('scroll', onScroll);
+      observer?.disconnect();
+    };
   }, [headings.length, renderedMarkdown, auxRendered, selectedFile, mode]);
 
   const treeData = useMemo(() => buildFileTree(fileTree), [fileTree]);
@@ -559,7 +583,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   const jumpToHeading = (index) => {
     const container = scrollRef.current;
     if (!container) return;
-    const nodes = container.querySelectorAll('.markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4');
+    const nodes = container.querySelectorAll(HEADING_SELECTOR);
     const target = nodes[index];
     if (!target) return;
     // offsetTop 的参照系是 offsetParent（.app-detail），不是滚动容器；
