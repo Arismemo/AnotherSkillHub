@@ -277,8 +277,8 @@ export default function App() {
     setSelectedIds(new Set());
   };
 
-  const handleBatchTrash = async () => {
-    const ids = [...selectedIds];
+  const handleBatchTrash = async (explicitIds) => {
+    const ids = explicitIds && explicitIds.length ? explicitIds : [...selectedIds];
     await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/trash`, { method: 'POST' }).catch(() => null)));
     await refreshAll();
     showToast(`已将 ${ids.length} 个技能移入废纸篓`, {

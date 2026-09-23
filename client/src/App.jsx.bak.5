@@ -214,7 +214,15 @@ export default function App() {
   const handleToggleStar = async (skillId) => {
     // 乐观更新：本地先翻转，避免整列表刷新造成闪烁
     const prev = skills;
-    setSkills((list) => list.map((s) => (s.id === skillId ? { ...s, is_starred: s.is_starred ? 0 : 1 } : s)));
+    const wasStarred = Boolean(skills.find((s) => s.id === skillId)?.is_starred);
+    if (currentFolder === 'starred' && wasStarred) {
+      // 在「收藏」视图里取消收藏，该行必须当场消失，否则用户会以为没生效而再点一次
+      const next = skills.filter((s) => s.id !== skillId);
+      setSkills(next);
+      if (skillId === selectedSkillId) setSelectedSkillId(next[0]?.id ?? null);
+    } else {
+      setSkills((list) => list.map((s) => (s.id === skillId ? { ...s, is_starred: s.is_starred ? 0 : 1 } : s)));
+    }
     try {
       await requestJson(`/api/skills/${skillId}/star`, { method: 'POST' });
       // 只刷新左栏计数，不重载列表

@@ -467,6 +467,9 @@ export default function App() {
     if (searchQuery) setSearchQuery('');
   };
 
+  // 新建/导入默认落在当前目录；系统视图不是真目录，退回 inbox
+  const defaultTargetFolder = ['all', 'starred', 'trash', 'recent'].includes(currentFolder) ? 'inbox' : currentFolder;
+
   const overlayOpen = showPalette || showShortcuts || showNewModal || showPasteModal
     || showSetupModal || showBundleModal || Boolean(activeBundle) || Boolean(addToBundleTarget);
 

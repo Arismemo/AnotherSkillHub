@@ -58,7 +58,6 @@ export default function CommandPalette({
   onToggleSort,
 }) {
   const [query, setQuery] = useState('');
-  const [submode, setSubmode] = useState('root'); // 'root' | 'move'
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef(null);
   const listRef = useRef(null);
@@ -68,7 +67,6 @@ export default function CommandPalette({
     // 打开时重置并聚焦（setState 在 setTimeout 中，避免 effect 同步级联渲染警告）
     const timer = window.setTimeout(() => {
       setQuery('');
-      setSubmode('root');
       setActiveIndex(0);
       inputRef.current?.focus();
     }, 0);
@@ -145,7 +143,7 @@ export default function CommandPalette({
       });
     });
     return items;
-  }, [skills, folders, bundles, submode, selectedSkill, onToggleStar, onAddToBundle, onCopySkill, onTrashSkill, onMoveSkill, onSelectSkill, onSelectFolder, onSelectBundle, onNewSkill, onPasteImport, onNewBundle, onOpenSetup, onToggleSidebar, onToggleSort]);
+  }, [skills, folders, bundles, onSelectSkill, onSelectFolder, onSelectBundle, onNewSkill, onPasteImport, onNewBundle, onOpenSetup, onToggleSidebar, onToggleSort]);
 
   const results = useMemo(() => {
     if (!query.trim()) return commands.slice(0, 12);
@@ -160,20 +158,12 @@ export default function CommandPalette({
   const execute = useCallback((item) => {
     if (!item) return;
     item.action();
-    if (item.keepOpen) {
-      // 进入二级模式：清空搜索词并把选中项复位
-      setQuery('');
-      setActiveIndex(0);
-      return;
-    }
     onClose();
   }, [onClose]);
 
   const onKeyDown = (event) => {
     if (event.key === 'Escape') {
       event.preventDefault();
-      // 二级模式先退回一级，不直接关面板
-      if (submode !== 'root') { setSubmode('root'); setQuery(''); setActiveIndex(0); return; }
       onClose();
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();
@@ -207,7 +197,7 @@ export default function CommandPalette({
             value={query}
             onChange={(e) => { setQuery(e.target.value); setActiveIndex(0); }}
             onKeyDown={onKeyDown}
-            placeholder={submode === 'move' ? `移动「${selectedSkill?.name}」到哪个目录？` : '搜索技能、目录或命令…'}
+            placeholder="搜索技能、目录或命令…"
             aria-label="搜索"
             role="combobox"
             aria-expanded="true"

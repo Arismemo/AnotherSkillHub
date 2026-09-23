@@ -227,6 +227,12 @@ export default function App() {
       await requestJson(`/api/skills/${skillId}/star`, { method: 'POST' });
       // 只刷新左栏计数，不重载列表
       fetchFoldersAndStats();
+      if (currentFolder === 'starred' && wasStarred) {
+        showToast('已取消收藏', {
+          actionLabel: '撤销',
+          onAction: () => runMutation(`/api/skills/${skillId}/star`, { method: 'POST' }),
+        });
+      }
     } catch (error) {
       setSkills(prev); // 失败回滚
       showToast(error.message);

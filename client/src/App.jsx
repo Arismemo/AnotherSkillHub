@@ -718,6 +718,12 @@ export default function App() {
         skills={allSkills}
         folders={folders}
         bundles={bundles}
+        selectedSkill={selectedSkill}
+        onToggleStar={handleToggleStar}
+        onAddToBundle={(id) => setAddToBundleTarget({ ids: [id], label: skills.find((x) => x.id === id)?.name ?? '技能' })}
+        onCopySkill={handleCopySkill}
+        onTrashSkill={handleTrashSkill}
+        onMoveSkill={handleMoveSkill}
         onSelectSkill={handleRevealSkill}
         onSelectFolder={handleSelectFolder}
         onSelectBundle={setActiveBundle}

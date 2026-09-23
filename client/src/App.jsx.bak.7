@@ -704,18 +704,25 @@ export default function App() {
         onToggleSort={() => setSortBy((v) => (v === 'updated' ? 'name' : 'updated'))}
       />
 
-      <NewSkillModal
-        isOpen={showNewModal}
-        folders={folders}
-        onClose={() => setShowNewModal(false)}
-        onCreate={handleCreateSkill}
-      />
-      <PasteSkillModal
-        isOpen={showPasteModal}
-        folders={folders}
-        onClose={() => setShowPasteModal(false)}
-        onImport={handleCreateSkill}
-      />
+      {/* 条件渲染：关闭时整体卸载，下次打开的默认目录才会重新取当前目录 */}
+      {showNewModal && (
+        <NewSkillModal
+          isOpen
+          folders={folders}
+          defaultFolder={defaultTargetFolder}
+          onClose={() => setShowNewModal(false)}
+          onCreate={handleCreateSkill}
+        />
+      )}
+      {showPasteModal && (
+        <PasteSkillModal
+          isOpen
+          folders={folders}
+          defaultFolder={defaultTargetFolder}
+          onClose={() => setShowPasteModal(false)}
+          onImport={handleCreateSkill}
+        />
+      )}
       <BundleDetail
         bundle={activeBundle}
         onClose={() => setActiveBundle(null)}

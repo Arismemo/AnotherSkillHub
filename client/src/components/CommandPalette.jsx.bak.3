@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Command, FileText, Folder, Search } from 'lucide-react';
+import { Command, FileText, Folder, Package, Search, Zap } from 'lucide-react';
 
 const typeMeta = {
+  action: { icon: Zap, label: '当前技能' },
   skill: { icon: FileText, label: '技能' },
   folder: { icon: Folder, label: '目录' },
+  bundle: { icon: Package, label: '组合' },
   command: { icon: Command, label: '命令' },
 };
 
@@ -38,12 +40,22 @@ export default function CommandPalette({
   onClose,
   skills,
   folders,
+  bundles = [],
+  selectedSkill,
+  onToggleStar,
+  onAddToBundle,
+  onCopySkill,
+  onTrashSkill,
+  onMoveSkill,
   onSelectSkill,
   onSelectFolder,
+  onSelectBundle,
   onNewSkill,
   onPasteImport,
+  onNewBundle,
   onOpenSetup,
   onToggleSidebar,
+  onToggleSort,
 }) {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -62,7 +74,31 @@ export default function CommandPalette({
   }, [isOpen]);
 
   const commands = useMemo(() => {
+    // 二级模式：「移动到…」后面板变成目录选择器，不必再开一个弹窗
+    if (submode === 'move' && selectedSkill) {
+      return folders.map((f) => ({
+        type: 'folder',
+        key: `move-${f.path}`,
+        title: f.name,
+        subtitle: `移动「${selectedSkill.name}」到 ${f.path}`,
+        keywords: f.path,
+        action: () => onMoveSkill(selectedSkill.id, f.path),
+      }));
+    }
     const items = [];
+    // 面板原来只会「导航」不会「操作」：对当前技能的动作置顶
+    if (selectedSkill) {
+      const agentPrompt = `请加载并使用技能：${window.location.origin}/s/${selectedSkill.slug}`;
+      items.push(
+        { type: 'action', key: 'act-star', title: selectedSkill.is_starred ? '取消收藏' : '收藏', subtitle: `对「${selectedSkill.name}」· S`, keywords: 'star 收藏', action: () => onToggleStar(selectedSkill.id) },
+        { type: 'action', key: 'act-move', title: '移动到…', subtitle: `对「${selectedSkill.name}」`, keywords: 'move 移动 目录', keepOpen: true, action: () => setSubmode('move') },
+        { type: 'action', key: 'act-bundle', title: '加入技能组合', subtitle: `对「${selectedSkill.name}」`, keywords: 'bundle 组合', action: () => onAddToBundle(selectedSkill.id) },
+        { type: 'action', key: 'act-copy', title: '复制为新技能', subtitle: `对「${selectedSkill.name}」`, keywords: 'copy duplicate 复制 变体', action: () => onCopySkill(selectedSkill.id) },
+        { type: 'action', key: 'act-prompt', title: '复制 Agent 指令', subtitle: `对「${selectedSkill.name}」`, keywords: 'prompt agent 指令 复制', action: () => navigator.clipboard.writeText(agentPrompt).catch(() => null) },
+        { type: 'action', key: 'act-download', title: '下载技能包', subtitle: `对「${selectedSkill.name}」`, keywords: 'download 下载 tar', action: () => { window.location.href = `/s/${selectedSkill.slug}/archive.tar.gz`; } },
+        { type: 'action', key: 'act-trash', title: '移入废纸篓', subtitle: `对「${selectedSkill.name}」· Del`, keywords: 'trash delete 删除 废纸篓', action: () => onTrashSkill(selectedSkill.id) },
+      );
+    }
     skills.forEach((s) => {
       items.push({
         type: 'skill',
@@ -87,13 +123,27 @@ export default function CommandPalette({
       { type: 'command', key: 'cmd-inbox', title: '打开收件箱', subtitle: '导航', keywords: 'inbox 收件箱', action: () => onSelectFolder('inbox') },
       { type: 'command', key: 'cmd-all', title: '查看全部技能', subtitle: '导航', keywords: 'all 全部', action: () => onSelectFolder('all') },
       { type: 'command', key: 'cmd-starred', title: '查看收藏', subtitle: '导航', keywords: 'starred 收藏', action: () => onSelectFolder('starred') },
+      { type: 'command', key: 'cmd-recent', title: '查看最近浏览', subtitle: '导航', keywords: 'recent 最近 浏览 历史', action: () => onSelectFolder('recent') },
+      { type: 'command', key: 'cmd-trash', title: '打开废纸篓', subtitle: '导航', keywords: 'trash 废纸篓 删除', action: () => onSelectFolder('trash') },
       { type: 'command', key: 'cmd-new', title: '新建技能', subtitle: '创建', keywords: 'new create 新建 创建', action: onNewSkill },
       { type: 'command', key: 'cmd-paste', title: '粘贴导入技能', subtitle: '创建', keywords: 'paste import 粘贴 导入', action: onPasteImport },
+      { type: 'command', key: 'cmd-bundle', title: '新建技能组合', subtitle: '创建', keywords: 'bundle new 组合 新建', action: onNewBundle },
       { type: 'command', key: 'cmd-setup', title: '终端接入命令', subtitle: '设置', keywords: 'setup terminal cli 终端 接入', action: onOpenSetup },
       { type: 'command', key: 'cmd-sidebar', title: '收起/展开导航栏', subtitle: '视图', keywords: 'sidebar toggle 导航 收起 展开', action: onToggleSidebar },
+      { type: 'command', key: 'cmd-sort', title: '切换排序（更新时间 / 名称）', subtitle: '视图', keywords: 'sort order 排序 名称 时间', action: onToggleSort },
     );
+    bundles.forEach((b) => {
+      items.push({
+        type: 'bundle',
+        key: `bundle-${b.id}`,
+        title: b.name,
+        subtitle: `组合 · ${b.count} 个技能`,
+        keywords: `${b.slug || ''} ${b.name} bundle 组合`,
+        action: () => onSelectBundle(b),
+      });
+    });
     return items;
-  }, [skills, folders, onSelectSkill, onSelectFolder, onNewSkill, onPasteImport, onOpenSetup, onToggleSidebar]);
+  }, [skills, folders, bundles, submode, selectedSkill, onToggleStar, onAddToBundle, onCopySkill, onTrashSkill, onMoveSkill, onSelectSkill, onSelectFolder, onSelectBundle, onNewSkill, onPasteImport, onNewBundle, onOpenSetup, onToggleSidebar, onToggleSort]);
 
   const results = useMemo(() => {
     if (!query.trim()) return commands.slice(0, 12);
