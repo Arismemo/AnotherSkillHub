@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Copy, Package, Plus, Trash2, X } from 'lucide-react';
 import { DialogShell } from './Modals';
-import { fuzzyScore } from './CommandPalette';
+import { fuzzyScore } from '../utils/fuzzyScore';
 import { requestJson } from '../utils/requestJson';
 
 // 技能组合详情：展示组合内技能（快捷方式），支持移除/添加/复制组合指令

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Command, FileText, Folder, Package, Search, Zap } from 'lucide-react';
+import { fuzzyScore } from '../utils/fuzzyScore';
 
 const typeMeta = {
   action: { icon: Zap, label: '当前技能' },
@@ -10,31 +11,6 @@ const typeMeta = {
 };
 
 // ⌘K 命令面板：模糊搜索技能 + 执行命令，键盘全程操作（Linear/Raycast 式）
-// 模糊匹配：连续命中加分、前缀命中加分、精确匹配最高
-export function fuzzyScore(query, text) {
-  if (!query) return 1;
-  const q = query.toLowerCase();
-  const t = text.toLowerCase();
-  if (t.includes(q)) {
-    return t.startsWith(q) ? 100 - t.length * 0.1 : 60 - t.length * 0.1;
-  }
-  let score = 0;
-  let ti = 0;
-  let streak = 0;
-  for (let qi = 0; qi < q.length; qi += 1) {
-    const ch = q[qi];
-    let found = -1;
-    for (let i = ti; i < t.length; i += 1) {
-      if (t[i] === ch) { found = i; break; }
-    }
-    if (found === -1) return 0;
-    streak = found === ti ? streak + 1 : 1;
-    score += 10 + streak * 2 + (found === 0 ? 8 : 0);
-    ti = found + 1;
-  }
-  return score;
-}
-
 export default function CommandPalette({
   isOpen,
   onClose,
@@ -109,7 +85,7 @@ export default function CommandPalette({
         { type: 'action', key: 'act-bundle', title: '加入技能组合', subtitle: `对「${selectedSkill.name}」`, keywords: 'bundle 组合', action: () => onAddToBundle(selectedSkill.id) },
         { type: 'action', key: 'act-copy', title: '复制为新技能', subtitle: `对「${selectedSkill.name}」`, keywords: 'copy duplicate 复制 变体', action: () => onCopySkill(selectedSkill.id) },
         { type: 'action', key: 'act-prompt', title: '复制 Agent 指令', subtitle: `对「${selectedSkill.name}」`, keywords: 'prompt agent 指令 复制', action: () => navigator.clipboard.writeText(agentPrompt).catch(() => null) },
-        { type: 'action', key: 'act-download', title: '下载技能包', subtitle: `对「${selectedSkill.name}」`, keywords: 'download 下载 tar', action: () => { window.location.href = `/s/${selectedSkill.slug}/archive.tar.gz`; } },
+        { type: 'action', key: 'act-download', title: '下载技能包', subtitle: `对「${selectedSkill.name}」`, keywords: 'download 下载 tar', action: () => window.location.assign(`/s/${selectedSkill.slug}/archive.tar.gz`) },
         { type: 'action', key: 'act-trash', title: '移入废纸篓', subtitle: `对「${selectedSkill.name}」· Del`, keywords: 'trash delete 删除 废纸篓', action: () => onTrashSkill(selectedSkill.id) },
       );
     }
