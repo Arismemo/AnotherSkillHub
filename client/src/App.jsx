@@ -307,8 +307,16 @@ export default function App() {
     body: JSON.stringify(updatedData),
   }));
 
+  const sortedSkills = useMemo(() => [...skills].sort((a, b) => {
+    if (sortBy === 'name') return a.name.localeCompare(b.name, 'zh-CN');
+    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+  }), [skills, sortBy]);
+
   // C4: 多选（Cmd 点选 / Shift 范围选）
+  // 锚点与展示顺序都以 sortedSkills 为准——skills 是未排序的原始结果，
+  // 拿它算区间会选到屏幕上不连续的行。
   const handleSelectSkill = (id, event) => {
+    const currentIdx = sortedSkills.findIndex((s) => s.id === id);
     if (event && (event.metaKey || event.ctrlKey)) {
       setSelectedIds((prev) => {
         const next = new Set(prev);
@@ -316,26 +324,23 @@ export default function App() {
         else next.add(id);
         return next;
       });
+      // Cmd 点选也要移动锚点，否则随后的 Shift 会从上一次普通点击起算
+      if (currentIdx !== -1) setLastSelectedIndex(currentIdx);
       return;
     }
-    if (event && event.shiftKey && lastSelectedIndex != null) {
-      const currentIdx = skills.findIndex((s) => s.id === id);
-      if (currentIdx !== -1) {
-        const [from, to] = lastSelectedIndex < currentIdx ? [lastSelectedIndex, currentIdx] : [currentIdx, lastSelectedIndex];
-        setSelectedIds(new Set(skills.slice(from, to + 1).map((s) => s.id)));
-        return;
-      }
+    if (event && event.shiftKey && lastSelectedIndex != null && currentIdx !== -1) {
+      const [from, to] = lastSelectedIndex < currentIdx ? [lastSelectedIndex, currentIdx] : [currentIdx, lastSelectedIndex];
+      const range = sortedSkills.slice(from, to + 1).map((s) => s.id);
+      // 并入而不是覆盖：Cmd 攒下的选择不该被一次 Shift 清掉
+      setSelectedIds((prev) => new Set([...prev, ...range]));
+      setLastSelectedIndex(currentIdx);
+      return;
     }
     rememberRecent(id);
     setSelectedSkillId(id);
     setSelectedIds(new Set([id]));
-    setLastSelectedIndex(skills.findIndex((s) => s.id === id));
+    setLastSelectedIndex(currentIdx);
   };
-
-  const sortedSkills = useMemo(() => [...skills].sort((a, b) => {
-    if (sortBy === 'name') return a.name.localeCompare(b.name, 'zh-CN');
-    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-  }), [skills, sortBy]);
 
   const recentSkills = useMemo(
     () => recentSkillIds.map((id) => skills.find((s) => s.id === id)).filter(Boolean).slice(0, 5),
