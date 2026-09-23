@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Command, FileText, Folder, Package, Search, Zap } from 'lucide-react';
 
 const typeMeta = {
@@ -62,6 +62,18 @@ export default function CommandPalette({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef(null);
   const listRef = useRef(null);
+  const panelRef = useRef(null);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return undefined;
+    const previousFocus = document.activeElement;
+    const panel = panelRef.current;
+    return () => {
+      if (previousFocus?.isConnected && (panel?.contains(document.activeElement) || document.activeElement === document.body)) {
+        previousFocus.focus();
+      }
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -199,7 +211,7 @@ export default function CommandPalette({
 
   return (
     <div className="palette-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="palette-panel" role="dialog" aria-modal="true" aria-label="命令面板">
+      <div className="palette-panel" ref={panelRef} role="dialog" aria-modal="true" aria-label="命令面板">
         <div className="palette-input-row">
           <span className="palette-icon" aria-hidden="true"><Search size={15} /></span>
           <input

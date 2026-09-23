@@ -203,7 +203,7 @@ export default function FolderTree({
             type="button"
             className={`folder-select ${isSelected ? 'is-active' : ''}`}
             onClick={() => onSelectFolder(node.path)}
-            aria-current={isSelected ? 'page' : undefined}
+            aria-current={isSelected ? 'true' : undefined}
             data-path={node.path}
           >
             <Folder size={15} aria-hidden="true" />
@@ -252,7 +252,7 @@ export default function FolderTree({
                   type="button"
                   className={`nav-item rail-item ${active ? 'is-active' : ''}${dropTarget === id ? ' is-drop-target' : ''}`}
                   onClick={() => onSelectFolder(id)}
-                  aria-current={active ? 'page' : undefined}
+                  aria-current={active ? 'true' : undefined}
                   aria-label={count > 0 ? `${label}（${count}）` : label}
                   title={count > 0 ? `${label}（${count}）` : label}
                   {...(droppable ? dropHandlers(id) : {})}
@@ -274,7 +274,7 @@ export default function FolderTree({
                     type="button"
                     className={`nav-item rail-item ${active ? 'is-active' : ''}`}
                     onClick={() => onSelectFolder(node.path)}
-                    aria-current={active ? 'page' : undefined}
+                    aria-current={active ? 'true' : undefined}
                     aria-label={node.count > 0 ? `${node.name}（${node.count}）` : node.name}
                     title={node.count > 0 ? `${node.name}（${node.count}）` : node.name}
                     {...dropHandlers(node.path)}
@@ -314,7 +314,7 @@ export default function FolderTree({
                     type="button"
                     className={`nav-item ${active ? 'is-active' : ''}${dropTarget === id ? ' is-drop-target' : ''}`}
                     onClick={() => onSelectFolder(id)}
-                    aria-current={active ? 'page' : undefined}
+                    aria-current={active ? 'true' : undefined}
                     {...(droppable ? dropHandlers(id) : {})}
                   >
                     <Icon size={16} aria-hidden="true" />
@@ -329,7 +329,7 @@ export default function FolderTree({
                   type="button"
                   className={`nav-item ${currentFolder === 'recent' && !currentTag ? 'is-active' : ''}`}
                   onClick={() => onSelectFolder('recent')}
-                  aria-current={currentFolder === 'recent' && !currentTag ? 'page' : undefined}
+                  aria-current={currentFolder === 'recent' && !currentTag ? 'true' : undefined}
                 >
                   <Clock3 size={16} aria-hidden="true" />
                   <span>最近浏览</span>

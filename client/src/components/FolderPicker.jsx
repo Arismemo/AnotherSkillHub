@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Folder, Inbox, Search } from 'lucide-react';
 
-// 可搜索的选择器（文件夹/标签通用）：深色主题、输入过滤、键盘导航
+// 可搜索的选择器（文件夹/标签通用）：输入过滤、键盘导航
 // folders 模式: folders=[{path,...}], onChange(path)
 // options 模式: options=[{value,label}], onChange(value)
 export default function FolderPicker({
@@ -16,6 +16,11 @@ export default function FolderPicker({
   const triggerRef = useRef(null);
   const inputRef = useRef(null);
   const [popStyle, setPopStyle] = useState(null);
+
+  const closePicker = () => {
+    triggerRef.current?.focus();
+    setOpen(false);
+  };
 
   const items = useMemo(() => {
     let list;
@@ -90,7 +95,7 @@ export default function FolderPicker({
       }
     });
     const onDown = (event) => {
-      if (!rootRef.current?.contains(event.target) && !document.getElementById('ash-folder-popover')?.contains(event.target)) setOpen(false);
+      if (!rootRef.current?.contains(event.target) && !document.getElementById('ash-folder-popover')?.contains(event.target)) closePicker();
     };
     document.addEventListener('mousedown', onDown);
     window.addEventListener('resize', updatePos);
@@ -104,12 +109,12 @@ export default function FolderPicker({
 
   const pick = (val) => {
     onChange(val);
-    setOpen(false);
+    closePicker();
     setQuery('');
   };
 
   const onKeyDown = (event) => {
-    if (event.key === 'Escape') { setOpen(false); return; }
+    if (event.key === 'Escape') { event.preventDefault(); closePicker(); return; }
     if (event.key === 'ArrowDown') { event.preventDefault(); setActiveIndex((i) => Math.min(i + 1, items.length - 1)); }
     if (event.key === 'ArrowUp') { event.preventDefault(); setActiveIndex((i) => Math.max(i - 1, 0)); }
     if (event.key === 'Enter' && items[activeIndex]) { event.preventDefault(); pick(items[activeIndex].value); }
@@ -141,7 +146,7 @@ export default function FolderPicker({
           className="folder-picker-popover"
           role="listbox"
           style={popStyle || undefined}
-          onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); setOpen(false); } }}
+          onMouseDown={(e) => { if (e.target === e.currentTarget) { e.preventDefault(); closePicker(); } }}
         >
           <div className="folder-picker-search">
             <Search size={13} aria-hidden="true" />
