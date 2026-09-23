@@ -67,47 +67,6 @@ export function DialogShell({ title, description, onClose, children, size = 'med
   );
 }
 
-// ? 速查面板：直接由 App 的快捷键注册表生成，说明与实现不会脱节
-export function ShortcutsModal({ isOpen, onClose, shortcuts }) {
-  if (!isOpen) return null;
-  const groups = [];
-  shortcuts.forEach((item) => {
-    if (!item.label) return;
-    let group = groups.find((g) => g.name === item.group);
-    if (!group) {
-      group = { name: item.group || '其他', items: [] };
-      groups.push(group);
-    }
-    group.items.push(item);
-  });
-  return (
-    <DialogShell title="键盘快捷键" description="单键快捷键在输入框内不触发；⌘S / Esc 例外。" onClose={onClose} size="medium">
-      <div className="shortcut-groups">
-        {groups.map((group) => (
-          <section key={group.name}>
-            <h3>{group.name}</h3>
-            <dl>
-              {group.items.map((item) => (
-                <div key={item.id}>
-                  <dt>{item.label}</dt>
-                  <dd>
-                    {(Array.isArray(item.keys) ? item.keys : [item.keys]).map((spec, index) => (
-                      <span key={spec}>
-                        {index > 0 && <i className="shortcut-or">或</i>}
-                        <kbd>{formatKeys(spec)}</kbd>
-                      </span>
-                    ))}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        ))}
-      </div>
-    </DialogShell>
-  );
-}
-
 export function NewSkillModal({ isOpen, onClose, onCreate, folders }) {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');

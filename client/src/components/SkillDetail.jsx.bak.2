@@ -538,11 +538,12 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, apiRef }) {
 
   // ⌘S / ⌘E 走 App 的统一快捷键注册表，这里只对外暴露动作
   const liveRef = useRef(null);
+  liveRef.current = { mode, dirty, save: handleSave, toggleMode: () => switchMode(mode === 'edit' ? 'preview' : 'edit') };
   useEffect(() => {
-    liveRef.current = { mode, dirty, save: handleSave, toggleMode: () => switchMode(mode === 'edit' ? 'preview' : 'edit') };
-    if (apiRef) apiRef.current = liveRef.current;
+    if (!apiRef) return undefined;
+    apiRef.current = liveRef.current;
+    return () => { apiRef.current = null; };
   });
-  useEffect(() => () => { if (apiRef) apiRef.current = null; }, [apiRef]);
 
   // App 用 key={skill.id} 挂载本组件，切换技能会整体重挂载：
   // 编辑中的改动不能静默丢弃，与「切到预览自动保存」保持同一语义，卸载时补存一次。
@@ -601,7 +602,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, apiRef }) {
           </button>
           <div className="mode-switch" aria-label="详情模式">
             <button type="button" className={mode === 'preview' ? 'is-active' : ''} onClick={() => switchMode('preview')} aria-pressed={mode === 'preview'}><Eye size={14} />预览</button>
-            <button type="button" className={`${mode === 'edit' ? 'is-active' : ''}${dirty ? ' is-dirty' : ''}`} onClick={() => switchMode('edit')} aria-pressed={mode === 'edit'} disabled={saving} title={dirty ? '有未保存的修改（⌘S 保存）' : '编辑（E）'}><Edit3 size={14} />{saving ? '保存中…' : '编辑'}{dirty && <i className="dirty-dot" aria-label="有未保存的修改" />}</button>
+            <button type="button" className={mode === 'edit' ? 'is-active' : ''} onClick={() => switchMode('edit')} aria-pressed={mode === 'edit'} disabled={saving}><Edit3 size={14} />{saving ? '保存中…' : '编辑'}</button>
           </div>
         </div>
       </header>
@@ -771,7 +772,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, apiRef }) {
                 <label>简短描述<input value={description} onChange={(event) => setDescription(event.target.value)} /></label>
               </div>
               <label>SKILL.md<textarea value={content} onChange={(event) => setContent(event.target.value)} rows={24} spellCheck="false" /></label>
-              <p className="editor-hint">⌘S 保存 · 切换到预览时也会自动保存</p>
+              <p className="editor-hint">切换到预览时自动保存</p>
             </form>
           )}
           </div>

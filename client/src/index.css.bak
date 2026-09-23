@@ -377,8 +377,6 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .mode-switch button { display: flex; align-items: center; gap: .28rem; height: 100%; padding: 0 .48rem; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); transition: color var(--dur) ease, background-color var(--dur) ease; }
 .mode-switch button:hover { color: var(--text); }
 .mode-switch button.is-active { background: var(--surface-hover); color: var(--text); }
-.mode-switch button.is-dirty { color: var(--text); }
-.dirty-dot { width: .35rem; height: .35rem; border-radius: 999px; background: var(--accent); }
 /* 正文段落收在 --measure 内保证可读行宽；pre/table 不设上限，吃满 .detail-content（破框） */
 .markdown-document > div > :is(p, ul, ol, blockquote, h1, h2, h3, h4, hr), .skill-summary { max-width: var(--measure); margin-inline: auto; }
 .inline-error { padding: .65rem .75rem; border: 1px solid var(--danger-border); border-radius: var(--r-sm); background: var(--danger-muted); color: var(--danger-text); font-size: var(--fs-xs); line-height: 1.45; }

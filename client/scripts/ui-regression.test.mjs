@@ -35,6 +35,19 @@ test('detail always fetches the full record so file_tree stays available', async
   assert.ok(fetchIndex > -1);
 });
 
+test('every keyboard shortcut comes from the one registry that also feeds the cheat sheet', async () => {
+  const app = await source('src/App.jsx');
+  assert.match(app, /useHotkeys\(/, 'App must drive shortcuts through the shared hook');
+  for (const id of ['palette', 'help', 'search', 'new', 'escape', 'next', 'prev', 'open', 'select-all', 'star', 'edit', 'save', 'trash']) {
+    assert.ok(app.includes(`id: '${id}'`), `missing shortcut registration: ${id}`);
+  }
+  assert.ok(app.includes('shortcuts={shortcuts}'), 'the ? cheat sheet must be generated from the same registry');
+  assert.ok(!/window\.addEventListener\('keydown'/.test(app), 'App must not hand-roll extra keydown listeners');
+  const hook = await source('src/hooks/useHotkeys.js');
+  assert.ok(hook.includes("['INPUT', 'TEXTAREA', 'SELECT']"), 'single-key shortcuts must be skipped while typing');
+  assert.match(hook, /allowInInput/, 'bindings need an explicit opt-in to fire inside inputs');
+});
+
 test('dialog hooks are unconditional and dialogs support focus, Escape, and accessible names', async () => {
   const modals = await source('src/components/Modals.jsx');
   for (const functionName of ['NewSkillModal', 'PasteSkillModal', 'AgentSetupModal']) {

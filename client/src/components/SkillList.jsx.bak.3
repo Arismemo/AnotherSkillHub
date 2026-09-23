@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react';
 import FolderPicker from './FolderPicker';
 import {
   ArrowDownAZ,
@@ -76,12 +75,6 @@ export default function SkillList({
   const currentDensity = densities[densityIndex];
   const nextDensity = densities[(densityIndex + 1) % densities.length];
   const DensityIcon = currentDensity.icon;
-
-  // 键盘移动选中项时把它滚进视口（j/k 走到屏幕外就看不见了）
-  const selectedRowRef = useRef(null);
-  useEffect(() => {
-    selectedRowRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [selectedSkillId]);
 
   const selectFromKeyboard = (event, skillId) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -196,12 +189,12 @@ export default function SkillList({
             {skills.map((skill) => {
               const isSelected = selectedSkillId === skill.id;
               const isChecked = selectedIds.has(skill.id) && multiCount > 0;
-              // roving tabindex：Tab 一次跨过整个列表，列表内用 ↑↓ / j k 移动
               return (
                 <li
                   key={skill.id}
                   role="option"
                   aria-selected={isSelected}
+                  // roving tabindex：Tab 一次跨过整个列表，列表内用 ↑↓ / j k 移动
                   tabIndex={isSelected ? 0 : -1}
                   ref={isSelected ? selectedRowRef : undefined}
                   className={`skill-row${isSelected ? ' is-selected' : ''}${isChecked ? ' is-checked' : ''}`}

@@ -538,11 +538,12 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, apiRef }) {
 
   // ⌘S / ⌘E 走 App 的统一快捷键注册表，这里只对外暴露动作
   const liveRef = useRef(null);
+  liveRef.current = { mode, dirty, save: handleSave, toggleMode: () => switchMode(mode === 'edit' ? 'preview' : 'edit') };
   useEffect(() => {
-    liveRef.current = { mode, dirty, save: handleSave, toggleMode: () => switchMode(mode === 'edit' ? 'preview' : 'edit') };
-    if (apiRef) apiRef.current = liveRef.current;
+    if (!apiRef) return undefined;
+    apiRef.current = liveRef.current;
+    return () => { apiRef.current = null; };
   });
-  useEffect(() => () => { if (apiRef) apiRef.current = null; }, [apiRef]);
 
   // App 用 key={skill.id} 挂载本组件，切换技能会整体重挂载：
   // 编辑中的改动不能静默丢弃，与「切到预览自动保存」保持同一语义，卸载时补存一次。
