@@ -1,0 +1,35 @@
+/* 审核条、安全提醒与差异视图：全部取主题 token，明暗主题自动跟随 */
+.review-panel { display: grid; gap: .5rem; margin-bottom: 1rem; }
+.review-banner { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem .7rem; padding: .6rem .75rem; border: 1px solid var(--accent-border); border-radius: var(--r-sm); background: var(--accent-muted); color: var(--text-body); font-size: var(--fs-sm); line-height: 1.5; }
+.review-banner > svg { flex: none; color: var(--accent); }
+.review-banner p { flex: 1 1 16rem; min-width: 0; margin: 0; }
+.review-banner strong { margin-right: .45rem; color: var(--text); }
+.review-banner code { font-family: var(--mono); font-size: .92em; }
+.review-banner.is-warning { border-color: color-mix(in srgb, var(--warning) 45%, transparent); background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.review-banner.is-warning > svg { color: var(--warning); }
+.review-banner.is-danger { border-color: var(--danger-border); background: var(--danger-muted); }
+.review-banner.is-danger > svg { color: var(--danger-text); }
+.review-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.review-actions button { display: inline-flex; align-items: center; gap: .3rem; }
+
+.chip-pending { color: var(--accent); border-color: var(--accent-border); background: var(--accent-muted); }
+.chip-danger { color: var(--danger-text); border-color: var(--danger-border); background: var(--danger-muted); }
+
+.diff-view { display: grid; gap: .6rem; min-width: 0; }
+.diff-summary { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; color: var(--text-muted); font-size: var(--fs-xs); }
+.diff-summary span { display: inline-flex; align-items: center; gap: .35rem; }
+.diff-summary button { margin-left: auto; }
+.diff-counts b { font-family: var(--mono); font-weight: 600; }
+.diff-swatch { display: inline-block; width: .7rem; height: .7rem; border-radius: 2px; }
+.diff-swatch.is-add, .diff-line.is-add { background: color-mix(in srgb, var(--success) 16%, transparent); }
+.diff-swatch.is-del, .diff-line.is-del { background: color-mix(in srgb, var(--danger) 16%, transparent); }
+.diff-counts .is-add, .diff-files .is-add { color: var(--success); }
+.diff-counts .is-del, .diff-files .is-del { color: var(--danger-text); }
+.diff-files { display: grid; gap: .15rem; margin: 0; padding: .5rem .7rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); list-style: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--text-muted); }
+.diff-empty { margin: 0; color: var(--text-muted); font-size: var(--fs-sm); }
+.diff-lines { max-height: min(60vh, 36rem); margin: 0; overflow: auto; padding: .4rem 0; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface-code); font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.55; }
+.diff-line { display: block; padding: 0 .75rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-body); }
+.diff-line i { display: inline-block; width: 1.6rem; color: var(--text-subtle); font-style: normal; text-align: center; user-select: none; }
+.diff-line.is-add i { color: var(--success); }
+.diff-line.is-del i { color: var(--danger-text); }
+.diff-line.is-skip { padding-left: 1.6rem; color: var(--text-subtle); font-style: italic; }

@@ -12,6 +12,7 @@ import {
   MoreHorizontal,
   Plus,
   Settings,
+  ShieldCheck,
   Star,
   Trash2,
 } from 'lucide-react';
@@ -28,6 +29,8 @@ const navItems = [
   { id: 'all', label: folderLabels.all, icon: Archive },
   { id: 'trash', label: folderLabels.trash, icon: Trash2, droppable: true },
 ];
+// 待审核只在有内容（或正在查看）时出现：关闭审核的部署里不占位
+const pendingNavItem = { id: 'pending', label: folderLabels.pending, icon: ShieldCheck };
 
 function findNode(nodes, path) {
   for (const node of nodes) {
@@ -64,6 +67,7 @@ export default function FolderTree({
   const [menuOpen, setMenuOpen] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
+  const systemItems = (stats?.pending > 0 || currentFolder === 'pending') ? [pendingNavItem, ...navItems] : navItems;
   const treeRef = useRef(null);
 
   useEffect(() => {
@@ -257,7 +261,7 @@ export default function FolderTree({
   // 计数收成右上角小圆点，hover 出完整标题。
   if (collapsed) {
     const railItems = [
-      ...navItems.map((item) => ({ ...item, count: stats[item.id] || 0 })),
+      ...systemItems.map((item) => ({ ...item, count: stats[item.id] || 0 })),
       { id: 'recent', label: folderLabels.recent, icon: Clock3, count: recentSkills.length },
     ];
     return (
@@ -326,7 +330,7 @@ export default function FolderTree({
       <div className="sidebar-scroll" ref={treeRef}>
         <nav aria-label="系统分类">
           <ul className="nav-list">
-            {navItems.map(({ id, label, icon: Icon, droppable }) => {
+            {systemItems.map(({ id, label, icon: Icon, droppable }) => {
               const active = currentFolder === id && !currentTag;
               return (
                 <li key={id}>

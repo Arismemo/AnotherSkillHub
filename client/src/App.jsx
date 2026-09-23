@@ -802,6 +802,7 @@ export default function App() {
               onSelectFolder={handleSelectFolder}
               onSelectTag={handleSelectTag}
               onCopySkill={handleCopySkill}
+              onChanged={refreshAll}
               apiRef={detailApiRef}
             />
           </Suspense>

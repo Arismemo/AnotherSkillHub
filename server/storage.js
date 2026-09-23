@@ -8,6 +8,12 @@ if (!fs.existsSync(baseStorageDir)) {
   fs.mkdirSync(baseStorageDir, { recursive: true });
 }
 
+// 技能目录内的相对路径 → 绝对路径；越界（../、绝对路径）返回 null
+function resolveInside(dir, relativePath) {
+  const full = path.resolve(dir, String(relativePath || ''));
+  return full.startsWith(path.resolve(dir) + path.sep) ? full : null;
+}
+
 // 保存 skill 到文件系统
 function saveSkillToDisk(folderPath, slug, content, files = []) {
   const targetDir = path.join(baseStorageDir, folderPath || 'inbox', slug);
@@ -20,13 +26,24 @@ function saveSkillToDisk(folderPath, slug, content, files = []) {
   if (Array.isArray(files)) {
     for (const file of files) {
       if (file && file.path && file.content !== undefined) {
-        const filePath = path.join(targetDir, file.path);
+        const filePath = resolveInside(targetDir, file.path);
+        if (!filePath) continue;
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, file.content, 'utf8');
       }
     }
   }
   return targetDir;
+}
+
+// 整体替换：先清空旧目录，避免新版本里已删除的附属文件残留（推送/采纳/恢复版本时使用）
+function replaceSkillOnDisk(folderPath, slug, content, files = []) {
+  fs.rmSync(path.join(baseStorageDir, folderPath || 'inbox', slug), { recursive: true, force: true });
+  return saveSkillToDisk(folderPath, slug, content, files);
+}
+
+function skillDirExists(folderPath, slug) {
+  return fs.existsSync(path.join(baseStorageDir, folderPath || 'inbox', slug, 'SKILL.md'));
 }
 
 // 移动文件系统上的 skill
@@ -90,9 +107,8 @@ function getSkillFileTree(folderPath, slug) {
 
 // 读取具体文件内容
 function getSkillFileContent(folderPath, slug, relativePath) {
-  const safeRel = path.normalize(relativePath).replace(/^(\.\.[\/\\])+/, '');
-  const fullPath = path.join(baseStorageDir, folderPath || 'inbox', slug, safeRel);
-  if (!fs.existsSync(fullPath) || fs.statSync(fullPath).isDirectory()) {
+  const fullPath = resolveInside(path.join(baseStorageDir, folderPath || 'inbox', slug), relativePath);
+  if (!fullPath || !fs.existsSync(fullPath) || fs.statSync(fullPath).isDirectory()) {
     return null;
   }
   return fs.readFileSync(fullPath, 'utf8');
@@ -102,12 +118,6 @@ function getSkillFileContent(folderPath, slug, relativePath) {
 function createSkillTarGzArchive(folderPath, slug, res) {
   const { spawn } = require('child_process');
   const targetParent = path.join(baseStorageDir, folderPath || 'inbox');
-  const skillDir = path.join(targetParent, slug);
-
-  if (!fs.existsSync(skillDir)) {
-    fs.mkdirSync(skillDir, { recursive: true });
-    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), `# ${slug}\nSkill initialized.`);
-  }
 
   const tar = spawn('tar', ['-czf', '-', '-C', targetParent, slug]);
   tar.stdout.pipe(res);
@@ -123,18 +133,15 @@ function createSkillArchive(folderPath, slug, res) {
   const archive = archiver('zip', { zlib: { level: 9 } });
   
   archive.pipe(res);
-  if (fs.existsSync(targetDir)) {
-    archive.directory(targetDir, false);
-  } else {
-    // 降级：如果磁盘暂缺，只写入一个空目录
-    archive.append('# Skill file not found on disk', { name: 'SKILL.md' });
-  }
+  archive.directory(targetDir, false);
   return archive.finalize();
 }
 
 module.exports = {
   baseStorageDir,
   saveSkillToDisk,
+  replaceSkillOnDisk,
+  skillDirExists,
   moveSkillOnDisk,
   parseSkillContent,
   createSkillArchive,

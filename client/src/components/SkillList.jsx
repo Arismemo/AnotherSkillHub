@@ -3,6 +3,7 @@ import FolderPicker from './FolderPicker';
 import ContextMenu from './ContextMenu';
 import { showToast } from './toastBus';
 import { folderLabels } from '../utils/systemFolders';
+import './Review.css';
 import { formatShortDate } from '../utils/date';
 import {
   ArrowDownAZ,
@@ -299,6 +300,9 @@ export default function SkillList({
                     {skill.description && <p>{skill.description}</p>}
                     <footer>
                       <span className="row-meta">
+                        {skill.status === 'pending' && <span className="chip chip-pending" title="Agent 推送的新技能，通过审核后其他 Agent 才能拉取">待审</span>}
+                        {skill.has_pending_update && <span className="chip chip-pending" title="Agent 提交了更新，等待采纳">有更新</span>}
+                        {skill.warning_count > 0 && <span className="chip chip-danger" title="安全扫描命中可疑模式，详情页查看">⚠ {skill.warning_count}</span>}
                         {skill.version && <span className="chip row-version" title={`版本 ${skill.version}`}>v{skill.version}</span>}
                         {(skill.tags || []).slice(0, 2).map((tag) => (
                           <button

@@ -4,6 +4,7 @@ export const folderLabels = {
   starred: '收藏',
   trash: '废纸篓',
   recent: '最近浏览',
+  pending: '待审核',
 };
 
 // 系统视图中只有 inbox 是实际可存放技能的目录。

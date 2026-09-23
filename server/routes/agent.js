@@ -2,248 +2,194 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const multer = require('multer');
 const db = require('../db');
-const { parseSkillContent, saveSkillToDisk, createSkillArchive, createSkillTarGzArchive } = require('../storage');
+const { replaceSkillOnDisk, skillDirExists, createSkillArchive, createSkillTarGzArchive, getSkillFileTree, getSkillFileContent } = require('../storage');
+const { normalizeSkillMeta } = require('../skillMeta');
+const { scanSkill, hasHighRisk } = require('../security');
+const { reviewRequired, parseJson, snapshotSkillVersion, isVisibleToAgents } = require('../review');
+const { shQuote, getBaseUrl } = require('../shell');
+const { render } = require('../templates');
 
 const upload = multer({ limits: { fileSize: 20 * 1024 * 1024 } });
 
-// A9: 轻量安全扫描——高危模式给 warning（不阻塞）
-const SECURITY_PATTERNS = [
-  { re: /rm\s+-rf\s+[~/]??\s*$/m, msg: '包含 rm -rf 指向根/家目录的危险写法' },
-  { re: /curl[^|;]*\|\s*(ba)?sh/g, msg: '包含 curl|sh 远程执行（若非自有服务安装脚本请人工确认）' },
-  { re: /wget[^|;]*\|\s*(ba)?sh/g, msg: '包含 wget|sh 远程执行' },
-  { re: /(eval|exec)\s*\(.{0,40}(base64|\\x)/gi, msg: '包含 base64/十六进制混淆的 eval/exec' },
-  { re: /(?:aws_secret_access_key|api[_-]?key|private[_-]?key)\s*[:=]\s*['"][A-Za-z0-9+\/_-]{16,}/gi, msg: '疑似硬编码密钥' },
-  { re: /\bnc\s+-e|reverse[_-]?shell|bash\s+-i\s+>&\s*\/dev\/tcp/gi, msg: '疑似反弹 shell' },
-];
-function securityScan(text) {
-  const hits = [];
-  for (const p of SECURITY_PATTERNS) {
-    if (p.re.test(text)) hits.push(p.msg);
+const INSTALL_AGENTS = ['auto', 'hermes', 'codex', 'claude', 'dsh'];
+const truthy = (value) => ['1', 'true', 'yes'].includes(String(value || '').toLowerCase());
+const wantsText = (req) => req.query.format === 'text' || req.body?.format === 'text';
+
+function findSkill(slug) {
+  return db.prepare('SELECT * FROM skills WHERE slug = ?').get(slug);
+}
+
+// 安装脚本里的错误也必须是合法脚本：curl | bash 时给出原因并以非零退出
+function scriptError(res, status, message) {
+  res.status(status).type('text/plain').send(`#!/usr/bin/env bash\necho ${shQuote(`错误: ${message}`)} >&2\nexit 1\n`);
+}
+
+// Agent 侧读取时，不可见的技能给出可操作的原因
+function agentLookup(req) {
+  const skill = findSkill(req.params.slug.replace(/\.md$/, ''));
+  if (!skill || skill.is_deleted) return { error: [404, `技能 ${req.params.slug} 不存在或已删除（ash search <关键词> 查找）`] };
+  if (!isVisibleToAgents(skill, { allowPending: truthy(req.query.pending) })) {
+    return { error: [404, `技能 ${skill.slug} 正在等待人工审核，采纳后才能拉取；推送者自用请加 --pending（HTTP: ?pending=1）`] };
   }
-  return hits;
+  return { skill };
 }
 
-// 获取服务基础主机 URL
-function getBaseUrl(req) {
-  const host = req.get('x-forwarded-host') || req.get('host');
-  const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
-  return `${proto}://${host}`;
-}
-
-// 技能组合一键安装：/s/bundle/:slug/install.sh —— 依次安装组合内全部技能
+// 技能组合一键安装：/s/bundle/:slug/install.sh —— 依次安装组合内全部已发布技能
 router.get('/bundle/:slug/install.sh', (req, res) => {
   const bundle = db.prepare('SELECT * FROM bundles WHERE slug = ?').get(req.params.slug);
-  if (!bundle) return res.status(404).send('#!/bin/bash\necho "Bundle not found"\nexit 1\n');
+  if (!bundle) return scriptError(res, 404, `技能组合 ${req.params.slug} 不存在`);
   const items = db.prepare(`
-    SELECT s.slug, s.name FROM bundle_items bi JOIN skills s ON s.id = bi.skill_id
+    SELECT s.slug, s.name, s.status FROM bundle_items bi JOIN skills s ON s.id = bi.skill_id
     WHERE bi.bundle_id = ? AND s.is_deleted = 0 ORDER BY bi.added_at DESC
   `).all(bundle.id);
-  if (!items.length) return res.status(400).send('#!/bin/bash\necho "Bundle is empty"\nexit 1\n');
+  const ready = items.filter((it) => it.status !== 'pending');
+  const skipped = items.filter((it) => it.status === 'pending');
+  if (!ready.length) return scriptError(res, 400, `技能组合 ${bundle.name} 中没有可安装的技能`);
 
-  const baseUrl = getBaseUrl(req);
-  // 透传 agent/dir 参数给组合内每个技能的 install.sh
-  const subQuery = new URLSearchParams();
-  if (req.query.agent) subQuery.set('agent', req.query.agent);
-  if (req.query.dir) subQuery.set('dir', req.query.dir);
-  const agentQ = subQuery.toString() ? `?${subQuery.toString()}` : '';
-  const installs = items.map((it) => `  echo "--- [\${i}/\${N}] ${it.name} (${it.slug})"; curl -fsSL "\${BASE_URL}/s/${it.slug}/install.sh${agentQ}" | bash`).join('\n');
-  const script = `#!/bin/bash
-set -e
-set -o pipefail
-BASE_URL="${baseUrl}"
-N=${items.length}
-i=0
-echo "========================================================="
-echo "  📦 AnotherSkillHub 技能组合 [${bundle.name}] —— 共 \${N} 个技能"
-echo "========================================================="
-install_one() {
-  i=\$((i+1))
-${installs}
-}
-install_one
-echo "========================================================="
-echo "✅ 技能组合 [${bundle.name}] 全部安装完毕（\${N} 个技能）！"
-echo "========================================================="
-`;
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.send(script);
+  const sub = new URLSearchParams();
+  if (INSTALL_AGENTS.includes(req.query.agent)) sub.set('agent', req.query.agent);
+  if (typeof req.query.dir === 'string' && req.query.dir) sub.set('dir', req.query.dir);
+  const query = sub.toString() ? `?${sub}` : '';
+  const lines = [
+    '#!/usr/bin/env bash',
+    '# AnotherSkillHub 技能组合安装脚本（由服务端生成）',
+    'set -euo pipefail',
+    `BASE_URL=${shQuote(getBaseUrl(req))}`,
+    `echo ${shQuote(`📦 技能组合 [${bundle.name}]：共 ${ready.length} 个技能`)}`,
+    ...skipped.map((it) => `echo ${shQuote(`⏭  跳过待审核技能 ${it.name} (${it.slug})`)}`),
+    ...ready.flatMap((it, i) => [
+      `echo ${shQuote(`--- [${i + 1}/${ready.length}] ${it.name} (${it.slug})`)}`,
+      `curl -fsSL "$BASE_URL"${shQuote(`/s/${it.slug}/install.sh${query}`)} | bash`,
+    ]),
+    `echo ${shQuote(`✅ 技能组合 [${bundle.name}] 安装完毕`)}`,
+  ];
+  res.type('text/plain').send(`${lines.join('\n')}\n`);
 });
 
-// 智能短链：/s/:slug 或 /s/:slug.md
+// 纯文本技能信息：ash info <slug>
+router.get('/:slug/info', (req, res) => {
+  const { skill, error } = agentLookup(req);
+  if (error) return res.status(error[0]).type('text/plain').send(`错误: ${error[1]}\n`);
+  const base = getBaseUrl(req);
+  const tags = parseJson(skill.tags, []);
+  const files = getSkillFileTree(skill.folder_path, skill.slug).map((f) => f.path).sort();
+  const warnings = parseJson(skill.security_warnings, []);
+  const out = [
+    `${skill.name} (${skill.slug})`,
+    skill.description ? `描述: ${skill.description}` : '描述: （无）',
+    `状态: ${skill.status === 'pending' ? '待审核' : '已发布'}${skill.pending_content ? '（有待审核的更新）' : ''} · 版本 ${skill.version} · 更新于 ${skill.updated_at}`,
+    `目录: ${skill.folder_path}${tags.length ? ` · 标签: ${tags.join(', ')}` : ''}`,
+    `文件 (${files.length}):`,
+    ...files.map((f) => `  ${f}`),
+    ...warnings.map((w) => `⚠️  ${w.msg}`),
+    `阅读: ash show ${skill.slug}    (${base}/s/${skill.slug}.md)`,
+    `安装: ash pull ${skill.slug}    (curl -fsSL ${base}/s/${skill.slug}/install.sh | bash)`,
+  ];
+  res.type('text/plain').send(`${out.join('\n')}\n`);
+});
+
+// 单个附属文件：/s/:slug/files/<相对路径>
+router.get('/:slug/files/*filepath', (req, res) => {
+  const { skill, error } = agentLookup(req);
+  if (error) return res.status(error[0]).type('text/plain').send(`错误: ${error[1]}\n`);
+  const rel = [].concat(req.params.filepath).join('/');
+  const content = getSkillFileContent(skill.folder_path, skill.slug, rel);
+  if (content === null) return res.status(404).type('text/plain').send(`错误: 文件 ${rel} 不存在\n`);
+  res.type('text/plain').send(content);
+});
+
+// 智能短链：/s/:slug 或 /s/:slug.md —— 默认返回 Markdown，只有浏览器（Accept: text/html）才跳转到管理界面
 router.get('/:slug', (req, res) => {
   try {
-    let slug = req.params.slug;
-    let isExplicitMarkdown = false;
-    if (slug.endsWith('.md')) {
-      slug = slug.replace(/\.md$/, '');
-      isExplicitMarkdown = true;
+    const explicitMarkdown = req.params.slug.endsWith('.md');
+    const slug = req.params.slug.replace(/\.md$/, '');
+    // 浏览器的 Accept 首选 text/html；curl 的 */*、Agent 抓取器的 text/markdown 都会落到 Markdown
+    const prefersHtml = req.accepts(['text/markdown', 'text/html']) === 'text/html';
+    if (!explicitMarkdown && req.query.format !== 'md' && prefersHtml) {
+      return res.redirect(`/?skill=${encodeURIComponent(slug)}`);
     }
 
-    const skill = db.prepare(`SELECT * FROM skills WHERE slug = ? AND is_deleted = 0`).get(slug);
-    if (!skill) {
-      return res.status(404).send('# Error: Skill not found\nThe requested skill does not exist or has been removed.\n');
-    }
-    // ?version=<id> 拉取历史版本内容
+    const { skill, error } = agentLookup(req);
+    if (error) return res.status(error[0]).type('text/markdown').send(`# 错误\n\n${error[1]}\n`);
+    res.type('text/markdown');
+
     if (req.query.version) {
-      const ver = db.prepare('SELECT * FROM skill_versions WHERE id = ? AND skill_id = ?').get(req.query.version, skill.id);
-      if (ver) {
-        return res.setHeader('Content-Type', 'text/markdown; charset=utf-8') && res.send(ver.content);
-      }
+      const ver = db.prepare('SELECT content FROM skill_versions WHERE id = ? AND skill_id = ?').get(req.query.version, skill.id);
+      if (!ver) return res.status(404).send(`# 错误\n\n版本 ${req.query.version} 不存在\n`);
+      return res.send(ver.content);
     }
+    if (truthy(req.query.raw)) return res.send(skill.content);
 
-    const acceptHeader = req.get('accept') || '';
-    const userAgent = req.get('user-agent') || '';
-    const format = req.query.format;
-
-    const isCurlOrAgent = userAgent.includes('curl') || 
-                         userAgent.includes('Wget') || 
-                         userAgent.includes('Hermes') || 
-                         userAgent.includes('Python') ||
-                         userAgent.includes('Claude') ||
-                         acceptHeader.includes('text/markdown') ||
-                         format === 'md' ||
-                         isExplicitMarkdown;
-
-    // 如果是 Agent 或命令行抓取，返回纯 Markdown
-    if (isCurlOrAgent) {
-      res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
-      
-      // 组装标准技能 Markdown 格式
-      let output = skill.content;
-      return res.send(output);
-    }
-
-    // 否则如果是浏览器访问，重定向到前端页面并高亮选中该 skill
-    return res.redirect(`/?skill=${slug}`);
+    // 多文件技能：直接 fetch 只拿得到 SKILL.md，附上文件清单让 Agent 能取到脚本/参考资料
+    const files = getSkillFileTree(skill.folder_path, skill.slug).filter((f) => f.path !== 'SKILL.md').map((f) => f.path).sort();
+    if (!files.length) return res.send(skill.content);
+    const base = getBaseUrl(req);
+    const manifest = [
+      '',
+      '',
+      '---',
+      '',
+      '<!-- 以下由 AnotherSkillHub 附加，不属于 SKILL.md 原文（?raw=1 可获取原文） -->',
+      '## 附属文件',
+      '',
+      `本技能包含 ${files.length} 个附属文件，正文中的相对路径指向它们。需要执行脚本时请完整安装：\`ash pull ${skill.slug}\`（或 \`curl -fsSL ${base}/s/${skill.slug}/install.sh | bash\`）。`,
+      '',
+      ...files.map((f) => `- \`${f}\`：${base}/s/${skill.slug}/files/${f.split('/').map(encodeURIComponent).join('/')}`),
+      '',
+    ];
+    return res.send(skill.content.replace(/\s*$/, '') + manifest.join('\n'));
   } catch (err) {
-    res.status(500).send('# Internal Server Error\n' + err.message);
+    res.status(500).type('text/markdown').send(`# 服务器错误\n\n${err.message}\n`);
   }
 });
 
-// 一键安装脚本：/s/:slug/install.sh (自动完整安装技能目录，包含附属脚本与文档)
-// 查询参数: agent=hermes|codex|claude|dsh 指定安装目标；dir=/path 自定义目录
+// 一键安装脚本：/s/:slug/install.sh
+// 查询参数: agent=auto|hermes|codex|claude|dsh；dir=/path 自定义目录；pending=1 安装待审核技能
 router.get('/:slug/install.sh', (req, res) => {
   try {
-    const slug = req.params.slug;
-    const skill = db.prepare(`SELECT * FROM skills WHERE slug = ? AND is_deleted = 0`).get(slug);
-    if (!skill) {
-      return res.status(404).send('#!/bin/bash\necho "Skill not found"\nexit 1\n');
-    }
-
-    const baseUrl = getBaseUrl(req);
-    const script = `#!/bin/bash
-set -e
-set -o pipefail
-
-SKILL_NAME="${slug}"
-BASE_URL="${baseUrl}"
-AGENT_TARGET="${req.query.agent || 'auto'}"
-CUSTOM_DIR="${(req.query.dir || '').replace(/"/g, '')}"
-
-echo "================================================="
-echo "  📦 AnotherSkillHub: 正在安装技能 [\$SKILL_NAME]"
-echo "================================================="
-
-# 安装目标选择：ash pull <slug> --agent <name> [--dir /path] 透传为 AGENT/DIR 参数
-AGENT_TARGET="\${AGENT_TARGET:-auto}"
-CUSTOM_DIR="\${CUSTOM_DIR:-}"
-SKILLS_ROOT=""
-case "\$AGENT_TARGET" in
-  hermes)
-    SKILLS_ROOT="\$HOME/.hermes/skills";;
-  codex)
-    SKILLS_ROOT="\$HOME/.agents/skills";;
-  claude)
-    SKILLS_ROOT="\$HOME/.claude/skills";;
-  dsh)
-    SKILLS_ROOT="\$HOME/.dsh/skills";;
-  *)
-    # 自动检测
-    if [ -d "\$HOME/.hermes/profiles/inceptio-general/skills" ]; then SKILLS_ROOT="\$HOME/.hermes/profiles/inceptio-general/skills"
-    elif [ -d "\$HOME/.hermes/skills" ]; then SKILLS_ROOT="\$HOME/.hermes/skills"
-    elif [ -d "\$HOME/.agents/skills" ]; then SKILLS_ROOT="\$HOME/.agents/skills"
-    elif [ -d "\$HOME/.claude/skills" ]; then SKILLS_ROOT="\$HOME/.claude/skills"
-    elif [ -d "\$HOME/.dsh/skills" ]; then SKILLS_ROOT="\$HOME/.dsh/skills"
-    else SKILLS_ROOT="\$HOME/.hermes/skills"; fi;;
-esac
-if [ -n "\$CUSTOM_DIR" ]; then
-    INSTALL_DIR="\$CUSTOM_DIR/\$SKILL_NAME"
-else
-    mkdir -p "\$SKILLS_ROOT"
-    INSTALL_DIR="\$SKILLS_ROOT/\$SKILL_NAME"
-fi
-
-mkdir -p "\$INSTALL_DIR"
-echo "目标安装目录: \$INSTALL_DIR"
-
-# 尝试下载完整归档 (包含脚本 scripts/ 与文档 references/)
-# 归档顶层带 <slug>/ 目录，--strip-components=1 去掉，避免嵌套成 <slug>/<slug>/
-echo "正在从云端拉取完整技能包..."
-if curl -fsSL "\$BASE_URL/s/\$SKILL_NAME/archive.tar.gz" | tar -xz -C "\$INSTALL_DIR" --strip-components=1 2>/dev/null; then
-    echo "✓ 完整技能归档解压成功"
-else
-    echo "注意：未找到多文件归档，正在拉取核心 SKILL.md..."
-    curl -fsSL "\$BASE_URL/s/\$SKILL_NAME.md" -o "\$INSTALL_DIR/SKILL.md"
-fi
-
-# 兼容旧版脚本安装过的嵌套目录：<INSTALL_DIR>/<slug>/... 拍平到根
-if [ -d "\$INSTALL_DIR/\$SKILL_NAME" ]; then
-    mv "\$INSTALL_DIR/\$SKILL_NAME"/* "\$INSTALL_DIR/" 2>/dev/null || true
-    rmdir "\$INSTALL_DIR/\$SKILL_NAME" 2>/dev/null || true
-    echo "✓ 已修正历史版本的嵌套目录结构"
-fi
-
-# 如果有 scripts 目录，自动赋予执行权限
-if [ -d "\$INSTALL_DIR/scripts" ]; then
-    chmod +x "\$INSTALL_DIR/scripts"/* 2>/dev/null || true
-    echo "✓ 已自动赋予脚本执行权限 (chmod +x scripts/*)"
-fi
-
-echo "================================================="
-echo "✅ 技能 [\$SKILL_NAME] 安装完毕，开箱即用！"
-echo "================================================="
-`;
-
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.send(script);
+    const { skill, error } = agentLookup(req);
+    if (error) return scriptError(res, error[0], error[1]);
+    const agent = INSTALL_AGENTS.includes(req.query.agent) ? req.query.agent : 'auto';
+    const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
+    const script = render('install.sh', {
+      SLUG: shQuote(skill.slug),
+      BASE_URL: shQuote(getBaseUrl(req)),
+      AGENT: shQuote(agent),
+      DIR: shQuote(dir),
+      PENDING: truthy(req.query.pending) ? '1' : '0',
+    });
+    res.type('text/plain').send(script);
   } catch (err) {
-    res.status(500).send('#!/bin/bash\necho "Server error"\nexit 1\n');
+    scriptError(res, 500, `服务器错误：${err.message}`);
   }
 });
 
-// 打包下载 tar.gz：/s/:slug/archive.tar.gz (专为终端与 Agent 流式解压设计)
+function sendArchive(req, res, kind) {
+  const { skill, error } = agentLookup(req);
+  if (error) return res.status(error[0]).type('text/plain').send(`错误: ${error[1]}\n`);
+  if (!skillDirExists(skill.folder_path, skill.slug)) return res.status(404).type('text/plain').send('错误: 技能文件缺失\n');
+  if (kind === 'tar') {
+    res.attachment(`${skill.slug}.tar.gz`);
+    createSkillTarGzArchive(skill.folder_path, skill.slug, res);
+  } else {
+    res.attachment(`${skill.slug}.zip`);
+    createSkillArchive(skill.folder_path, skill.slug, res);
+  }
+}
+
+// 打包下载：tar.gz 供终端与 Agent 流式解压，zip 供浏览器下载
 router.get('/:slug/archive.tar.gz', (req, res) => {
-  try {
-    const slug = req.params.slug;
-    const skill = db.prepare(`SELECT * FROM skills WHERE slug = ?`).get(slug);
-    if (!skill) return res.status(404).send('Skill not found');
-
-    res.attachment(`${slug}.tar.gz`);
-    createSkillTarGzArchive(skill.folder_path, slug, res);
-  } catch (err) {
-    res.status(500).send('Error archiving skill: ' + err.message);
-  }
+  try { sendArchive(req, res, 'tar'); } catch (err) { res.status(500).send('Error archiving skill: ' + err.message); }
 });
-
-// 打包下载 ZIP：/s/:slug/download
 router.get('/:slug/download', (req, res) => {
-  try {
-    const slug = req.params.slug;
-    const skill = db.prepare(`SELECT * FROM skills WHERE slug = ?`).get(slug);
-    if (!skill) return res.status(404).send('Skill not found');
-
-    res.attachment(`${slug}.zip`);
-    createSkillArchive(skill.folder_path, slug, res);
-  } catch (err) {
-    res.status(500).send('Error archiving skill: ' + err.message);
-  }
+  try { sendArchive(req, res, 'zip'); } catch (err) { res.status(500).send('Error archiving skill: ' + err.message); }
 });
 
 // 解包技能归档（tar.gz/tgz）：返回 { content, files }——SKILL.md 为正文，其余为附属文件
-// A6: 扩展名白名单（可用环境变量 ASH_ALLOWED_EXTS 覆盖，逗号分隔）
+// 扩展名白名单（可用环境变量 ASH_ALLOWED_EXTS 覆盖，逗号分隔）
 const ALLOWED_EXTS = (process.env.ASH_ALLOWED_EXTS
   ? process.env.ASH_ALLOWED_EXTS.split(',').map((e) => e.trim().toLowerCase())
   : ['.md', '.json', '.yaml', '.yml', '.toml', '.txt', '.sh', '.bash', '.zsh', '.py', '.js', '.ts', '.mjs', '.cjs', '.css', '.html', '.xml', '.sql', '.ini', '.cfg', '.conf', '.csv', '.xsd', '.xsl', '.dtd', '.svg']);
@@ -269,7 +215,7 @@ function extractSkillArchive(buffer) {
     // 路径穿越防护：先列出成员校验再解包
     let listing = '';
     try {
-      listing = execSync(`tar -tzf ${shellQuote(tmpTar)}`, { stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 8 * 1024 * 1024 }).toString();
+      listing = execFileSync('tar', ['-tzf', tmpTar], { stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 8 * 1024 * 1024 }).toString();
     } catch {
       return { error: '归档损坏或不是有效的 tar.gz' };
     }
@@ -283,18 +229,20 @@ function extractSkillArchive(buffer) {
     if (members.length > MAX_FILES + 50) {
       return { error: `归档文件数过多（${members.length} > ${MAX_FILES + 50}）` };
     }
-    execSync(`tar -xzf ${shellQuote(tmpTar)} -C ${shellQuote(tmpDir)}`, { stdio: 'pipe' });
+    const extractDir = path.join(tmpDir, 'x');
+    fs.mkdirSync(extractDir);
+    execFileSync('tar', ['-xzf', tmpTar, '-C', extractDir, '--no-same-owner'], { stdio: 'pipe' });
 
     // 若解包后只有一个根目录（skill-name/），下钻一层
-    let root = tmpDir;
-    const entries = fs.readdirSync(tmpDir).filter((e) => e !== 'skill.tgz' && !e.startsWith('ash-push.'));
+    let root = extractDir;
+    const entries = fs.readdirSync(extractDir);
     if (entries.length === 1) {
-      const only = path.join(tmpDir, entries[0]);
-      if (fs.statSync(only).isDirectory()) root = only;
+      const only = path.join(extractDir, entries[0]);
+      if (fs.lstatSync(only).isDirectory()) root = only;
     }
 
     // 找 SKILL.md（大小写兼容：SKILL.md / skill.md / Skill.md）
-    const findSkillMd = (dir) => fs.readdirSync(dir).find((f) => f.toLowerCase() === 'skill.md' && fs.statSync(path.join(dir, f)).isFile());
+    const findSkillMd = (dir) => fs.readdirSync(dir).find((f) => f.toLowerCase() === 'skill.md' && fs.lstatSync(path.join(dir, f)).isFile());
     let skillMdPath = null;
     const rootHit = findSkillMd(root);
     if (rootHit) {
@@ -303,7 +251,7 @@ function extractSkillArchive(buffer) {
       // 容错：一层子目录里的 skill.md（单根目录包装场景）
       for (const e of fs.readdirSync(root)) {
         const sub = path.join(root, e);
-        if (fs.statSync(sub).isDirectory()) {
+        if (fs.lstatSync(sub).isDirectory()) {
           const hit = findSkillMd(sub);
           if (hit) { skillMdPath = path.join(sub, hit); root = sub; break; }
         }
@@ -313,24 +261,25 @@ function extractSkillArchive(buffer) {
 
     const content = fs.readFileSync(skillMdPath, 'utf8');
 
-    // 收集附属文本文件；超限即报错（不静默丢弃）
+    // 收集附属文本文件；数量/总量超限即报错，单文件超限或非白名单跳过并提示
     const files = [];
     let totalBytes = 0;
     const skipped = [];
     const skippedType = [];
     (function walk(dir, rel) {
       for (const item of fs.readdirSync(dir).sort()) {
-        if (item === '.git' || item === 'node_modules' || item === '__pycache__' || item === 'skill.tgz' || item === '.DS_Store' || item.startsWith('._') || item.startsWith('ash-push.')) continue;
+        if (item === '.git' || item === 'node_modules' || item === '__pycache__' || item === '.DS_Store' || item.startsWith('._')) continue;
         const full = path.join(dir, item);
         const relP = rel ? `${rel}/${item}` : item;
-        const stat = fs.statSync(full);
+        const stat = fs.lstatSync(full);
+        if (stat.isSymbolicLink()) { skippedType.push(`${relP} (符号链接)`); continue; }
         if (stat.isDirectory()) walk(full, relP);
-        else if (item.toLowerCase() !== 'skill.md') {
+        else if (relP.toLowerCase() !== 'skill.md') {
           if (files.length >= MAX_FILES) throw new Error(`附属文件数超过上限 ${MAX_FILES}`);
-          if (!extAllowed(item)) { skippedType.push(relP); return; }
-          if (stat.size > MAX_FILE) { skipped.push(`${relP} (${Math.round(stat.size / 1024)}KB)`); return; }
+          if (!extAllowed(item)) { skippedType.push(relP); continue; }
+          if (stat.size > MAX_FILE) { skipped.push(`${relP} (${Math.round(stat.size / 1024)}KB)`); continue; }
           totalBytes += stat.size;
-          if (totalBytes > MAX_TOTAL_TEXT) throw new Error(`附属文本总量超过上限 4MB`);
+          if (totalBytes > MAX_TOTAL_TEXT) throw new Error('附属文本总量超过上限 4MB');
           files.push({ path: relP, content: fs.readFileSync(full, 'utf8') });
         }
       }
@@ -343,117 +292,139 @@ function extractSkillArchive(buffer) {
   }
 }
 
-function shellQuote(p) { return `'${String(p).replace(/'/g, `'\\''`)}'`; }
+// 推送时指定的目录：逐级补齐 folders 记录，拒绝 .. 与空段
+function ensureFolderPath(folderPath) {
+  const clean = String(folderPath || 'inbox').trim().replace(/^\/+|\/+$/g, '');
+  const segments = clean.split('/');
+  if (!clean || segments.some((s) => !s.trim() || s === '.' || s === '..')) return null;
+  const insert = db.prepare('INSERT OR IGNORE INTO folders (path, name, parent_path) VALUES (?, ?, ?)');
+  segments.forEach((segment, i) => insert.run(segments.slice(0, i + 1).join('/'), segment, segments.slice(0, i).join('/')));
+  return clean;
+}
 
-// Agent 一键 Push 上传端点 (支持 JSON、单文件 FormData、归档 tar.gz 上传)
+const sameFiles = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
+
+function pushSummaryText(r) {
+  const head = {
+    created: r.status === 'pending'
+      ? `✅ 已创建技能 ${r.slug}（待审核：人工采纳后其他 Agent 才能拉取）`
+      : `✅ 已创建并发布技能 ${r.slug}`,
+    updated: r.status === 'pending'
+      ? `✅ 已更新待审核技能 ${r.slug}（仍需人工采纳）`
+      : `✅ 已更新并发布技能 ${r.slug}（旧版本已存入历史）`,
+    'update-pending': `✅ 已提交 ${r.slug} 的更新（待审核：采纳前其他 Agent 仍拉取当前版本）`,
+    unchanged: `= ${r.slug} 内容无变化，未做修改`,
+  }[r.action];
+  const lines = [head, `   地址: ${r.url}`, `   附属文件: ${r.files} 个`];
+  if (r.status === 'pending') lines.push(`   自用: ash pull ${r.slug} --pending`);
+  (r.security_warnings || []).forEach((w) => lines.push(`⚠️  安全提醒: ${w.msg}${w.level === 'high' ? '（高危，已强制人工审核）' : ''}`));
+  (r.notices || []).forEach((n) => lines.push(`ℹ️  ${n}`));
+  return `${lines.join('\n')}\n`;
+}
+
+// Agent 一键 Push 上传端点（支持 JSON、单文件 FormData、归档 tar.gz 上传）
+// 同名 slug 已存在时必须显式 update=1；推送结果默认需要人工审核后才对其他 Agent 可见
 router.post('/push', upload.single('file'), (req, res) => {
+  const asText = wantsText(req);
+  const fail = (status, message, extra = {}) => (asText
+    ? res.status(status).type('text/plain').send(`错误: ${message}\n`)
+    : res.status(status).json({ error: message, ...extra }));
   try {
+    const body = req.body || {};
+    const terminalSource = body.terminal || body.terminal_source || 'Agent-CLI';
     let content = '';
-    let name = req.body.name;
-    let slug = req.body.slug;
-    let description = req.body.description;
-    let terminalSource = req.body.terminal || req.body.terminal_source || 'Agent-CLI';
-    let folderPath = req.body.folder || req.body.folder_path || 'inbox'; // 默认进入 inbox
-
-    let fileFallbackName = '';
+    let fileName = '';
     let archiveFiles = [];
-    let skippedOversize = [];
-    let skippedNonWhitelist = [];
-    if (req.file && /\.(tar\.gz|tgz|zip)$/i.test(req.file.originalname)) {
-      // 归档上传：解包出 SKILL.md + 附属文件
+    const notices = [];
+    if (req.file && /\.(tar\.gz|tgz)$/i.test(req.file.originalname)) {
       const extracted = extractSkillArchive(req.file.buffer);
-      if (!extracted || extracted.error) {
-        return res.status(400).json({ error: (extracted && extracted.error) || '归档解析失败' });
-      }
+      if (!extracted || extracted.error) return fail(400, (extracted && extracted.error) || '归档解析失败');
       content = extracted.content;
       archiveFiles = extracted.files;
-      skippedOversize = extracted.skipped || [];
-      skippedNonWhitelist = extracted.skippedType || [];
-      if (!folderPath || folderPath === 'inbox') {
-        // 归档里若有目录名暗示分类，仅作展示参考；仍默认 inbox
-      }
+      if (extracted.skipped.length) notices.push(`已跳过超限文件（>512KB）: ${extracted.skipped.join(', ')}`);
+      if (extracted.skippedType.length) notices.push(`已跳过非白名单类型文件: ${extracted.skippedType.join(', ')}`);
     } else if (req.file) {
+      if (/\.zip$/i.test(req.file.originalname)) return fail(400, '暂不支持 zip，请上传 tar.gz 归档或直接推送目录（ash push <目录>）');
       content = req.file.buffer.toString('utf8');
-      // 文件名（如 SKILL.md）只做兜底，且 SKILL/README 这类通用名不用
-      const base = req.file.originalname.replace(/\.md$/i, '').trim();
-      if (base && !/^(skill|readme|untitled)$/i.test(base)) fileFallbackName = base;
-    } else if (req.body.content) {
-      content = req.body.content;
+      fileName = req.file.originalname;
+    } else if (body.content) {
+      content = String(body.content);
     }
+    if (!content.trim()) return fail(400, '缺少技能内容：请上传 SKILL.md、技能目录归档，或提供 content 字段');
 
-    if (!content) {
-      return res.status(400).json({ error: 'Missing skill content or file' });
-    }
+    const meta = normalizeSkillMeta(content, { slug: body.slug, name: body.name, description: body.description, tags: body.tags }, { fileName });
+    if (meta.errors.length) return fail(400, meta.errors.join('；'));
+    notices.push(...meta.warnings);
+    const securityWarnings = scanSkill(content, archiveFiles);
+    const needsReview = reviewRequired() || hasHighRisk(securityWarnings);
+    const slug = meta.slug;
+    const existing = findSkill(slug);
+    const base = getBaseUrl(req);
 
-    const parsed = parseSkillContent(content);
-    const securityWarnings = securityScan(content + '\n' + archiveFiles.map((f) => f.content).join('\n'));
-    if (skippedNonWhitelist.length) securityWarnings.push(`已跳过非白名单类型文件: ${skippedNonWhitelist.join(', ')}`);
-    // 名称优先级：显式传入 > 正文 H1（人话标题）> frontmatter name > 文件名兜底 > slug
-    if (!name) {
-      const h1 = (content.match(/^#\s+(.+)$/m) || [])[1];
-      if (h1) name = h1.trim();
-    }
-    if (!name && parsed.data.name) name = parsed.data.name;
-    if (!description && parsed.data.description) description = parsed.data.description;
-    if (!slug && parsed.data.name) slug = parsed.data.name;
-    if (!slug && name) slug = name;
-
-    slug = (slug || 'skill-' + Date.now()).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-    name = name || fileFallbackName || slug;
-
-    // 检查是否已有同名
-    const existing = db.prepare(`SELECT id, folder_path FROM skills WHERE slug = ?`).get(slug);
-
+    let result;
     if (existing) {
-      // agent 推送覆盖前快照旧版本
-      try {
-        const old = db.prepare('SELECT * FROM skills WHERE id = ?').get(existing.id);
-        if (old && old.content !== content) {
-          db.prepare('INSERT INTO skill_versions (skill_id, content, files, name, description, source) VALUES (?, ?, ?, ?, ?, ?)')
-            .run(old.id, old.content, old.files, old.name, old.description, 'agent');
-        }
-      } catch (e) { console.error('agent snapshot failed:', e.message); }
+      if (existing.is_deleted) return fail(409, `标识符 ${slug} 属于废纸篓中的技能，请先在网页上恢复或彻底删除`, { slug });
+      if (!truthy(body.update)) {
+        return fail(409, `技能 ${slug} 已存在（目录 ${existing.folder_path}）。确认是在更新它请加 --update（HTTP: update=1）；如果是另一个技能，请在 frontmatter 换一个 name`, { slug, folder_path: existing.folder_path });
+      }
+      const common = { slug, folder_path: existing.folder_path, name: existing.name };
+      const currentFiles = parseJson(existing.files, []);
+      const isPending = existing.status === 'pending';
+      const baseline = !isPending && existing.pending_content != null
+        ? { content: existing.pending_content, files: parseJson(existing.pending_files, []) }
+        : { content: existing.content, files: currentFiles };
+      if (baseline.content === content && sameFiles(baseline.files, archiveFiles)) {
+        result = { ...common, action: 'unchanged', status: existing.status };
+      } else if (isPending || !needsReview) {
+        // 从未发布过的待审技能直接原地更新；关闭审核时直接发布。名称/标签/目录保留人工维护的值
+        snapshotSkillVersion(existing, 'agent');
+        db.prepare(`
+          UPDATE skills SET content = ?, files = ?, description = ?, version = ?, terminal_source = ?, security_warnings = ?,
+            status = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(content, JSON.stringify(archiveFiles), meta.description || existing.description,
+          meta.frontmatter.version ? meta.version : existing.version, terminalSource, JSON.stringify(securityWarnings),
+          isPending ? 'pending' : 'approved', existing.id);
+        replaceSkillOnDisk(existing.folder_path, slug, content, archiveFiles);
+        result = { ...common, action: 'updated', status: isPending ? 'pending' : 'approved' };
+      } else {
+        db.prepare(`
+          UPDATE skills SET pending_content = ?, pending_files = ?, pending_meta = ?, pending_at = CURRENT_TIMESTAMP WHERE id = ?
+        `).run(content, JSON.stringify(archiveFiles), JSON.stringify({
+          description: meta.description, version: meta.frontmatter.version ? meta.version : null,
+          terminal_source: terminalSource, security_warnings: securityWarnings,
+        }), existing.id);
+        result = { ...common, action: 'update-pending', status: 'approved' };
+      }
+    } else {
+      const folderPath = ensureFolderPath(body.folder || body.folder_path || 'inbox');
+      if (!folderPath) return fail(400, `非法的目录: ${body.folder || body.folder_path}`);
+      const status = needsReview ? 'pending' : 'approved';
       db.prepare(`
-        UPDATE skills 
-        SET name = ?, description = ?, content = ?, files = ?, terminal_source = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(name, description || '', content, JSON.stringify(archiveFiles), terminalSource, existing.id);
-
-      saveSkillToDisk(existing.folder_path, slug, content, archiveFiles);
-      return res.json({
-        success: true,
-        action: 'updated',
-        slug,
-        folder_path: existing.folder_path,
-        files: archiveFiles.length,
-        skipped_oversize: skippedOversize.length ? skippedOversize : undefined,
-        security_warnings: securityWarnings.length ? securityWarnings : undefined,
-        warning: [skippedOversize.length ? `已跳过超限文件（>512KB）: ${skippedOversize.join(', ')}` : null, securityWarnings.length ? `⚠️ 安全提醒: ${securityWarnings.join('; ')}` : null].filter(Boolean).join(' | ') || undefined,
-        url: `${getBaseUrl(req)}/s/${slug}`
-      });
+        INSERT INTO skills (slug, name, description, folder_path, tags, content, files, terminal_source, version, status, security_warnings)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(slug, meta.name, meta.description, folderPath, JSON.stringify(meta.tags), content, JSON.stringify(archiveFiles),
+        terminalSource, meta.version, status, JSON.stringify(securityWarnings));
+      replaceSkillOnDisk(folderPath, slug, content, archiveFiles);
+      result = { slug, name: meta.name, folder_path: folderPath, action: 'created', status };
     }
 
-    const stmt = db.prepare(`
-      INSERT INTO skills (slug, name, description, folder_path, tags, content, files, terminal_source)
-      VALUES (?, ?, ?, ?, '[]', ?, ?, ?)
-    `);
-    stmt.run(slug, name, description || '', folderPath, content, JSON.stringify(archiveFiles), terminalSource);
-
-    saveSkillToDisk(folderPath, slug, content, archiveFiles);
-
-    res.status(201).json({
+    const payload = {
       success: true,
-      action: 'created',
-      slug,
-      folder_path: folderPath,
+      ...result,
+      review_required: result.status === 'pending' || result.action === 'update-pending',
       files: archiveFiles.length,
-      skipped_oversize: skippedOversize.length ? skippedOversize : undefined,
-      warning: skippedOversize.length ? `已跳过超限文件（>512KB）: ${skippedOversize.join(', ')}` : undefined,
-      url: `${getBaseUrl(req)}/s/${slug}`,
-      install_cmd: `curl -fsSL ${getBaseUrl(req)}/s/${slug}/install.sh | bash`
-    });
+      security_warnings: securityWarnings,
+      notices,
+      // 兼容旧版 CLI：合并成一行提示
+      warning: [...securityWarnings.map((w) => `⚠️ 安全提醒: ${w.msg}`), ...notices].join(' | ') || undefined,
+      url: `${base}/s/${slug}`,
+      install_cmd: `curl -fsSL ${base}/s/${slug}/install.sh | bash`,
+    };
+    const status = result.action === 'created' ? 201 : 200;
+    return asText ? res.status(status).type('text/plain').send(pushSummaryText(payload)) : res.status(status).json(payload);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return fail(500, err.message);
   }
 });
 

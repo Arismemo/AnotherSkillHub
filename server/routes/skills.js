@@ -1,18 +1,13 @@
 const express = require('express');
 const router = express.Router();
-
-// 版本快照：保存技能的当前（旧）内容为历史版本
-function snapshotSkillVersion(skill, source) {
-  try {
-    db.prepare(`INSERT INTO skill_versions (skill_id, content, files, name, description, source) VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(skill.id, skill.content, skill.files, skill.name, skill.description, source || 'web');
-  } catch (e) {
-    console.error('snapshot failed:', e.message);
-  }
-}
 const db = require('../db');
-const { saveSkillToDisk, moveSkillOnDisk, parseSkillContent, getSkillFileTree, getSkillFileContent } = require('../storage');
+const { saveSkillToDisk, replaceSkillOnDisk, moveSkillOnDisk, parseSkillContent, getSkillFileTree, getSkillFileContent } = require('../storage');
+const { normalizeSkillMeta } = require('../skillMeta');
 const { buildSkillGraph } = require('../skillGraph');
+const { parseJson, snapshotSkillVersion, approveSkill, rejectSkill, warningsFor } = require('../review');
+
+// 待审核：Agent 推送的新技能，或已发布技能上挂着 Agent 提交的更新
+const PENDING_WHERE = "(status = 'pending' OR pending_content IS NOT NULL)";
 
 // 获取统计数据 (用于左侧栏 badge)
 router.get('/stats', (req, res) => {
@@ -21,8 +16,10 @@ router.get('/stats', (req, res) => {
     const starredCount = db.prepare(`SELECT COUNT(*) as count FROM skills WHERE is_starred = 1 AND is_deleted = 0`).get().count;
     const allCount = db.prepare(`SELECT COUNT(*) as count FROM skills WHERE is_deleted = 0`).get().count;
     const trashCount = db.prepare(`SELECT COUNT(*) as count FROM skills WHERE is_deleted = 1`).get().count;
+    const pendingCount = db.prepare(`SELECT COUNT(*) as count FROM skills WHERE is_deleted = 0 AND ${PENDING_WHERE}`).get().count;
 
     res.json({
+      pending: pendingCount,
       inbox: inboxCount,
       starred: starredCount,
       all: allCount,
@@ -53,18 +50,26 @@ router.get('/tags', (req, res) => {
 // 获取技能列表
 router.get('/', (req, res) => {
   try {
-    const { folder, tag, search, star } = req.query;
+    const { folder, tag, search, star, format } = req.query;
+    const asText = format === 'text';
 
     // 列表不带 content：SKILL.md 全文只有详情页用得上，放在列表里每次搜索/切目录都要白白序列化+解析一遍
-    let query = `SELECT id, slug, name, description, folder_path, tags, terminal_source, is_starred, is_deleted, version, created_at, updated_at FROM skills WHERE 1=1`;
+    let query = `SELECT id, slug, name, description, folder_path, tags, terminal_source, is_starred, is_deleted, version, created_at, updated_at,
+      status, pending_content IS NOT NULL AS has_pending_update, json_array_length(COALESCE(security_warnings, '[]')) AS warning_count,
+      json_array_length(COALESCE(files, '[]')) + 1 AS file_count
+      FROM skills WHERE 1=1`;
     const params = [];
 
     if (folder === 'trash') {
       query += ` AND is_deleted = 1`;
     } else {
       query += ` AND is_deleted = 0`;
+      // 纯文本格式给 Agent 用：只列出能拉取的已发布技能
+      if (asText) query += ` AND status != 'pending'`;
 
-      if (folder === 'starred' || star === '1') {
+      if (folder === 'pending') {
+        query += ` AND ${PENDING_WHERE}`;
+      } else if (folder === 'starred' || star === '1') {
         query += ` AND is_starred = 1`;
       } else if (folder && folder !== 'all') {
         query += ` AND folder_path = ?`;
@@ -72,9 +77,10 @@ router.get('/', (req, res) => {
       }
     }
 
-    if (search) {
+    // 多个关键词（空格分隔）需同时命中：Agent 常用「部署 仿真」这类组合词搜索
+    for (const term of String(search || '').split(/\s+/).filter(Boolean)) {
       query += ` AND (name LIKE ? OR slug LIKE ? OR description LIKE ? OR content LIKE ?)`;
-      const kw = `%${search}%`;
+      const kw = `%${term}%`;
       params.push(kw, kw, kw, kw);
     }
 
@@ -94,8 +100,18 @@ router.get('/', (req, res) => {
       });
     }
 
+    if (asText) {
+      const clip = (value, n) => (value.length > n ? `${value.slice(0, n - 1)}…` : value);
+      const lines = skills.map((s) => `${s.slug}  ·  ${s.name}${s.description ? `  ·  ${clip(s.description, 80)}` : ''}  [${s.folder_path}]`);
+      const header = skills.length
+        ? `共 ${skills.length} 个技能（ash info <slug> 看详情，ash pull <slug> 安装）`
+        : (search ? `没有找到匹配「${search}」的技能，换个关键词试试` : '技能库为空');
+      return res.type('text/plain').send(`${[header, ...lines].join('\n')}\n`);
+    }
+
     res.json(skills.map(s => ({
       ...s,
+      has_pending_update: Boolean(s.has_pending_update),
       tags: JSON.parse(s.tags || '[]')
     })));
   } catch (err) {
@@ -130,7 +146,18 @@ router.get('/:id', (req, res) => {
 
     skill.tags = JSON.parse(skill.tags || '[]');
     skill.files = JSON.parse(skill.files || '[]');
+    skill.security_warnings = parseJson(skill.security_warnings, []);
     skill.file_tree = getSkillFileTree(skill.folder_path, skill.slug);
+    // 待审更新：连同文件列表一起给前端做差异对比
+    skill.pending_update = skill.pending_content != null ? {
+      content: skill.pending_content,
+      files: parseJson(skill.pending_files, []),
+      meta: parseJson(skill.pending_meta, {}),
+      submitted_at: skill.pending_at,
+    } : null;
+    delete skill.pending_content;
+    delete skill.pending_files;
+    delete skill.pending_meta;
     res.json(skill);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -160,35 +187,37 @@ router.get('/:id/file', (req, res) => {
   }
 });
 
-// 创建新技能（或由 Agent 写入）
+// 元数据预览：粘贴导入时实时显示将得到的 slug/名称/标签，规则与创建、Agent 推送完全一致
+router.post('/parse', (req, res) => {
+  const { content = '', slug, name, description } = req.body || {};
+  const meta = normalizeSkillMeta(String(content), { slug, name, description });
+  const existing = meta.slug ? db.prepare('SELECT id, is_deleted FROM skills WHERE slug = ?').get(meta.slug) : null;
+  res.json({
+    slug: meta.slug, name: meta.name, description: meta.description, tags: meta.tags, version: meta.version,
+    errors: meta.errors, warnings: meta.warnings,
+    conflict: existing ? { id: existing.id, in_trash: Boolean(existing.is_deleted) } : null,
+    security_warnings: warningsFor(String(content), []),
+  });
+});
+
+// 创建新技能（网页新建 / 粘贴导入；人工创建直接发布）
 router.post('/', (req, res) => {
   try {
-    let { slug, name, description, folder_path, tags, content, files, terminal_source, version } = req.body;
-
-    if (!content) {
-      return res.status(400).json({ error: 'Content is required' });
-    }
-
-    // 从 Markdown 中尝试解析 frontmatter 自动补齐元数据
-    const parsed = parseSkillContent(content);
-    if (!name && parsed.data.name) name = parsed.data.name;
-    if (!description && parsed.data.description) description = parsed.data.description;
-    if (!slug && parsed.data.name) slug = parsed.data.name;
-
-    if (!slug) {
-      slug = 'skill-' + Date.now();
-    }
-    // 格式化 slug 为合法的 url 字符
-    slug = slug.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-    if (!slug) return res.status(400).json({ error: '请输入有效的英文标识符' });
-    if (!name) name = slug;
+    let { folder_path, content, files, terminal_source } = req.body;
+    const meta = normalizeSkillMeta(content || '', {
+      slug: req.body.slug,
+      name: req.body.name,
+      description: req.body.description,
+      version: req.body.version,
+      tags: Array.isArray(req.body.tags) && req.body.tags.length ? req.body.tags : undefined,
+    });
+    if (meta.errors.length) return res.status(400).json({ error: meta.errors.join('；') });
+    const { slug, name, description, tags, version } = meta;
 
     // 默认放入 inbox
     folder_path = folder_path || 'inbox';
-    tags = Array.isArray(tags) ? tags : [];
     files = Array.isArray(files) ? files : [];
     terminal_source = terminal_source || 'Web';
-    version = version || '1.0.0';
 
     // 检查是否存在同名 slug
     const existing = db.prepare(`SELECT id FROM skills WHERE slug = ?`).get(slug);
@@ -198,11 +227,12 @@ router.post('/', (req, res) => {
     }
 
     const stmt = db.prepare(`
-      INSERT INTO skills (slug, name, description, folder_path, tags, content, files, terminal_source, version)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO skills (slug, name, description, folder_path, tags, content, files, terminal_source, version, security_warnings)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const result = stmt.run(slug, name, description || '', folder_path, JSON.stringify(tags), content, JSON.stringify(files), terminal_source, version);
+    const result = stmt.run(slug, name, description || '', folder_path, JSON.stringify(tags), content, JSON.stringify(files), terminal_source, version,
+      JSON.stringify(warningsFor(content, files)));
 
     saveSkillToDisk(folder_path, slug, content, files);
 
@@ -232,6 +262,39 @@ router.get('/:id/versions', (req, res) => {
   res.json(rows);
 });
 
+// 单个历史版本的完整内容（差异对比用）
+router.get('/:id/versions/:versionId', (req, res) => {
+  const ver = db.prepare('SELECT id, skill_id, content, files, name, description, source, label, created_at FROM skill_versions WHERE id = ? AND skill_id = ?')
+    .get(req.params.versionId, Number(req.params.id));
+  if (!ver) return res.status(404).json({ error: 'Version not found' });
+  res.json({ ...ver, files: parseJson(ver.files, []) });
+});
+
+// 审核：采纳 Agent 推送的新技能或待审更新
+router.post('/:id/approve', (req, res) => {
+  try {
+    const skill = db.prepare('SELECT * FROM skills WHERE id = ?').get(req.params.id);
+    if (!skill || skill.is_deleted) return res.status(404).json({ error: 'Skill not found' });
+    if (skill.status !== 'pending' && skill.pending_content == null) return res.status(400).json({ error: '该技能没有待审核的内容' });
+    res.json({ success: true, result: approveSkill(skill) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 审核：拒绝（待审更新直接丢弃；待审新技能移入废纸篓）
+router.post('/:id/reject', (req, res) => {
+  try {
+    const skill = db.prepare('SELECT * FROM skills WHERE id = ?').get(req.params.id);
+    if (!skill || skill.is_deleted) return res.status(404).json({ error: 'Skill not found' });
+    const result = rejectSkill(skill);
+    if (result === 'noop') return res.status(400).json({ error: '该技能没有待审核的内容' });
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 给历史版本打标签（如 v2.1 稳定版）
 router.put('/:id/versions/:versionId/label', (req, res) => {
   const { label } = req.body;
@@ -251,9 +314,10 @@ router.post('/:id/versions/:versionId/restore', (req, res) => {
     if (!ver) return res.status(404).json({ error: 'Version not found' });
 
     snapshotSkillVersion(skill, 'restore-backup');
-    db.prepare('UPDATE skills SET content = ?, files = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .run(ver.content, ver.files, skill.id);
-    saveSkillToDisk(skill.folder_path, skill.slug, ver.content, JSON.parse(ver.files || '[]'));
+    const verFiles = JSON.parse(ver.files || '[]');
+    db.prepare('UPDATE skills SET content = ?, files = ?, security_warnings = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run(ver.content, ver.files, JSON.stringify(warningsFor(ver.content, verFiles)), skill.id);
+    replaceSkillOnDisk(skill.folder_path, skill.slug, ver.content, verFiles);
     res.json({ success: true, restored_version_id: ver.id });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -295,11 +359,12 @@ router.put('/:id', (req, res) => {
       finalFolder = folder_path;
     }
 
+    const updatedWarnings = JSON.stringify(warningsFor(updatedContent, JSON.parse(updatedFiles || '[]')));
     db.prepare(`
       UPDATE skills
-      SET name = ?, description = ?, folder_path = ?, tags = ?, content = ?, files = ?, terminal_source = ?, is_starred = ?, version = ?, updated_at = CURRENT_TIMESTAMP
+      SET name = ?, description = ?, folder_path = ?, tags = ?, content = ?, files = ?, terminal_source = ?, is_starred = ?, version = ?, security_warnings = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(updatedName, updatedDesc, finalFolder, updatedTags, updatedContent, updatedFiles, updatedSource, updatedStarred, updatedVersion, id);
+    `).run(updatedName, updatedDesc, finalFolder, updatedTags, updatedContent, updatedFiles, updatedSource, updatedStarred, updatedVersion, updatedWarnings, id);
 
     // 磁盘保存
     saveSkillToDisk(finalFolder, skill.slug, updatedContent, JSON.parse(updatedFiles));
@@ -352,10 +417,10 @@ router.post('/:id/copy', (req, res) => {
     const copyName = new_name || `${skill.name} (Copy)`;
 
     const stmt = db.prepare(`
-      INSERT INTO skills (slug, name, description, folder_path, tags, content, files, terminal_source, version)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO skills (slug, name, description, folder_path, tags, content, files, terminal_source, version, security_warnings)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const result = stmt.run(newSlug, copyName, skill.description, destFolder, skill.tags, skill.content, skill.files, 'Web-Copy', skill.version);
+    const result = stmt.run(newSlug, copyName, skill.description, destFolder, skill.tags, skill.content, skill.files, 'Web-Copy', skill.version, skill.security_warnings || '[]');
 
     saveSkillToDisk(destFolder, newSlug, skill.content, JSON.parse(skill.files));
 
