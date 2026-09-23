@@ -633,6 +633,19 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .version-empty, .version-error { color: var(--text-subtle); font-size: var(--fs-sm); text-align: center; padding: 1.2rem 0; }
 .version-error { color: var(--danger-text); }
 
+/* 快捷键速查面板（内容由 App 的快捷键注册表生成） */
+.shortcut-groups { display: grid; gap: 1rem; max-height: 26rem; overflow-y: auto; }
+.shortcut-groups section { display: grid; gap: .3rem; }
+.shortcut-groups h3 { margin: 0; color: var(--text-subtle); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.shortcut-groups dl { display: grid; gap: .1rem; margin: 0; }
+.shortcut-groups dl > div { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .3rem .5rem; border-radius: var(--r-sm); }
+.shortcut-groups dl > div:hover { background: var(--surface-hover); }
+.shortcut-groups dt { min-width: 0; color: var(--text-muted); font-size: var(--fs-xs); }
+.shortcut-groups dd { display: flex; align-items: center; gap: .3rem; margin: 0; flex: 0 0 auto; }
+.shortcut-groups dd span { display: inline-flex; align-items: center; gap: .3rem; }
+.shortcut-groups kbd { min-width: 1.3rem; padding: .1rem .35rem; border: 1px solid var(--border-muted); border-radius: var(--r-xs); background: var(--surface-overlay); color: var(--text); font-family: var(--mono); font-size: var(--fs-2xs); text-align: center; }
+.shortcut-or { color: var(--text-subtle); font-size: var(--fs-2xs); font-style: normal; }
+
 /* 可搜索文件夹选择器 */
 .folder-picker { position: relative; }
 .folder-picker-trigger { display: inline-flex; align-items: center; gap: .35rem; max-width: 11rem; height: 2rem; padding: 0 .55rem; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-raised); color: var(--text-muted); font-size: var(--fs-xs); }

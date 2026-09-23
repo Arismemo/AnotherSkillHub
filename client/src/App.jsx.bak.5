@@ -610,14 +610,19 @@ export default function App() {
           onDensityChange={setListDensity}
           onToggleStar={handleToggleStar}
           onTrashSkill={handleTrashSkill}
-          onAddToBundle={(skillId) => setAddToBundleTarget(skills.find((x) => x.id === skillId))}
+          onAddToBundle={(skillId) => setAddToBundleTarget({ ids: [skillId], label: skills.find((x) => x.id === skillId)?.name ?? '技能' })}
+          onBatchAddToBundle={() => setAddToBundleTarget({ ids: [...selectedIds], label: `${selectedIds.size} 个技能` })}
+          onBatchStar={handleBatchStar}
+          onBatchRestore={handleBatchRestore}
+          onBatchDelete={handleBatchDelete}
+          multiSelectMode={multiSelectMode}
           onRestoreSkill={(id) => runMutation(`/api/skills/${id}/restore`, { method: 'POST' })}
           onPermanentDelete={handlePermanentDelete}
           onNewSkill={() => setShowNewModal(true)}
           onBatchMove={handleBatchMove}
           onBatchTrash={handleBatchTrash}
           folders={folders}
-          onClearSelection={() => setSelectedIds(new Set())}
+          onClearSelection={() => { setSelectedIds(selectedSkillId ? new Set([selectedSkillId]) : new Set()); setMultiSelectMode(false); }}
           loading={loading}
           error={appError}
           onRetry={refreshAll}
@@ -698,11 +703,11 @@ export default function App() {
       />
       <AddToBundleModal
         isOpen={Boolean(addToBundleTarget)}
-        skillId={addToBundleTarget?.id}
-        skillName={addToBundleTarget?.name}
+        skillIds={addToBundleTarget?.ids || []}
+        label={addToBundleTarget?.label}
         bundles={bundles}
         onClose={() => setAddToBundleTarget(null)}
-        onDone={() => { fetchFoldersAndStats(); showToast(`已加入组合`); }}
+        onDone={() => { fetchFoldersAndStats(); showToast(`已加入组合（${addToBundleTarget?.ids.length ?? 1} 个技能）`); }}
       />
       <NewBundleModal
         isOpen={showBundleModal}

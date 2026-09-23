@@ -265,6 +265,7 @@ export default function App() {
       body: JSON.stringify({ target_folder: targetFolder }),
     }).catch(() => null)));
     await refreshAll();
+    setMultiSelectMode(false);
     showToast(`已移动 ${ids.length} 个技能到 ${targetFolder}`, {
       actionLabel: '撤销',
       onAction: () => Promise.all(targets.map((s) => requestJson(`/api/skills/${s.id}/move`, {
@@ -609,7 +610,12 @@ export default function App() {
           onDensityChange={setListDensity}
           onToggleStar={handleToggleStar}
           onTrashSkill={handleTrashSkill}
-          onAddToBundle={(skillId) => setAddToBundleTarget(skills.find((x) => x.id === skillId))}
+          onAddToBundle={(skillId) => setAddToBundleTarget({ ids: [skillId], label: skills.find((x) => x.id === skillId)?.name ?? '技能' })}
+          onBatchAddToBundle={() => setAddToBundleTarget({ ids: [...selectedIds], label: `${selectedIds.size} 个技能` })}
+          onBatchStar={handleBatchStar}
+          onBatchRestore={handleBatchRestore}
+          onBatchDelete={handleBatchDelete}
+          multiSelectMode={multiSelectMode}
           onRestoreSkill={(id) => runMutation(`/api/skills/${id}/restore`, { method: 'POST' })}
           onPermanentDelete={handlePermanentDelete}
           onNewSkill={() => setShowNewModal(true)}
@@ -697,11 +703,11 @@ export default function App() {
       />
       <AddToBundleModal
         isOpen={Boolean(addToBundleTarget)}
-        skillId={addToBundleTarget?.id}
-        skillName={addToBundleTarget?.name}
+        skillIds={addToBundleTarget?.ids || []}
+        label={addToBundleTarget?.label}
         bundles={bundles}
         onClose={() => setAddToBundleTarget(null)}
-        onDone={() => { fetchFoldersAndStats(); showToast(`已加入组合`); }}
+        onDone={() => { fetchFoldersAndStats(); showToast(`已加入组合（${addToBundleTarget?.ids.length ?? 1} 个技能）`); }}
       />
       <NewBundleModal
         isOpen={showBundleModal}

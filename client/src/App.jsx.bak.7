@@ -265,6 +265,7 @@ export default function App() {
       body: JSON.stringify({ target_folder: targetFolder }),
     }).catch(() => null)));
     await refreshAll();
+    setMultiSelectMode(false);
     showToast(`已移动 ${ids.length} 个技能到 ${targetFolder}`, {
       actionLabel: '撤销',
       onAction: () => Promise.all(targets.map((s) => requestJson(`/api/skills/${s.id}/move`, {
@@ -285,6 +286,39 @@ export default function App() {
       onAction: () => Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/restore`, { method: 'POST' }).catch(() => null))).then(() => refreshAll()),
     });
     setSelectedIds(new Set());
+    setMultiSelectMode(false);
+  };
+
+  // 批量收藏：把所选全部置为已收藏（星标 API 是 toggle，所以只对未收藏的发请求）
+  const handleBatchStar = async () => {
+    const targets = [...selectedIds].map((id) => skills.find((s) => s.id === id)).filter(Boolean);
+    const toStar = targets.filter((s) => !s.is_starred);
+    const ids = toStar.length ? toStar.map((s) => s.id) : targets.map((s) => s.id);
+    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/star`, { method: 'POST' }).catch(() => null)));
+    await refreshAll();
+    showToast(toStar.length ? `已收藏 ${ids.length} 个技能` : `已取消收藏 ${ids.length} 个技能`, {
+      actionLabel: '撤销',
+      onAction: () => Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/star`, { method: 'POST' }).catch(() => null))).then(() => refreshAll()),
+    });
+  };
+
+  const handleBatchRestore = async () => {
+    const ids = [...selectedIds];
+    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/restore`, { method: 'POST' }).catch(() => null)));
+    await refreshAll();
+    showToast(`已恢复 ${ids.length} 个技能`);
+    setSelectedIds(new Set());
+    setMultiSelectMode(false);
+  };
+
+  const handleBatchDelete = async () => {
+    const ids = [...selectedIds];
+    if (!window.confirm(`永久删除这 ${ids.length} 个技能？此操作无法撤销。`)) return;
+    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}`, { method: 'DELETE' }).catch(() => null)));
+    await refreshAll();
+    showToast(`已永久删除 ${ids.length} 个技能`);
+    setSelectedIds(new Set());
+    setMultiSelectMode(false);
   };
 
   const handlePermanentDelete = async (skillId) => {
@@ -664,11 +698,11 @@ export default function App() {
       />
       <AddToBundleModal
         isOpen={Boolean(addToBundleTarget)}
-        skillId={addToBundleTarget?.id}
-        skillName={addToBundleTarget?.name}
+        skillIds={addToBundleTarget?.ids || []}
+        label={addToBundleTarget?.label}
         bundles={bundles}
         onClose={() => setAddToBundleTarget(null)}
-        onDone={() => { fetchFoldersAndStats(); showToast(`已加入组合`); }}
+        onDone={() => { fetchFoldersAndStats(); showToast(`已加入组合（${addToBundleTarget?.ids.length ?? 1} 个技能）`); }}
       />
       <NewBundleModal
         isOpen={showBundleModal}

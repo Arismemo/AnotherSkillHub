@@ -458,8 +458,9 @@ export default function App() {
       active.blur();
       return;
     }
-    if (selectedIds.size > 1) {
+    if (multiSelectMode) {
       setSelectedIds(selectedSkillId ? new Set([selectedSkillId]) : new Set());
+      setMultiSelectMode(false);
       return;
     }
     if (searchQuery) setSearchQuery('');
@@ -610,14 +611,19 @@ export default function App() {
           onDensityChange={setListDensity}
           onToggleStar={handleToggleStar}
           onTrashSkill={handleTrashSkill}
-          onAddToBundle={(skillId) => setAddToBundleTarget(skills.find((x) => x.id === skillId))}
+          onAddToBundle={(skillId) => setAddToBundleTarget({ ids: [skillId], label: skills.find((x) => x.id === skillId)?.name ?? '技能' })}
+          onBatchAddToBundle={() => setAddToBundleTarget({ ids: [...selectedIds], label: `${selectedIds.size} 个技能` })}
+          onBatchStar={handleBatchStar}
+          onBatchRestore={handleBatchRestore}
+          onBatchDelete={handleBatchDelete}
+          multiSelectMode={multiSelectMode}
           onRestoreSkill={(id) => runMutation(`/api/skills/${id}/restore`, { method: 'POST' })}
           onPermanentDelete={handlePermanentDelete}
           onNewSkill={() => setShowNewModal(true)}
           onBatchMove={handleBatchMove}
           onBatchTrash={handleBatchTrash}
           folders={folders}
-          onClearSelection={() => setSelectedIds(new Set())}
+          onClearSelection={() => { setSelectedIds(selectedSkillId ? new Set([selectedSkillId]) : new Set()); setMultiSelectMode(false); }}
           loading={loading}
           error={appError}
           onRetry={refreshAll}

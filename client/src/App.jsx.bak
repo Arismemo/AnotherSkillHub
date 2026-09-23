@@ -277,8 +277,8 @@ export default function App() {
     setSelectedIds(new Set());
   };
 
-  const handleBatchTrash = async () => {
-    const ids = [...selectedIds];
+  const handleBatchTrash = async (explicitIds) => {
+    const ids = explicitIds && explicitIds.length ? explicitIds : [...selectedIds];
     await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/trash`, { method: 'POST' }).catch(() => null)));
     await refreshAll();
     showToast(`已将 ${ids.length} 个技能移入废纸篓`, {
@@ -290,8 +290,9 @@ export default function App() {
   };
 
   // 批量收藏：把所选全部置为已收藏（星标 API 是 toggle，所以只对未收藏的发请求）
-  const handleBatchStar = async () => {
-    const targets = [...selectedIds].map((id) => skills.find((s) => s.id === id)).filter(Boolean);
+  const handleBatchStar = async (explicitIds) => {
+    const ids0 = explicitIds && explicitIds.length ? explicitIds : [...selectedIds];
+    const targets = ids0.map((id) => skills.find((s) => s.id === id) || allSkills.find((s) => s.id === id)).filter(Boolean);
     const toStar = targets.filter((s) => !s.is_starred);
     const ids = toStar.length ? toStar.map((s) => s.id) : targets.map((s) => s.id);
     await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/star`, { method: 'POST' }).catch(() => null)));
@@ -613,6 +614,7 @@ export default function App() {
           onTrashSkill={handleTrashSkill}
           onAddToBundle={(skillId) => setAddToBundleTarget({ ids: [skillId], label: skills.find((x) => x.id === skillId)?.name ?? '技能' })}
           onBatchAddToBundle={() => setAddToBundleTarget({ ids: [...selectedIds], label: `${selectedIds.size} 个技能` })}
+          onCopySkill={handleCopySkill}
           onBatchStar={handleBatchStar}
           onBatchRestore={handleBatchRestore}
           onBatchDelete={handleBatchDelete}

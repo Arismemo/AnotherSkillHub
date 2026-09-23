@@ -17,11 +17,12 @@ import {
 import FolderPicker from './FolderPicker';
 import ContextMenu from './ContextMenu';
 
+// droppable：拖技能过来有明确语义（归档 / 加星 / 删除）；「全部技能」不是归属地，不接收拖放
 const navItems = [
-  { id: 'inbox', label: '收件箱', icon: Inbox },
-  { id: 'starred', label: '收藏', icon: Star },
+  { id: 'inbox', label: '收件箱', icon: Inbox, droppable: true },
+  { id: 'starred', label: '收藏', icon: Star, droppable: true },
   { id: 'all', label: '全部技能', icon: Archive },
-  { id: 'trash', label: '废纸篓', icon: Trash2 },
+  { id: 'trash', label: '废纸篓', icon: Trash2, droppable: true },
 ];
 
 function findNode(nodes, path) {
@@ -242,17 +243,18 @@ export default function FolderTree({
     return (
       <div className="sidebar-content sidebar-rail">
         <ul className="nav-list" aria-label="系统分类">
-          {railItems.map(({ id, label, icon: Icon, count }) => {
+          {railItems.map(({ id, label, icon: Icon, count, droppable }) => {
             const active = currentFolder === id && !currentTag;
             return (
               <li key={id}>
                 <button
                   type="button"
-                  className={`nav-item rail-item ${active ? 'is-active' : ''}`}
+                  className={`nav-item rail-item ${active ? 'is-active' : ''}${dropTarget === id ? ' is-drop-target' : ''}`}
                   onClick={() => onSelectFolder(id)}
                   aria-current={active ? 'page' : undefined}
                   aria-label={count > 0 ? `${label}（${count}）` : label}
                   title={count > 0 ? `${label}（${count}）` : label}
+                  {...(droppable ? dropHandlers(id) : {})}
                 >
                   <Icon size={16} aria-hidden="true" />
                   {count > 0 && <span className="rail-dot" aria-hidden="true">{count > 99 ? '99+' : count}</span>}
@@ -302,15 +304,16 @@ export default function FolderTree({
       <div className="sidebar-scroll" ref={treeRef}>
         <nav aria-label="系统分类">
           <ul className="nav-list">
-            {navItems.map(({ id, label, icon: Icon }) => {
+            {navItems.map(({ id, label, icon: Icon, droppable }) => {
               const active = currentFolder === id && !currentTag;
               return (
                 <li key={id}>
                   <button
                     type="button"
-                    className={`nav-item ${active ? 'is-active' : ''}`}
+                    className={`nav-item ${active ? 'is-active' : ''}${dropTarget === id ? ' is-drop-target' : ''}`}
                     onClick={() => onSelectFolder(id)}
                     aria-current={active ? 'page' : undefined}
+                    {...(droppable ? dropHandlers(id) : {})}
                   >
                     <Icon size={16} aria-hidden="true" />
                     <span>{label}</span>
@@ -355,7 +358,13 @@ export default function FolderTree({
             <ul className="nav-list">
               {bundles.map((b) => (
                 <li key={b.id}>
-                  <button type="button" className="nav-item nav-bundle" onClick={() => onSelectBundle(b)} title={b.name}>
+                  <button
+                    type="button"
+                    className={`nav-item nav-bundle${dropTarget === `bundle:${b.id}` ? ' is-drop-target' : ''}`}
+                    onClick={() => onSelectBundle(b)}
+                    title={`${b.name}（可把技能拖到这里加入组合）`}
+                    {...dropHandlers(`bundle:${b.id}`)}
+                  >
                     <Package size={16} aria-hidden="true" />
                     <span className="truncate">{b.name}</span>
                     <span className="nav-count">{b.count}</span>

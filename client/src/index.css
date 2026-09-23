@@ -565,7 +565,7 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .skill-row.is-checked { border-color: var(--accent-border); }
 
 /* C3: 拖放目标 */
-.folder-row.is-drop-target { border: 1px dashed var(--accent); border-radius: var(--r-sm); background: var(--accent-muted); }
+.folder-row.is-drop-target, .nav-item.is-drop-target { border: 1px dashed var(--accent); border-radius: var(--r-sm); background: var(--accent-muted); }
 
 /* A4: 最近浏览 */
 .recent-item svg { color: var(--text-subtle); }
