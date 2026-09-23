@@ -1,11 +1,22 @@
 const matter = require('gray-matter');
 const { declaredDependencies } = require('./skillMeta');
 
+const META_WORD = /元技能|meta[- ]skill/i;
+const slugPatterns = new Map();
+function slugPattern(slug) {
+  if (!slugPatterns.has(slug)) {
+    const escaped = slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    slugPatterns.set(slug, new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`));
+  }
+  return slugPatterns.get(slug);
+}
+
 function list(value) {
   return Array.isArray(value) ? value.filter((item) => typeof item === 'string') : typeof value === 'string' ? [value] : [];
 }
 
-// Only declared metadata and explicit SKILL.md links are relationships, never prose mentions.
+// Relationships come only from explicit signals: declared metadata, local SKILL.md links, and lines that
+// name a meta skill by its exact slug on the same line as the word 元技能 / meta-skill. Bare prose mentions never count.
 function buildSkillGraph(skills) {
   const parsed = skills.filter((skill) => !skill.is_deleted).map((skill) => {
     let data = {}, body = skill.content || '', warning = false;
@@ -18,6 +29,7 @@ function buildSkillGraph(skills) {
     return { skill, data, body, warning, meta };
   });
   const bySlug = new Map(parsed.map((item) => [item.skill.slug, item]));
+  const metaSlugs = parsed.filter((item) => item.meta).map((item) => item.skill.slug);
   const edges = [], unresolved = [];
   for (const { skill, data, body } of parsed) {
     const seen = new Set();
@@ -38,6 +50,14 @@ function buildSkillGraph(skills) {
       try { path = decodeURIComponent(href.split(/[?#]/)[0]); } catch { continue; }
       const target = path.match(/(?:^|\/)([^/]+)\/SKILL\.md$/i);
       if (target) add(target[1], 'reference');
+    }
+    // 库里约定俗成的引用写法："见元技能 `verification-discipline`"、"`bench-access`（元技能）"、"see meta-skill `x`"。
+    // 同一行里既有元技能关键字、又有某个元技能的完整 slug（不是更长名字的一部分）才算。
+    for (const line of prose.split('\n')) {
+      if (!META_WORD.test(line)) continue;
+      for (const slug of metaSlugs) {
+        if (slugPattern(slug).test(line)) add(slug, 'reference');
+      }
     }
   }
   return {

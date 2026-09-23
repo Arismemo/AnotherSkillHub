@@ -101,6 +101,8 @@
 
 .graph-nebula { pointer-events: none; animation: graph-fade 1.4s ease both; }
 .graph-dial { pointer-events: none; }
+/* 线条保持屏幕像素粗细，放大后依旧是细线 */
+.graph-ticks line, .graph-ring, .graph-band, .graph-core, .graph-sweep line, .graph-edge, .graph-edge-bloom { vector-effect: non-scaling-stroke; }
 .graph-ticks { transform-box: view-box; transform-origin: 500px 400px; animation: graph-fade 1s ease .2s both, graph-spin 240s linear infinite; }
 .graph-ticks line { stroke: var(--graph-line); stroke-width: .6; opacity: .45; }
 .graph-ticks line.is-long { stroke: var(--accent); opacity: .7; }
@@ -108,7 +110,7 @@
 .graph-ring { fill: none; stroke: var(--accent); stroke-opacity: .5; stroke-width: 1; stroke-dasharray: 1; transform-box: fill-box; transform-origin: center; transform: rotate(-90deg); animation: graph-draw 1.3s var(--graph-ease) .1s both; }
 .graph-band { fill: none; stroke: var(--graph-line); stroke-opacity: .35; stroke-dasharray: 1 6; stroke-linecap: round; }
 .graph-core { fill: color-mix(in srgb, var(--accent) 4%, transparent); stroke: var(--graph-line); stroke-opacity: .45; stroke-dasharray: 2 5; }
-.graph-core-label { fill: var(--text-subtle); font-size: 10px; font-family: var(--mono); letter-spacing: .06em; animation: graph-fade .6s ease .9s both; }
+.graph-core-label { fill: var(--text-subtle); font-size: calc(10px / var(--k, 1)); font-family: var(--mono); letter-spacing: .06em; animation: graph-fade .6s ease .9s both; }
 /* 雷达扫描：一束扇形尾迹绕外环缓慢巡航 */
 .graph-sweep { transform-box: view-box; transform-origin: 500px 400px; animation: graph-fade 1s ease 1.2s both, graph-spin 11s linear infinite; }
 .graph-sweep line { stroke: var(--accent); stroke-opacity: .3; stroke-width: .7; }
@@ -143,7 +145,7 @@
 
 /* 节点：从圆心迸发，沿径向飞到落点 */
 .graph-node { cursor: pointer; outline: none; }
-.graph-node-body { transform-box: view-box; transform-origin: 0 0; animation: graph-burst .9s var(--graph-ease) var(--delay) both; transition: opacity .25s ease; }
+.graph-node-body { scale: var(--node-scale, 1); transform-box: view-box; transform-origin: 0 0; animation: graph-burst .9s var(--graph-ease) var(--delay) both; transition: opacity .25s ease; }
 .graph-node.is-dim .graph-node-body { opacity: .14; }
 .graph-node-hit { fill: transparent; }
 .graph-float { transform-box: view-box; transform-origin: 0 0; }
@@ -166,18 +168,19 @@
 
 .graph-node-label {
   fill: var(--text-muted);
-  font-size: 11px;
+  /* 画布缩放时文字反向补偿：屏幕上始终是同一字号，放大只拉开节点、不放大字 */
+  font-size: calc(11px / var(--k-node, 1));
   paint-order: stroke;
   stroke: var(--bg);
-  stroke-width: 4px;
+  stroke-width: calc(4px / var(--k-node, 1));
   stroke-linejoin: round;
   pointer-events: none;
   animation: graph-fade .2s ease both;
 }
-.graph-node.is-meta .graph-node-label { pointer-events: visiblePainted; fill: var(--text-body); font-size: 12.5px; font-weight: 500; animation-delay: calc(var(--delay) + .15s); }
+.graph-node.is-meta .graph-node-label { pointer-events: visiblePainted; fill: var(--text-body); font-size: calc(12.5px / var(--k-node, 1)); font-weight: 500; animation-delay: calc(var(--delay) + .15s); }
 .graph-node.is-active .graph-node-label, .graph-node.is-selected .graph-node-label { fill: var(--text); }
 .graph-node.is-match .graph-node-label { fill: var(--accent); }
-.graph-node-count { fill: var(--text-subtle); font-family: var(--mono); font-size: 10px; font-weight: 400; }
+.graph-node-count { fill: var(--text-subtle); font-family: var(--mono); font-size: calc(10px / var(--k-node, 1)); font-weight: 400; }
 
 /* 画布上的浮层 */
 .graph-badge {

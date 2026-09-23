@@ -48,14 +48,34 @@ const MAX_PARTICLES = 90; // 能量粒子上限：连线再多也不拖慢页面
 
 const metaRadius = (usage) => 5.5 + Math.min(6.5, Math.sqrt(usage) * 1.5);
 
-// 元技能名称沿径向朝外排：左半圆右对齐、右半圆左对齐、正上下居中
+// 元技能名称沿径向朝外排：左半圆右对齐、右半圆左对齐、正上下居中。
+// 垂直偏移用 em：字号随缩放反向补偿后，间距跟着字号走，不会被放大拉开
 function metaLabel(node) {
   const cos = Math.cos(node.angle), sin = Math.sin(node.angle);
   const distance = metaRadius(node.usage) + 11;
   const anchor = cos > .3 ? 'start' : cos < -.3 ? 'end' : 'middle';
-  const lift = anchor === 'middle' ? (sin > 0 ? 11 : -3) : 4;
-  return { x: cos * distance, y: sin * distance + lift, anchor };
+  const dy = anchor === 'middle' ? (sin > 0 ? '.95em' : '-.25em') : '.35em';
+  return { x: cos * distance, y: sin * distance, dy, anchor };
 }
+const APP_LABEL = { x: 8, y: 0, dy: '.35em', anchor: 'start' };
+
+// 估算标签在屏幕上的宽度：中日韩字符约一个字号宽，其余约 0.58 个
+function textWidth(text, px) {
+  let width = 0;
+  for (const ch of text) width += /[\u2e80-\uffff]/.test(ch) ? px : px * .58;
+  return width;
+}
+
+// 标签在屏幕坐标下的包围盒。节点按 √k 缩放，所以标签相对节点的偏移也按 √k 计
+function labelBox(node, label, k) {
+  const px = node.meta ? 12.5 : 11;
+  const width = textWidth(node.name, px) + (node.meta ? textWidth(String(node.usage), 10) + 6 : 0);
+  const x = node.x * k + label.x * Math.sqrt(k);
+  const y = node.y * k + label.y * Math.sqrt(k) + parseFloat(label.dy) * px;
+  const left = label.anchor === 'start' ? x : label.anchor === 'end' ? x - width : x - width / 2;
+  return { left, right: left + width, top: y - px * .8, bottom: y + px * .3 };
+}
+const overlaps = (a, b) => a.left < b.right + 6 && b.left < a.right + 6 && a.top < b.bottom + 3 && b.top < a.bottom + 3;
 
 function svgPoint(svg, event) {
   const matrix = svg?.getScreenCTM();
@@ -147,6 +167,10 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
     if (!scene) return;
     scene.classList.toggle('is-easing', ease && !prefersReducedMotion());
     scene.style.transform = `translate(${next.x}px, ${next.y}px) scale(${next.k})`;
+    // 放大时：间距按 k 拉开，节点只按 √k 长大（--node-scale），文字按 k 反向补偿保持屏幕字号
+    scene.style.setProperty('--k', next.k);
+    scene.style.setProperty('--node-scale', 1 / Math.sqrt(next.k));
+    scene.style.setProperty('--k-node', Math.sqrt(next.k));
     // 星空只跟随 30% 的平移、20% 的缩放：远景视差
     const stars = starsRef.current;
     if (stars) {
@@ -226,6 +250,37 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
     else if (event.key === '-') zoomAround(.8, undefined, true);
     else if (event.key === '0') resetView();
   };
+
+  // 标签避让：必显的（元技能、悬停/选中及其邻居、搜索命中）先占位；
+  // 可选的（「全部名称」或放大后自动显示）只在不压住已有标签时出现——放大拉开间距，名字自然越显越多
+  const shownLabels = useMemo(() => {
+    const optional = labels || zoom >= 1.8;
+    const placed = [], shown = new Set();
+    const forced = [], rest = [];
+    for (const raw of visible) {
+      const node = positions.get(raw.id);
+      const must = node.meta || node.id === activeId || node.id === selectedId || (activeId != null && neighborhood.has(node.id)) || matches.has(node.id);
+      if (must) forced.push(node);
+      else if (optional) rest.push(node);
+    }
+    rest.sort((a, b) => Number(connected.has(b.id)) - Number(connected.has(a.id)) || a.slug.localeCompare(b.slug));
+    // 可选标签还要避开别的节点圆点和圆心的「未关联」字样
+    const dots = visible.map((raw) => {
+      const node = positions.get(raw.id);
+      const r = (node.meta ? metaRadius(node.usage) + 5 : 4) * Math.sqrt(zoom);
+      return { id: node.id, left: node.x * zoom - r, right: node.x * zoom + r, top: node.y * zoom - r, bottom: node.y * zoom + r };
+    });
+    const coreY = (GRAPH.cy + GRAPH.core) * zoom + 14;
+    placed.push({ left: GRAPH.cx * zoom - 40, right: GRAPH.cx * zoom + 40, top: coreY - 9, bottom: coreY + 3 });
+    for (const node of forced) { shown.add(node.id); placed.push(labelBox(node, node.meta ? metaLabel(node) : APP_LABEL, zoom)); }
+    for (const node of rest) {
+      const box = labelBox(node, APP_LABEL, zoom);
+      if (placed.some((other) => overlaps(box, other)) || dots.some((dot) => dot.id !== node.id && overlaps(box, dot))) continue;
+      shown.add(node.id);
+      placed.push(box);
+    }
+    return shown;
+  }, [visible, positions, zoom, labels, activeId, selectedId, neighborhood, matches, connected]);
 
   const isDimmed = (id) => (activeId != null ? !neighborhood.has(id) : Boolean(needle) && !matches.has(id));
   const sourceKey = demo ? 'demo' : 'live';
@@ -355,7 +410,7 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
                   <circle className="graph-band" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.inner} />
                   <circle className="graph-core" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.core} />
                   {!calm && <circle className="graph-wave" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.core} />}
-                  {unlinkedCount > 0 && !onlyConnected && <text className="graph-core-label" x={GRAPH.cx} y={GRAPH.cy + GRAPH.core + 14} textAnchor="middle">未关联 · {unlinkedCount}</text>}
+                  {unlinkedCount > 0 && !onlyConnected && <text className="graph-core-label" x={GRAPH.cx} y={GRAPH.cy + GRAPH.core} dy="1.4em" textAnchor="middle">未关联 · {unlinkedCount}</text>}
                 </g>
 
                 <g className="graph-edges" key={`edges-${sourceKey}`}>
@@ -405,8 +460,8 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
                     const radius = Math.hypot(node.x - GRAPH.cx, node.y - GRAPH.cy);
                     // 入场：所有节点从圆心迸发，按离心距离依次落位；元技能最后抵达外环
                     const delay = node.meta ? 380 + metaNodes.indexOf(node) * 60 : 120 + radius * 1.4;
-                    const showName = node.meta || labels || zoom >= 1.8 || active || isSelected || neighbor || matches.has(node.id);
-                    const label = node.meta ? metaLabel(node) : { x: 8, y: 3.5, anchor: 'start' };
+                    const showName = shownLabels.has(node.id);
+                    const label = node.meta ? metaLabel(node) : APP_LABEL;
                     const size = node.meta ? metaRadius(node.usage) : 3.6;
                     return (
                       <g
@@ -439,9 +494,9 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
                             <circle className="graph-node-dot" r={size} />
                           </g>
                           {showName && (
-                            <text className="graph-node-label" x={label.x} y={label.y} textAnchor={label.anchor}>
+                            <text className="graph-node-label" x={label.x} y={label.y} dy={label.dy} textAnchor={label.anchor}>
                               {node.name}
-                              {node.meta && <tspan className="graph-node-count" dx="6">{node.usage}</tspan>}
+                              {node.meta && <tspan className="graph-node-count" dx=".5em">{node.usage}</tspan>}
                             </text>
                           )}
                         </g>
@@ -564,8 +619,8 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
                     <ul>
                       <li>元技能：frontmatter 写 <code>type: meta</code>，或带 <code>元技能</code> / <code>meta</code> 标签，或描述以「【元技能】」开头，或放在「元技能」目录。</li>
                       <li>实线：<code>depends_on</code>、<code>dependencies</code>、<code>requires</code> 里声明的 slug。</li>
-                      <li>虚线：正文里指向 <code>&lt;slug&gt;/SKILL.md</code> 的本地链接（代码块内的不算）。</li>
-                      <li>只画指向元技能的关系，不根据正文提及去猜测。</li>
+                      <li>虚线：正文里指向 <code>&lt;slug&gt;/SKILL.md</code> 的本地链接；或者某一行写了「元技能」/ meta-skill 并给出元技能的完整 slug，如「见元技能 <code>verification-discipline</code>」。代码块内的都不算。</li>
+                      <li>只画指向元技能的关系；没有关键字的随口提及不会被当成关系。</li>
                     </ul>
                   </details>
                 </>

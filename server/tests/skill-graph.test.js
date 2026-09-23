@@ -28,3 +28,21 @@ test('metadata failures are isolated and only actual meta targets produce graph 
   assert.equal(graph.nodes.find((n) => n.id === 2).meta, false);
   assert.deepEqual(graph.edges.map((edge) => edge.target), [1, 4, 5]);
 });
+
+test('lines naming a meta skill next to 元技能 / meta-skill become references; bare or fenced mentions do not', () => {
+  const graph = buildSkillGraph([meta,
+    { id: 2, slug: 'bench', name: '台架', content: '---\ntype: meta\n---\n' },
+    { id: 3, slug: 'uses-keyword', content: '> 验收纪律见元技能 `verify`；凭据见 `bench`（元技能）。' },
+    { id: 4, slug: 'english', content: '> Connection rules: see meta-skill `bench`.' },
+    { id: 5, slug: 'bare', content: '先跑 verify，再去 bench 上看。' },
+    { id: 6, slug: 'fenced', content: '```sh\n# 见元技能 verify\n```' },
+    { id: 7, slug: 'longer', content: '元技能 `verify-v2` 与 bench-access 都不是已知元技能。' },
+    { id: 8, slug: 'declared', content: '---\ndepends_on: [verify]\n---\n见元技能 `verify`。' },
+  ]);
+  assert.deepEqual(graph.edges, [
+    { source: 3, target: 1, kind: 'reference' },
+    { source: 3, target: 2, kind: 'reference' },
+    { source: 4, target: 2, kind: 'reference' },
+    { source: 8, target: 1, kind: 'dependency' },
+  ]);
+});
