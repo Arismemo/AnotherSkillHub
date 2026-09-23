@@ -314,7 +314,9 @@ const renderMarkdown = (source) => highlightMarkdownHtml(marked.parse(source));
 
 export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag, onCopySkill, apiRef }) {
   const [mode, setMode] = useState('preview');
-  const [content, setContent] = useState(skill.content || '');
+  const [content, setContent] = useState('');
+  // 列表接口不再回传 content，详情接口是唯一来源；savedContent 是「服务端上那一份」，用来判 dirty
+  const [savedContent, setSavedContent] = useState('');
   const [name, setName] = useState(skill.name || '');
   const [description, setDescription] = useState(skill.description || '');
   const [fileTree, setFileTree] = useState([]);
@@ -322,7 +324,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   // 非 md 文件（脚本/json 等）用宽版式：代码行普遍较长，40rem 窄列反而难读
   const isWideFileView = selectedFile !== 'SKILL.md' && !selectedFile.endsWith('.md');
   const [auxFileContent, setAuxFileContent] = useState('');
-  const [loadingDetail, setLoadingDetail] = useState(!skill.content);
+  const [loadingDetail, setLoadingDetail] = useState(true);
   const [loadingFile, setLoadingFile] = useState(false);
   const [saving, setSaving] = useState(false);
   const [detailError, setDetailError] = useState('');
@@ -386,7 +388,10 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     getJson(`/api/skills/${skill.id}`)
       .then((detail) => {
         if (cancelled) return;
-        setContent(detail.content || '');
+        const next = detail.content || '';
+        // 内容没变就别换引用：否则 renderedMarkdown 的 useMemo 会白跑一遍 marked + hljs
+        setContent((prev) => (prev === next ? prev : next));
+        setSavedContent(next);
         setName(detail.name || '');
         setDescription(detail.description || '');
         setFileTree(Array.isArray(detail.file_tree) ? detail.file_tree : []);
@@ -620,13 +625,16 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     }
   };
 
-  const dirty = name !== (skill.name || '') || description !== (skill.description || '') || content !== (skill.content || '');
+  const dirty = name !== (skill.name || '') || description !== (skill.description || '') || content !== savedContent;
 
   const handleSave = async () => {
     setSaving(true);
     const saved = await onSave({ ...skill, name, description, content });
     setSaving(false);
-    if (saved) setMode('preview');
+    if (saved) {
+      setSavedContent(content);
+      setMode('preview');
+    }
   };
 
   const switchMode = (nextMode) => {
@@ -752,7 +760,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
       </header>
       <VersionHistoryModal isOpen={showVersions} onClose={() => setShowVersions(false)} skillId={skill.id} onRestored={async () => {
             const fresh = await fetch(`/api/skills/${skill.id}`).then((r) => r.json()).catch(() => null);
-            if (fresh) { setContent(fresh.content || ''); }
+            if (fresh) { setContent(fresh.content || ''); setSavedContent(fresh.content || ''); }
           }} />
 
       <div className="detail-body">
