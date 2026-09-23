@@ -334,11 +334,21 @@ function highlightMarkdownHtml(html) {
 
 const renderMarkdown = (source) => highlightMarkdownHtml(marked.parse(source));
 
+function readSkillDraft(skillId) {
+  try {
+    const draft = JSON.parse(window.localStorage.getItem(`ash:skill-draft:${skillId}`));
+    if (draft && typeof draft.name === 'string' && typeof draft.description === 'string' && typeof draft.content === 'string') return draft;
+  } catch { /* 存储不可用或草稿损坏时从服务端继续载入 */ }
+  return null;
+}
+
 export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag, onCopySkill, apiRef }) {
   const [mode, setMode] = useState('preview');
   const [content, setContent] = useState('');
   // 列表接口不再回传 content，详情接口是唯一来源；savedContent 是「服务端上那一份」，用来判 dirty
   const [savedContent, setSavedContent] = useState('');
+  const [savedName, setSavedName] = useState(skill.name || '');
+  const [savedDescription, setSavedDescription] = useState(skill.description || '');
   const [name, setName] = useState(skill.name || '');
   const [description, setDescription] = useState(skill.description || '');
   const [fileTree, setFileTree] = useState([]);
@@ -411,11 +421,18 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
       .then((detail) => {
         if (cancelled) return;
         const next = detail.content || '';
-        // 内容没变就别换引用：否则 renderedMarkdown 的 useMemo 会白跑一遍 marked + hljs
-        setContent((prev) => (prev === next ? prev : next));
+        const nextName = detail.name || '';
+        const nextDescription = detail.description || '';
+        const draft = readSkillDraft(skill.id);
+        const restoreDraft = draft && (draft.content !== next || draft.name !== nextName || draft.description !== nextDescription);
+        // 草稿来自本机持久化；切技能或刷新后继续编辑，不依赖卸载时的异步补存是否成功。
+        setContent((prev) => prev === (restoreDraft ? draft.content : next) ? prev : (restoreDraft ? draft.content : next));
         setSavedContent(next);
-        setName(detail.name || '');
-        setDescription(detail.description || '');
+        setSavedName(nextName);
+        setSavedDescription(nextDescription);
+        setName(restoreDraft ? draft.name : nextName);
+        setDescription(restoreDraft ? draft.description : nextDescription);
+        if (restoreDraft) setMode('edit');
         setFileTree(Array.isArray(detail.file_tree) ? detail.file_tree : []);
       })
       .catch((error) => {
@@ -647,7 +664,16 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     }
   };
 
-  const dirty = name !== (skill.name || '') || description !== (skill.description || '') || content !== savedContent;
+  const dirty = name !== savedName || description !== savedDescription || content !== savedContent;
+
+  useEffect(() => {
+    if (loadingDetail) return;
+    try {
+      const key = `ash:skill-draft:${skill.id}`;
+      if (dirty) window.localStorage.setItem(key, JSON.stringify({ name, description, content }));
+      else window.localStorage.removeItem(key);
+    } catch { /* 存储不可用时仍可继续编辑 */ }
+  }, [skill.id, loadingDetail, dirty, name, description, content]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -655,6 +681,8 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     setSaving(false);
     if (saved) {
       setSavedContent(content);
+      setSavedName(name);
+      setSavedDescription(description);
       setMode('preview');
     }
   };
@@ -675,17 +703,19 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   // ⌘S / ⌘E 走 App 的统一快捷键注册表，这里只对外暴露动作
   const liveRef = useRef(null);
   useEffect(() => {
-    liveRef.current = { mode, dirty, save: handleSave, toggleMode: () => switchMode(mode === 'edit' ? 'preview' : 'edit') };
+    liveRef.current = { mode, dirty, draft: { name, description, content }, save: handleSave, toggleMode: () => switchMode(mode === 'edit' ? 'preview' : 'edit') };
     if (apiRef) apiRef.current = liveRef.current;
   });
   useEffect(() => () => { if (apiRef) apiRef.current = null; }, [apiRef]);
 
-  // App 用 key={skill.id} 挂载本组件，切换技能会整体重挂载：
-  // 编辑中的改动不能静默丢弃，与「切到预览自动保存」保持同一语义，卸载时补存一次。
+  // 切技能时同步刷一次草稿；异步自动保存会在卸载后改写列表并可能抢走新选中项。
   useEffect(() => () => {
     const live = liveRef.current;
-    if (live?.mode === 'edit' && live.dirty) live.save();
-  }, []);
+    if (live?.dirty) {
+      try { window.localStorage.setItem(`ash:skill-draft:${skill.id}`, JSON.stringify(live.draft)); }
+      catch { /* 存储不可用时由上面的常规草稿 effect 尽力保存 */ }
+    }
+  }, [skill.id]);
 
   // 附属文件单独下载：/api/skills/:id/file 返回 JSON 包装，直接做成本地 Blob 更省事
   const downloadCurrentFile = () => {

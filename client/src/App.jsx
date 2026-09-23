@@ -22,11 +22,13 @@ async function requestJson(url, options) {
 }
 
 // D1: 状态记忆（localStorage 持久化）
-function usePersistedState(key, initial) {
+function usePersistedState(key, initial, isValid = () => true) {
   const [value, setValue] = useState(() => {
     try {
       const saved = window.localStorage.getItem(`ash:${key}`);
-      return saved === null ? initial : JSON.parse(saved);
+      if (saved === null) return initial;
+      const parsed = JSON.parse(saved);
+      return isValid(parsed) ? parsed : initial;
     } catch {
       return initial;
     }
@@ -50,11 +52,11 @@ function useDebouncedValue(value, delay) {
 }
 
 export default function App() {
-  const [currentFolder, setCurrentFolder] = useState('inbox');
-  const [currentTag, setCurrentTag] = useState(null);
+  const [currentFolder, setCurrentFolder] = usePersistedState('current-folder', 'inbox', (value) => typeof value === 'string');
+  const [currentTag, setCurrentTag] = usePersistedState('current-tag', null, (value) => value === null || typeof value === 'string');
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedQuery = useDebouncedValue(searchQuery, 150);
-  const [sortBy, setSortBy] = useState('updated');
+  const [sortBy, setSortBy] = usePersistedState('sort-by', 'updated', (value) => value === 'updated' || value === 'name');
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState('sidebar-collapsed', false);
   const [listDensity, setListDensity] = usePersistedState('list-density', 'standard');
   const [listCollapsed, setListCollapsed] = usePersistedState('list-collapsed', false);
@@ -77,7 +79,7 @@ export default function App() {
   const [stats, setStats] = useState({ inbox: 0, starred: 0, all: 0, trash: 0 });
   const [folders, setFolders] = useState([]);
   const [tags, setTags] = useState([]);
-  const [selectedSkillId, setSelectedSkillId] = useState(null);
+  const [selectedSkillId, setSelectedSkillId] = usePersistedState('selected-skill-id', null, (value) => value === null || Number.isInteger(value));
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   // 多选模式：普通点击也会把 selectedIds 设成 1 项，光看 size 分不清「浏览」和「批量操作」。
   // 只有 Cmd/Shift 点选或 ⌘A 才进入多选模式，批量条据此显示——这样选到只剩 1 项时它也不会消失。
@@ -167,7 +169,7 @@ export default function App() {
         setFetching(false);
       }
     }
-  }, [currentFolder, currentTag, debouncedQuery]);
+  }, [currentFolder, currentTag, debouncedQuery, setSelectedSkillId]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchFoldersAndStats, 0);
@@ -192,7 +194,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [rememberRecent]);
+  }, [rememberRecent, setCurrentFolder, setSelectedSkillId]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchSkills, 0);
@@ -452,7 +454,7 @@ export default function App() {
     setCurrentTag(null);
     setSearchQuery('');
     setCurrentFolder(target.folder_path || 'all');
-  }, [allSkills, skills, rememberRecent]);
+  }, [allSkills, skills, rememberRecent, setCurrentFolder, setCurrentTag, setSelectedSkillId]);
 
   const recentSkills = useMemo(
     () => recentSkillIds.map((id) => allSkills.find((s) => s.id === id)).filter(Boolean).slice(0, 5),
