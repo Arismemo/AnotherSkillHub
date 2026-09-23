@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   ClipboardPaste,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import FolderPicker from './FolderPicker';
 import ContextMenu from './ContextMenu';
+import usePersistedState from '../hooks/usePersistedState';
 import ThemeToggle from './ThemeToggle';
 import { folderLabels } from '../utils/systemFolders';
 
@@ -59,7 +60,7 @@ export default function FolderTree({
   recentSkills = [],
   onDropOnFolder,
 }) {
-  const [expanded, setExpanded] = useState({ ADL4: true });
+  const [expanded, setExpanded] = usePersistedState('expanded-folders', {}, (value) => value !== null && typeof value === 'object' && !Array.isArray(value));
   const [menuOpen, setMenuOpen] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
@@ -102,6 +103,22 @@ export default function FolderTree({
     return roots;
   }, [folders]);
 
+  const isExpanded = useCallback((path) => expanded[path] ?? !path.includes('/'), [expanded]);
+
+  useEffect(() => {
+    const parts = currentFolder.split('/');
+    if (parts.length < 2) return;
+    setExpanded((previous) => {
+      const next = { ...previous };
+      let changed = false;
+      for (let index = 1; index < parts.length; index += 1) {
+        const ancestor = parts.slice(0, index).join('/');
+        if (next[ancestor] !== true) { next[ancestor] = true; changed = true; }
+      }
+      return changed ? next : previous;
+    });
+  }, [currentFolder, setExpanded]);
+
   // A3: 树键盘导航（↑↓ 移动、→ 展开、← 收起、Enter 打开）
   useEffect(() => {
     const el = treeRef.current;
@@ -122,12 +139,12 @@ export default function FolderTree({
           buttons[currentIndex - 1]?.focus();
           break;
         case 'ArrowRight':
-          if (node && node.children.length > 0 && !expanded[node.path]) {
+          if (node && node.children.length > 0 && !isExpanded(node.path)) {
             setExpanded((value) => ({ ...value, [node.path]: true }));
           }
           break;
         case 'ArrowLeft':
-          if (node && expanded[node.path]) {
+          if (node && isExpanded(node.path)) {
             setExpanded((value) => ({ ...value, [node.path]: false }));
           }
           break;
@@ -141,7 +158,7 @@ export default function FolderTree({
     };
     el.addEventListener('keydown', onKeyDown);
     return () => el.removeEventListener('keydown', onKeyDown);
-  });
+  }, [tree, expanded, isExpanded, onSelectFolder, setExpanded]);
 
   const createFolder = (parentPath = '') => {
     const name = window.prompt(parentPath ? '输入子文件夹名称' : '输入文件夹名称或路径');
@@ -179,7 +196,7 @@ export default function FolderTree({
   const renderTreeNode = (node, depth = 0) => {
     const isSelected = currentFolder === node.path && !currentTag;
     const hasChildren = node.children.length > 0;
-    const isExpanded = Boolean(expanded[node.path]);
+    const nodeExpanded = isExpanded(node.path);
     const isDropTarget = dropTarget === node.path;
 
     return (
@@ -194,11 +211,11 @@ export default function FolderTree({
             <button
               type="button"
               className="icon-button folder-disclosure"
-              onClick={() => setExpanded((value) => ({ ...value, [node.path]: !value[node.path] }))}
-              aria-label={`${isExpanded ? '收起' : '展开'} ${node.name}`}
-              aria-expanded={isExpanded}
+              onClick={() => setExpanded((value) => ({ ...value, [node.path]: !(value[node.path] ?? !node.path.includes('/')) }))}
+              aria-label={`${nodeExpanded ? '收起' : '展开'} ${node.name}`}
+              aria-expanded={nodeExpanded}
             >
-              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              {nodeExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
           ) : <span className="folder-disclosure-spacer" />}
           <button
@@ -231,7 +248,7 @@ export default function FolderTree({
             )}
           </div>
         </div>
-        {hasChildren && isExpanded && <ul>{node.children.map((child) => renderTreeNode(child, depth + 1))}</ul>}
+        {hasChildren && nodeExpanded && <ul>{node.children.map((child) => renderTreeNode(child, depth + 1))}</ul>}
       </li>
     );
   };
