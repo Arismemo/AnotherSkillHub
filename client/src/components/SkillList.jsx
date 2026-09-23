@@ -164,7 +164,7 @@ export default function SkillList({
                   <article>
                     <div className="skill-row-title">
                       {multiCount > 0 && <span className={`row-check${isChecked ? ' is-on' : ''}`} aria-hidden="true">{isChecked && <Check size={11} strokeWidth={3} />}</span>}
-                      <h3>{skill.name}</h3>
+                      <h3 title={skill.slug}>{skill.name}</h3>
                       <button
                         type="button"
                         className={`icon-button star-button${skill.is_starred ? ' is-starred' : ''}`}
@@ -177,7 +177,14 @@ export default function SkillList({
                     </div>
                     {skill.description && <p>{skill.description}</p>}
                     <footer>
-                      <span className="skill-location">{skill.folder_path}</span>
+                      <span className="row-meta">
+                        {skill.version && <span className="chip row-version" title={`版本 ${skill.version}`}>v{skill.version}</span>}
+                        {(skill.tags || []).slice(0, 2).map((tag) => (
+                          <span key={tag} className="chip row-tag" title={`标签 ${tag}`}>{tag}</span>
+                        ))}
+                        {skill.terminal_source && <span className="chip row-source" title={`来自终端 ${skill.terminal_source}`}>{skill.terminal_source}</span>}
+                        <span className="skill-location">{skill.folder_path}</span>
+                      </span>
                       <span className="skill-updated">{formatDate(skill.updated_at)}</span>
                       <span className="row-actions">
                         {!isTrash ? (
