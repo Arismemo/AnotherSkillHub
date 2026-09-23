@@ -159,7 +159,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .app-shell:has(.app-sidebar.is-collapsed) { grid-template-columns: 2.6rem clamp(15.5rem, 19vw, 18rem) minmax(0, 1fr); }
 .app-sidebar, .app-list, .app-detail { min-width: 0; min-height: 0; }
 .app-sidebar { border-right: 1px solid var(--border-muted); background: var(--surface-sunken); overflow-x: hidden; }
-.sidebar-topbar { display: flex; align-items: center; justify-content: space-between; gap: .4rem; min-height: 4.25rem; padding: .8rem .75rem .8rem .9rem; border-bottom: 1px solid var(--border-muted); }
+.sidebar-topbar { display: flex; align-items: center; justify-content: space-between; gap: .4rem; min-height: 2.9rem; padding: .45rem .6rem .45rem .75rem; border-bottom: 1px solid var(--border-muted); }
 .sidebar-brand { display: flex; align-items: center; gap: .65rem; min-width: 0; }
 .sidebar-brand h1 { margin: 0; font-size: var(--fs-md); line-height: 1.2; letter-spacing: -.015em; }
 .sidebar-brand p { margin: .2rem 0 0; color: var(--text-subtle); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
@@ -213,11 +213,11 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .brand-mark-button { padding: 0; border: 0; cursor: pointer; transition: background-color var(--dur) ease; }
 .brand-mark-button:hover { background: var(--accent-hover); }
 .sidebar-footer { padding: .5rem .65rem; border-top: 1px solid var(--border-muted); }
-.sidebar-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; padding: .65rem .75rem; border-bottom: 1px solid var(--border-muted); }
+.sidebar-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; padding: .45rem .6rem; border-bottom: 1px solid var(--border-muted); }
 .sidebar-actions button { display: inline-flex; align-items: center; justify-content: center; gap: .32rem; min-height: 2rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); font-weight: 500; transition: var(--dur) ease; }
 .sidebar-actions button:first-child { color: var(--text); background: var(--surface-raised); border-color: var(--border); }
 .sidebar-actions button:hover { color: var(--text); background: var(--surface-hover); border-color: var(--border-strong); }
-.sidebar-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: .75rem .65rem 1.25rem; }
+.sidebar-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: .5rem .6rem 1rem; }
 .sidebar-scroll, .folder-tree, .folder-tree ul, .nav-list { min-width: 0; }
 .nav-list, .folder-tree, .folder-tree ul { list-style: none; margin: 0; padding: 0; }
 .nav-list { display: grid; gap: .15rem; }
@@ -228,7 +228,7 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .nav-item.is-active { background: var(--surface-hover); color: var(--text); font-weight: 600; }
 .nav-item.is-active svg { color: var(--accent); }
 .nav-count { margin-left: auto; padding: 0 .35rem 0 .6rem; align-self: center; color: var(--text-subtle); font-size: var(--fs-2xs); line-height: 1; font-variant-numeric: tabular-nums; }
-.sidebar-section { margin-top: 1.35rem; }
+.sidebar-section { margin-top: .95rem; }
 .section-heading { display: flex; align-items: center; justify-content: space-between; min-height: 1.75rem; padding: 0 .4rem; }
 .section-heading h2 { margin: 0; color: var(--text-subtle); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .sidebar-empty { margin: .4rem; color: var(--text-subtle); font-size: var(--fs-xs); }
@@ -372,13 +372,14 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .skill-summary p { margin: 0; color: var(--text-body); font-size: var(--fs-sm); line-height: 1.65; text-wrap: pretty; }
 .skill-summary div { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: .58rem; }
 .skill-summary span::before { content: '#'; color: var(--text-subtle); }
-.markdown-document { color: var(--text-body); font-size: var(--fs-md); line-height: 1.7; }
+/* 工程文档节奏：SKILL.md 是「短小节 + 命令块 + check list」，不是散文，行高/段距都比博客正文紧 */
+.markdown-document { color: var(--text-body); font-size: var(--fs-md); line-height: 1.62; }
 .markdown-document > div { max-width: 100%; }
 .markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4 { color: var(--text); font-weight: 650; line-height: 1.35; letter-spacing: -.018em; text-wrap: balance; }
-.markdown-document h1 { margin: .3rem 0 1.5rem; font-size: var(--fs-2xl); }
-.markdown-document h2 { margin: 2rem 0 .75rem; padding-bottom: .3rem; border-bottom: 1px solid var(--border-muted); font-size: var(--fs-xl); }
-.markdown-document h3 { margin: 1.55rem 0 .55rem; font-size: var(--fs-lg); font-weight: 600; letter-spacing: 0; }
-.markdown-document p, .markdown-document ul, .markdown-document ol, .markdown-document blockquote { margin: .9rem 0; }
+.markdown-document h1 { margin: .2rem 0 1.05rem; font-size: var(--fs-2xl); }
+.markdown-document h2 { margin: 1.45rem 0 .55rem; padding-bottom: .28rem; border-bottom: 1px solid var(--border-muted); font-size: var(--fs-xl); }
+.markdown-document h3 { margin: 1.05rem 0 .4rem; font-size: var(--fs-lg); font-weight: 600; letter-spacing: 0; }
+.markdown-document p, .markdown-document ul, .markdown-document ol, .markdown-document blockquote { margin: .65rem 0; }
 .markdown-document ul, .markdown-document ol { padding-left: 1.45rem; }
 /* Tailwind preflight 清掉了 list-style，这里恢复；任务列表（checkbox）不出圆点 */
 .markdown-document ul { list-style: disc; }
@@ -387,12 +388,12 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .markdown-document li::marker { color: var(--text-subtle); }
 .markdown-document li:has(> input[type=checkbox]) { list-style: none; margin-left: -1.45rem; }
 .markdown-document li > input[type=checkbox] { margin: 0 .45rem 0 0; vertical-align: -.1em; accent-color: var(--accent); }
-.markdown-document li + li { margin-top: .28rem; }
+.markdown-document li + li { margin-top: .14rem; }
 .markdown-document a { color: var(--accent); text-underline-offset: .18em; }
 .markdown-document blockquote { padding: .15rem 1rem; border-left: 3px solid var(--border-strong); color: var(--text-muted); }
 .markdown-document code, .frontmatter pre { font-family: var(--mono); }
 .markdown-document :not(pre) > code { padding: .12rem .32rem; border: 1px solid var(--border-muted); border-radius: var(--r-xs); background: var(--surface-raised); color: var(--text); font-size: .875em; }
-.markdown-document pre, .file-viewer pre { position: relative; overflow-x: auto; margin: 1rem 0; padding: 1rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-code); color: var(--text-body); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6; tab-size: 2; }
+.markdown-document pre, .file-viewer pre { position: relative; overflow-x: auto; margin: .8rem 0; padding: .7rem .85rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-code); color: var(--text-body); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; tab-size: 2; }
 .markdown-document pre[data-lang]::before, .file-viewer pre[data-lang]::before { content: attr(data-lang); position: absolute; top: .4rem; right: .6rem; color: var(--text-subtle); font-size: var(--fs-2xs); font-family: inherit; text-transform: lowercase; pointer-events: none; }
 .file-viewer pre[data-lang] code, .markdown-document pre code { background: transparent; padding: 0; border: 0; }
 .markdown-document table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: var(--fs-sm); }
