@@ -410,6 +410,7 @@ button.row-tag:hover { border-color: var(--accent-border); color: var(--text); }
 .file-sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: .55rem .45rem 1rem; }
 .detail-scroll { position: relative; flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
 /* 悬浮大纲占 right:1.1rem + 15rem 宽 —— 正文在其下时右侧留出通道，避免文字被盖住 */
+.detail-scroll { transition: padding-right var(--dur) var(--ease-out); }
 .detail-scroll.has-outline { --outline-channel: 16.4rem; padding-right: var(--outline-channel); }
 /* 软上限：随容器伸缩（82%），下限 44rem、上限 --content-max，不再被 40rem 死锁 */
 .detail-content { width: min(100% - 3rem, max(44rem, 82%)); max-width: var(--content-max); margin: 0 auto; padding: 1.4rem 0 3rem; }
@@ -439,7 +440,11 @@ button.row-tag:hover { border-color: var(--accent-border); color: var(--text); }
 .mode-switch button.is-dirty { color: var(--text); }
 .dirty-dot { width: .35rem; height: .35rem; border-radius: 999px; background: var(--accent); }
 /* 正文段落收在 --measure 内保证可读行宽；pre/table 不设上限，吃满 .detail-content（破框） */
-.markdown-document > div > :is(p, ul, ol, blockquote, h1, h2, h3, h4, hr), .skill-summary { max-width: var(--measure); margin-inline: auto; }
+.markdown-document > div > :is(p, ul, ol, blockquote, h1, h2, h3, h4, hr), .skill-summary { max-width: var(--measure); margin-inline: auto; transition: margin var(--dur-fast) var(--ease-out); }
+/* 代码块与段落同一 measure 体系：同宽同起点，任何容器宽度下严格对齐 */
+.markdown-document > div > pre { max-width: var(--measure); margin-inline: auto; transition: margin var(--dur-fast) var(--ease-out); }
+/* 列表内代码块维持列表文字对齐（上一条规则会被此负 margin 抵消） */
+.markdown-document li > pre { max-width: none; margin-left: -1.45rem; margin-right: 0; }
 .inline-error { padding: .65rem .75rem; border: 1px solid var(--danger-border); border-radius: var(--r-sm); background: var(--danger-muted); color: var(--danger-text); font-size: var(--fs-xs); line-height: 1.45; }
 /* 非 md 文件查看（脚本/json）：宽版式，与文件树/编辑器习惯一致 */
 .detail-content.is-wide-file { width: min(100% - 3rem, 78rem); max-width: none; }
