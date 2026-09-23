@@ -5,3 +5,7 @@ data/skillhub.db*
 data/storage
 .DS_Store
 data/
+
+# 编辑器/工具产生的备份文件
+*.bak
+*.bak.*

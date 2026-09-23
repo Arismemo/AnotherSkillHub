@@ -167,6 +167,10 @@ export default function SkillList({
             )}
           </div>
           <div className="list-heading-actions">
+            {/* 侧栏折叠后「新建」会整个消失：列表标题栏保留一个永远可见的入口 */}
+            <button type="button" className="sort-button" onClick={onNewSkill} title="新建技能（N）" aria-label="新建技能">
+              <Plus size={13} />
+            </button>
             <button
               type="button"
               className="sort-button"

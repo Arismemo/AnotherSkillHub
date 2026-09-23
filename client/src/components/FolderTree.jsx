@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
+  ClipboardPaste,
   ChevronDown,
   ChevronRight,
   Clock3,
@@ -288,6 +289,7 @@ export default function FolderTree({
         )}
         <div className="sidebar-footer">
           <button type="button" className="nav-item rail-item" onClick={onNewSkill} aria-label="新建技能" title="新建技能"><Plus size={16} /></button>
+          <button type="button" className="nav-item rail-item" onClick={onPasteImport} aria-label="粘贴导入" title="粘贴导入"><ClipboardPaste size={16} /></button>
           <button type="button" className="nav-item rail-item" onClick={onOpenSetup} aria-label="终端接入" title="终端接入"><Settings size={16} /></button>
         </div>
       </div>
