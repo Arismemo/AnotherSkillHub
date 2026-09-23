@@ -197,9 +197,12 @@ body.is-resizing .detail-scroll { pointer-events: none; }
   font-size: var(--fs-sm);
 }
 .app-error button, .list-state button { border: 0; background: none; color: var(--accent); font-weight: 600; }
-.detail-empty { display: grid; place-content: center; justify-items: center; height: 100%; text-align: center; color: var(--text-muted); }
+/* 空态收成一张卡：原来是把三行字 place-content:center 摊在整块详情区（实测 965x745），
+   最大的一块屏幕零信息量 */
+.detail-empty { display: grid; align-content: center; justify-items: center; height: 100%; padding: 1.5rem; text-align: center; color: var(--text-muted); }
+.empty-card { display: grid; justify-items: center; width: min(100%, 22rem); padding: 1.15rem 1.25rem 1.05rem; border: 1px solid var(--border-muted); border-radius: var(--r-lg); background: var(--surface); }
 /* 空状态图形：圆形浅底 + 淡色 lucide 图标 */
-.empty-icon { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; margin-bottom: .8rem; border-radius: 999px; background: var(--surface-raised); color: var(--text-subtle); opacity: .75; }
+.empty-icon { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; margin-bottom: .55rem; border-radius: 999px; background: var(--surface-raised); color: var(--text-subtle); opacity: .75; }
 .detail-empty p { margin: 0 0 .35rem; color: var(--text); font-size: var(--fs-md); font-weight: 600; }
 .detail-empty span { font-size: var(--fs-sm); }
 
@@ -305,13 +308,14 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .row-actions { position: absolute; right: .5rem; bottom: .3rem; display: flex; opacity: 0; transition: opacity var(--dur-fast) ease; }
 .skill-row:hover .row-actions, .skill-row:focus-within .row-actions { opacity: 1; }
 .row-actions .icon-button { width: 1.6rem; height: 1.6rem; }
-.list-state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 15rem; padding: 1.5rem; text-align: center; }
+.list-state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 9rem; padding: 1.15rem; text-align: center; }
 .list-state strong { color: var(--text); font-size: var(--fs-sm); }
 .list-state span { max-width: 14rem; margin-top: .35rem; color: var(--text-subtle); font-size: var(--fs-xs); line-height: 1.55; }
 .list-state button { display: inline-flex; align-items: center; gap: .3rem; margin-top: .7rem; font-size: var(--fs-xs); }
 /* 骨架屏与 .skill-row 同结构（标题 / 两行描述 / footer），避免切换时跳动 */
 .list-skeleton { display: grid; gap: .06rem; }
-.list-skeleton > div { display: grid; gap: .5rem; height: 6.5rem; padding: .6rem .6rem .5rem; border-radius: var(--r-md); }
+/* 骨架高度跟随标准档行高（约 4.4rem），否则载入完成时列表会整体跳一下 */
+.list-skeleton > div { display: grid; gap: .4rem; height: 4.4rem; padding: .45rem .6rem .4rem; border-radius: var(--r-md); }
 .list-skeleton i, .content-skeleton i { display: block; height: .55rem; border-radius: var(--r-xs); background: linear-gradient(90deg, var(--border-muted) 25%, var(--surface-hover) 50%, var(--border-muted) 75%); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
 .list-skeleton i:nth-child(1) { width: 60%; height: .8rem; }.list-skeleton i:nth-child(2) { width: 95%; }.list-skeleton i:nth-child(3) { width: 70%; }.list-skeleton i:nth-child(4) { width: 30%; height: .5rem; }
 
@@ -581,7 +585,7 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .editor-hint { color: var(--text-subtle); font-size: var(--fs-2xs); }
 
 /* D3: 空状态行动按钮 */
-.empty-actions { display: flex; gap: .6rem; margin-top: 1rem; }
+.empty-actions { display: flex; gap: .6rem; margin-top: .85rem; }
 .detail-empty { align-content: center; }
 
 /* 弹窗步骤标注 */
