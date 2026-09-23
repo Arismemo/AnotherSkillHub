@@ -148,22 +148,27 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 }
 .skip-link:focus { transform: translateY(0); }
 
+/* 三栏宽度由 App 通过 --w-sidebar / --w-list 注入（可拖、可记忆），
+   这里的兜底值只在 JS 还没挂载时用一次 */
 .app-shell {
   display: grid;
-  grid-template-columns: clamp(11.5rem, 14vw, 13.5rem) clamp(15.5rem, 19vw, 18rem) minmax(0, 1fr);
+  grid-template-columns: var(--w-sidebar, 13rem) var(--w-list, 17.5rem) minmax(0, 1fr);
   width: 100vw;
   height: 100dvh;
   min-width: 56rem;
   background: var(--bg);
 }
-.app-shell:has(.app-sidebar.is-collapsed) { grid-template-columns: 2.6rem clamp(15.5rem, 19vw, 18rem) minmax(0, 1fr); }
 .app-sidebar, .app-list, .app-detail { min-width: 0; min-height: 0; }
+.app-sidebar, .app-list { position: relative; }
 .app-sidebar { border-right: 1px solid var(--border-muted); background: var(--surface-sunken); overflow-x: hidden; }
+/* 面板右缘的拖拽条：侧栏 / 列表 / 技能文件栏共用 */
+.pane-resizer { position: absolute; top: 0; right: -3px; bottom: 0; z-index: 6; width: 6px; cursor: col-resize; background: transparent; }
+.pane-resizer:hover, .pane-resizer:focus-visible { background: var(--accent-border); }
 .sidebar-topbar { display: flex; align-items: center; justify-content: space-between; gap: .4rem; min-height: 2.9rem; padding: .45rem .6rem .45rem .75rem; border-bottom: 1px solid var(--border-muted); }
 .sidebar-brand { display: flex; align-items: center; gap: .65rem; min-width: 0; }
 .sidebar-brand h1 { margin: 0; font-size: var(--fs-md); line-height: 1.2; letter-spacing: -.015em; }
 .sidebar-brand p { margin: .2rem 0 0; color: var(--text-subtle); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
-.app-sidebar.is-collapsed .sidebar-topbar { justify-content: center; padding: .8rem 0; }
+.app-sidebar.is-collapsed .sidebar-topbar { justify-content: center; padding: .45rem 0; }
 body.is-resizing { cursor: col-resize; user-select: none; }
 body.is-resizing .detail-scroll { pointer-events: none; }
 .app-list { border-right: 1px solid var(--border); background: var(--surface); }
@@ -325,8 +330,6 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .rail-count { font-size: var(--fs-xs); font-weight: 700; font-variant-numeric: tabular-nums; }
 .rail-label { writing-mode: vertical-rl; font-size: var(--fs-2xs); letter-spacing: .18em; }
 .file-sidebar { position: relative; display: flex; flex-direction: column; flex: 0 0 auto; width: 15rem; min-height: 0; border-right: 1px solid var(--border-muted); background: var(--surface); }
-.file-sidebar-resizer { position: absolute; top: 0; right: -3px; bottom: 0; z-index: 5; width: 6px; cursor: col-resize; background: transparent; }
-.file-sidebar-resizer:hover, .file-sidebar-resizer:focus-visible { background: var(--accent-border); }
 .file-sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: .55rem .45rem 1rem; }
 .detail-scroll { position: relative; flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
 /* 悬浮大纲占 right:1.1rem + 15rem 宽 —— 正文在其下时右侧留出通道，避免文字被盖住 */

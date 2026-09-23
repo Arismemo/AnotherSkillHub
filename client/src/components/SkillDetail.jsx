@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
 import hljs from 'highlight.js/lib/common';
 import { VersionHistoryModal } from './Modals';
+import useResizableWidth from '../hooks/useResizableWidth';
 import {
   Check,
   ChevronDown,
@@ -248,10 +249,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
   const [copied, setCopied] = useState('');
   const [openDirs, setOpenDirs] = useState(() => new Set());
   // D1: 面板宽度/大纲显隐持久化
-  const [fileSidebarWidth, setFileSidebarWidth] = useState(() => {
-    const saved = Number(window.localStorage.getItem('ash:file-sidebar-width'));
-    return saved >= 160 && saved <= 480 ? saved : 240;
-  });
+  const [fileSidebarWidth, , fileSidebarResizer] = useResizableWidth('file-sidebar-width', { min: 160, max: 480, initial: 240, label: '调整技能文件栏宽度' });
   const [showVersions, setShowVersions] = useState(false);
   const [outlineHidden, setOutlineHidden] = useState(() => window.localStorage.getItem('ash:outline-hidden') === '1');
   // 大纲按「视口宽度」判定，而不是滚动区宽度：滚动区永远是视口减去左两栏，
@@ -265,7 +263,6 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
   // B1: 大纲当前高亮索引
   const [activeHeading, setActiveHeading] = useState(0);
   const scrollRef = useRef(null);
-  const resizingRef = useRef(null);
 
   useEffect(() => {
     const query = window.matchMedia(OUTLINE_MIN_VIEWPORT);
@@ -286,41 +283,8 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem('ash:file-sidebar-width', String(fileSidebarWidth));
-  }, [fileSidebarWidth]);
-
-  useEffect(() => {
     window.localStorage.setItem('ash:outline-hidden', outlineHidden ? '1' : '0');
   }, [outlineHidden]);
-
-  // 技能文件栏拖拽调宽
-  useEffect(() => {
-    const onMove = (event) => {
-      if (!resizingRef.current) return;
-      const startX = resizingRef.current.startX;
-      const startWidth = resizingRef.current.startWidth;
-      const next = Math.min(Math.max(startWidth + event.clientX - startX, 160), 480);
-      setFileSidebarWidth(next);
-    };
-    const onUp = () => {
-      if (resizingRef.current) {
-        resizingRef.current = null;
-        document.body.classList.remove('is-resizing');
-      }
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, []);
-
-  const startResize = (event) => {
-    resizingRef.current = { startX: event.clientX, startWidth: fileSidebarWidth };
-    document.body.classList.add('is-resizing');
-    event.preventDefault();
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -654,19 +618,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
                 <p className="file-filter-empty">没有匹配「{fileFilter.trim()}」的文件</p>
               )}
             </div>
-            <div
-              className="file-sidebar-resizer"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="调整技能文件栏宽度"
-              tabIndex="0"
-              onMouseDown={startResize}
-              onDoubleClick={() => setFileSidebarWidth(240)}
-              onKeyDown={(event) => {
-                if (event.key === 'ArrowLeft') setFileSidebarWidth((w) => Math.max(160, w - 24));
-                if (event.key === 'ArrowRight') setFileSidebarWidth((w) => Math.min(480, w + 24));
-              }}
-            />
+            <div {...fileSidebarResizer} />
           </aside>
         )}
 

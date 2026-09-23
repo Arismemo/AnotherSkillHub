@@ -46,7 +46,8 @@ test('dialog hooks are unconditional and dialogs support focus, Escape, and acce
 
 test('three-pane shell and readable Markdown styles remain present', async () => {
   const css = await source('src/index.css');
-  assert.match(css, /grid-template-columns:\s*clamp\(11\.5rem, 14vw, 13\.5rem\)\s*clamp\(15\.5rem, 19vw, 18rem\)\s*minmax\(0, 1fr\)/);
+  assert.match(css, /\.app-shell\s*\{[^}]*grid-template-columns:\s*var\(--w-sidebar[^)]*\)\s*var\(--w-list[^)]*\)\s*minmax\(0, 1fr\)/s, 'shell columns must stay driven by the persisted width variables');
+  assert.match(css, /\.pane-resizer\s*\{[^}]*cursor:\s*col-resize/s, 'panes need a shared resizer affordance');
   assert.match(css, /\.markdown-document\s*\{[^}]*line-height:\s*1\.6/s);
   assert.match(css, /\.detail-content\s*\{[^}]*max\(44rem,\s*82%\)/s, 'body column must stay a soft cap, not a hard 40rem lock');
   assert.match(css, /--measure:\s*48rem/, 'readable measure token must exist for markdown text blocks');

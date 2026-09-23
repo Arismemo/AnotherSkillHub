@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, FileText, Terminal } from 'lucide-react';
+import useResizableWidth from './hooks/useResizableWidth';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
 import SkillDetail from './components/SkillDetail';
@@ -43,6 +44,9 @@ export default function App() {
   const [sortBy, setSortBy] = useState('updated');
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState('sidebar-collapsed', false);
   const [listDensity, setListDensity] = usePersistedState('list-density', 'standard');
+  // D1: 三栏宽度可拖 + 记忆（双击拖拽条复位，←/→ 微调）
+  const [sidebarWidth, , sidebarResizer] = useResizableWidth('sidebar-width', { min: 160, max: 360, initial: 208, label: '调整分类导航宽度' });
+  const [listWidth, , listResizer] = useResizableWidth('list-width', { min: 220, max: 560, initial: 280, label: '调整技能列表宽度' });
   const [recentSkillIds, setRecentSkillIds] = usePersistedState('recent-skills', []);
   const userPickedRef = useRef(false); // 只有用户主动点选才计入最近浏览
   const recentIdsRef = useRef([]);
@@ -357,7 +361,10 @@ export default function App() {
   };
 
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      style={{ '--w-sidebar': sidebarCollapsed ? '2.6rem' : `${sidebarWidth}px`, '--w-list': `${listWidth}px` }}
+    >
       <a className="skip-link" href="#skill-detail">跳至技能详情</a>
       <aside className={`app-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`} aria-label="技能分类导航">
         <div className="sidebar-topbar">
@@ -414,6 +421,7 @@ export default function App() {
             onDropOnFolder={handleDropOnFolder}
           />
         )}
+        {!sidebarCollapsed && <div {...sidebarResizer} />}
       </aside>
 
       <section className="app-list" aria-label="技能列表">
@@ -444,6 +452,7 @@ export default function App() {
           error={appError}
           onRetry={refreshAll}
         />
+        <div {...listResizer} />
       </section>
 
       <main id="skill-detail" className="app-detail" tabIndex="-1">
