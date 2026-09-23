@@ -27,9 +27,9 @@ test('detail breadcrumb navigates to the folder instead of moving the skill into
 
 test('detail always fetches the full record so file_tree stays available', async () => {
   const detail = await source('src/components/SkillDetail.jsx');
-  assert.match(detail, /getJson\(`\/api\/skills\/\$\{skill\.id\}`\)/);
+  assert.match(detail, /requestJson\(`\/api\/skills\/\$\{skill\.id\}`\)/);
   assert.match(detail, /setFileTree\(Array\.isArray\(detail\.file_tree\)/);
-  const fetchIndex = detail.indexOf('getJson(`/api/skills/${skill.id}`)');
+  const fetchIndex = detail.indexOf('requestJson(`/api/skills/${skill.id}`)');
   const contentBranchIndex = detail.indexOf('if (skill.content');
   assert.equal(contentBranchIndex, -1, 'full-detail fetch must not be conditional on list content');
   assert.ok(fetchIndex > -1);

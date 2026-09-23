@@ -22,6 +22,7 @@ import yaml from 'highlight.js/lib/languages/yaml';
 import { VersionHistoryModal } from './Modals';
 import { showToast } from './toastBus';
 import useResizableWidth from '../hooks/useResizableWidth';
+import { requestJson } from '../utils/requestJson';
 import {
   Check,
   ChevronDown,
@@ -210,13 +211,6 @@ function FileTreeNode({ node, depth, selectedFile, openFile, openDirs, toggleDir
       })}
     </ul>
   );
-}
-
-async function getJson(url) {
-  const response = await fetch(url);
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `请求失败（${response.status}）`);
-  return payload;
 }
 
 // 扩展名 -> highlight.js 语言（覆盖技能包常见脚本/配置类型）
@@ -417,7 +411,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
 
   useEffect(() => {
     let cancelled = false;
-    getJson(`/api/skills/${skill.id}`)
+    requestJson(`/api/skills/${skill.id}`)
       .then((detail) => {
         if (cancelled) return;
         const next = detail.content || '';
@@ -449,7 +443,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   useEffect(() => {
     if (selectedFile === 'SKILL.md') return undefined;
     let cancelled = false;
-    getJson(`/api/skills/${skill.id}/file?path=${encodeURIComponent(selectedFile)}`)
+    requestJson(`/api/skills/${skill.id}/file?path=${encodeURIComponent(selectedFile)}`)
       .then((data) => {
         if (!cancelled) setAuxFileContent(data.content || '');
       })

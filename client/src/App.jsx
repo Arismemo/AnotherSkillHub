@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { ChevronLeft, FileText, Terminal } from 'lucide-react';
 import useResizableWidth from './hooks/useResizableWidth';
 import useHotkeys, { isTypingTarget } from './hooks/useHotkeys';
+import { requestJson } from './utils/requestJson';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
 import CommandPalette from './components/CommandPalette';
@@ -11,15 +12,6 @@ import { AgentSetupModal, NewSkillModal, PasteSkillModal, ShortcutsModal } from 
 import { BundleDetail, NewBundleModal, AddToBundleModal } from './components/Bundles';
 
 const SkillDetail = lazy(() => import('./components/SkillDetail'));
-
-async function requestJson(url, options) {
-  const response = await fetch(url, options);
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.error || `请求失败（${response.status}）`);
-  }
-  return payload;
-}
 
 // D1: 状态记忆（localStorage 持久化）
 function usePersistedState(key, initial, isValid = () => true) {

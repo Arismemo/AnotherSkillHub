@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "test:ui": "node --test scripts/ui-regression.test.mjs",
+    "test:ui": "node --test scripts/*.test.mjs",
     "check": "npm run lint && npm run test:ui && npm run build",
     "preview": "vite preview"
   },
