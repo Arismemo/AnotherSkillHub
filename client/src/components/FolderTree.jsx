@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import FolderPicker from './FolderPicker';
 import ContextMenu from './ContextMenu';
+import ThemeToggle from './ThemeToggle';
 
 // droppable：拖技能过来有明确语义（归档 / 加星 / 删除）；「全部技能」不是归属地，不接收拖放
 const navItems = [
@@ -288,6 +289,7 @@ export default function FolderTree({
           </ul>
         )}
         <div className="sidebar-footer">
+          <ThemeToggle compact />
           <button type="button" className="nav-item rail-item" onClick={onNewSkill} aria-label="新建技能" title="新建技能"><Plus size={16} /></button>
           <button type="button" className="nav-item rail-item" onClick={onPasteImport} aria-label="粘贴导入" title="粘贴导入"><ClipboardPaste size={16} /></button>
           <button type="button" className="nav-item rail-item" onClick={onOpenSetup} aria-label="终端接入" title="终端接入"><Settings size={16} /></button>
@@ -395,6 +397,7 @@ export default function FolderTree({
       </div>
 
       <div className="sidebar-footer">
+        <ThemeToggle />
         <button type="button" className="nav-item" onClick={onOpenSetup}>
           <Settings size={16} aria-hidden="true" />
           <span>终端接入</span>
