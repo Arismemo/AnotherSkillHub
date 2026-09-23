@@ -793,7 +793,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
         </div>
       </header>
       <VersionHistoryModal isOpen={showVersions} onClose={() => setShowVersions(false)} skillId={skill.id} onRestored={async () => {
-            const fresh = await fetch(`/api/skills/${skill.id}`).then((r) => r.json()).catch(() => null);
+            const fresh = await requestJson(`/api/skills/${skill.id}`).catch(() => null);
             if (fresh) { setContent(fresh.content || ''); setSavedContent(fresh.content || ''); }
           }} />
 
