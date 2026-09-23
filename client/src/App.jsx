@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, FileText, Network, Terminal } from 'lucide-react';
+import { ChevronLeft, FileText, Terminal } from 'lucide-react';
 import useResizableWidth from './hooks/useResizableWidth';
 import usePersistedState from './hooks/usePersistedState';
 import useDebouncedValue from './hooks/useDebouncedValue';
@@ -703,9 +703,6 @@ export default function App() {
             </>
           )}
         </div>
-        <button type="button" className={`nav-item graph-nav${graphOpen ? ' is-active' : ''}`} title="技能依赖图" aria-label="技能依赖图" aria-current={graphOpen ? 'page' : undefined} onClick={() => setGraphOpen(true)}>
-          <Network size={16} />{!sidebarCollapsed && <span>技能依赖图</span>}
-        </button>
         <FolderTree
             collapsed={sidebarCollapsed}
             currentFolder={graphOpen ? '__graph__' : currentFolder}
@@ -726,6 +723,8 @@ export default function App() {
             onSelectBundle={setActiveBundle}
             onNewBundle={() => setShowBundleModal(true)}
             onDropOnFolder={handleDropOnFolder}
+            graphActive={graphOpen}
+            onOpenGraph={() => setGraphOpen(true)}
           />
         {!sidebarCollapsed && <div {...sidebarResizer} />}
       </aside>

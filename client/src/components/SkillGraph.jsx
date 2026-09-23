@@ -19,6 +19,33 @@ function edgePath(from, to) {
   return `M ${from.x} ${from.y} Q ${cx} ${cy} ${to.x} ${to.y}`;
 }
 
+// 确定性伪随机（mulberry32）：星空每次渲染都在同一位置
+function seeded(seed) {
+  let t = seed;
+  return () => {
+    t = (t + 0x6d2b79f5) | 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// 星空铺得比画布大，平移时边缘不露底
+const STARS = (() => {
+  const rand = seeded(20260923);
+  return Array.from({ length: 160 }, (_, index) => ({
+    x: -300 + rand() * 1600, y: -300 + rand() * 1400, r: .35 + rand() ** 2.2 * 1.4,
+    o: .12 + rand() * .5, twinkle: index % 3 === 0, delay: -rand() * 7,
+  }));
+})();
+// 雷达扫描扇区：前缘在 0°，向后拖出 44° 的渐隐尾迹
+const SWEEP_ANGLE = 44 * Math.PI / 180;
+const SWEEP = {
+  d: `M ${GRAPH.cx} ${GRAPH.cy} L ${GRAPH.cx + GRAPH.ring * Math.cos(-SWEEP_ANGLE)} ${GRAPH.cy + GRAPH.ring * Math.sin(-SWEEP_ANGLE)} A ${GRAPH.ring} ${GRAPH.ring} 0 0 1 ${GRAPH.cx + GRAPH.ring} ${GRAPH.cy} Z`,
+  x1: GRAPH.cx + GRAPH.ring * .7 * Math.cos(-SWEEP_ANGLE), y1: GRAPH.cy + GRAPH.ring * .7 * Math.sin(-SWEEP_ANGLE),
+  x2: GRAPH.cx + GRAPH.ring * .7, y2: GRAPH.cy,
+};
+const MAX_PARTICLES = 90; // 能量粒子上限：连线再多也不拖慢页面
+
 const metaRadius = (usage) => 5.5 + Math.min(6.5, Math.sqrt(usage) * 1.5);
 
 // 元技能名称沿径向朝外排：左半圆右对齐、右半圆左对齐、正上下居中
@@ -56,6 +83,8 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
   const view = useRef(IDENTITY);
   const drag = useRef(null);
   const rootRef = useRef(null);
+  const starsRef = useRef(null);
+  const [calm] = useState(prefersReducedMotion); // 减少动态效果：不渲染持续动画的装饰层
 
   // 进入视图即接管键盘（/ 搜索、+/- 缩放、Esc 返回），除非焦点已经在图谱里
   useEffect(() => {
@@ -105,6 +134,11 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
       .filter(({ other }) => other)
       .sort((a, b) => a.other.name.localeCompare(b.other.name));
   }, [selected, edges, positions]);
+  const visibleEdges = useMemo(() => edges.flatMap((edge) => {
+    const from = positions.get(edge.source), to = positions.get(edge.target);
+    if (!from || !to || !visibleIds.has(edge.source) || !visibleIds.has(edge.target)) return [];
+    return [{ edge, key: `${edge.source}>${edge.target}`, d: edgePath(from, to) }];
+  }), [edges, positions, visibleIds]);
   const unresolved = selected && graph?.unresolved ? graph.unresolved.filter((item) => item.source === selected.id).map((item) => item.target) : EMPTY;
 
   const applyView = useCallback((next, ease = false) => {
@@ -113,6 +147,12 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
     if (!scene) return;
     scene.classList.toggle('is-easing', ease && !prefersReducedMotion());
     scene.style.transform = `translate(${next.x}px, ${next.y}px) scale(${next.k})`;
+    // 星空只跟随 30% 的平移、20% 的缩放：远景视差
+    const stars = starsRef.current;
+    if (stars) {
+      stars.classList.toggle('is-easing', scene.classList.contains('is-easing'));
+      stars.style.transform = `translate(${next.x * .3}px, ${next.y * .3}px) scale(${1 + (next.k - 1) * .2})`;
+    }
     setZoom(next.k);
   }, []);
 
@@ -196,7 +236,9 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
       ? { title: '还没有元技能', body: '在 frontmatter 写 type: meta（或打上「元技能」标签），再让其他技能用 depends_on 声明依赖，外环与连线就会出现。', demo: true }
       : !visible.length
         ? { title: '没有已关联的技能', body: '关闭「仅看有关联」即可看到全部技能。' }
-        : null;
+        : !edges.length
+          ? { title: '元技能还没有被引用', body: '在应用技能的 frontmatter 写 depends_on: [元技能 slug]，连线与能量流就会从圆心汇向外环。', demo: true }
+          : null;
 
   return (
     <main ref={rootRef} className="skill-graph" id="graph-page" tabIndex={-1} aria-label="技能依赖图" onKeyDown={onKeyDown}>
@@ -273,59 +315,103 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
               onPointerCancel={(e) => { drag.current = null; e.currentTarget.classList.remove('is-panning'); }}
             >
               <defs>
-                <radialGradient id="graph-glow">
-                  <stop offset="0" stopColor="var(--accent)" stopOpacity=".09" />
-                  <stop offset=".62" stopColor="var(--accent)" stopOpacity=".025" />
+                <radialGradient id="graph-nebula">
+                  <stop offset="0" stopColor="var(--accent)" stopOpacity=".16" />
+                  <stop offset=".45" stopColor="var(--accent)" stopOpacity=".05" />
                   <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
                 </radialGradient>
+                <linearGradient id="graph-sweep" gradientUnits="userSpaceOnUse" x1={SWEEP.x1} y1={SWEEP.y1} x2={SWEEP.x2} y2={SWEEP.y2}>
+                  <stop offset="0" stopColor="var(--accent)" stopOpacity="0" />
+                  <stop offset="1" stopColor="var(--accent)" stopOpacity=".13" />
+                </linearGradient>
+                <filter id="graph-bloom" x="-150%" y="-150%" width="400%" height="400%">
+                  <feGaussianBlur stdDeviation="4" />
+                </filter>
               </defs>
+
+              <g ref={starsRef} className="graph-stars" aria-hidden="true">
+                {STARS.map((star, index) => (
+                  <circle key={index} className={star.twinkle && !calm ? 'is-twinkle' : undefined} cx={star.x} cy={star.y} r={star.r} style={{ '--o': star.o, '--delay': `${star.delay}s` }} />
+                ))}
+              </g>
+
               <g ref={sceneRef} className="graph-scene">
-                <circle className="graph-glow" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.ring + 40} fill="url(#graph-glow)" />
-                <g className="graph-dial" aria-hidden="true">
-                  {TICKS.map((angle, index) => {
-                    const long = index % 10 === 0;
-                    const r1 = GRAPH.ring + 5, r2 = GRAPH.ring + (long ? 13 : 9);
-                    return <line key={index} className={long ? 'is-long' : undefined} x1={GRAPH.cx + r1 * Math.cos(angle)} y1={GRAPH.cy + r1 * Math.sin(angle)} x2={GRAPH.cx + r2 * Math.cos(angle)} y2={GRAPH.cy + r2 * Math.sin(angle)} />;
-                  })}
-                  <circle className="graph-ring" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.ring} />
+                <circle className="graph-nebula" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.ring + 90} fill="url(#graph-nebula)" />
+                <g className={`graph-dial${activeId != null || needle ? ' is-quiet' : ''}`} aria-hidden="true">
+                  <g className="graph-ticks">
+                    {TICKS.map((angle, index) => {
+                      const long = index % 10 === 0;
+                      const r1 = GRAPH.ring + 6, r2 = GRAPH.ring + (long ? 15 : 10);
+                      return <line key={index} className={long ? 'is-long' : undefined} x1={GRAPH.cx + r1 * Math.cos(angle)} y1={GRAPH.cy + r1 * Math.sin(angle)} x2={GRAPH.cx + r2 * Math.cos(angle)} y2={GRAPH.cy + r2 * Math.sin(angle)} />;
+                    })}
+                  </g>
+                  {!calm && metaNodes.length > 0 && (
+                    <g className="graph-sweep">
+                      <path d={SWEEP.d} fill="url(#graph-sweep)" />
+                      <line x1={GRAPH.cx} y1={GRAPH.cy} x2={GRAPH.cx + GRAPH.ring} y2={GRAPH.cy} />
+                    </g>
+                  )}
+                  <circle className="graph-ring" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.ring} pathLength="1" />
                   <circle className="graph-band" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.inner} />
                   <circle className="graph-core" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.core} />
+                  {!calm && <circle className="graph-wave" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.core} />}
                   {unlinkedCount > 0 && !onlyConnected && <text className="graph-core-label" x={GRAPH.cx} y={GRAPH.cy + GRAPH.core + 14} textAnchor="middle">未关联 · {unlinkedCount}</text>}
                 </g>
 
                 <g className="graph-edges" key={`edges-${sourceKey}`}>
-                  {edges.map((edge, index) => {
-                    const from = positions.get(edge.source), to = positions.get(edge.target);
-                    if (!from || !to || !visibleIds.has(edge.source) || !visibleIds.has(edge.target)) return null;
+                  {visibleEdges.map(({ edge, key, d }, index) => {
                     const lit = activeId != null && (edge.source === activeId || edge.target === activeId);
                     const faded = activeId != null ? !lit : Boolean(needle) && !matches.has(edge.source) && !matches.has(edge.target);
                     const reference = edge.kind === 'reference';
                     return (
-                      <path
-                        key={`${edge.source}>${edge.target}`}
-                        className={`graph-edge${reference ? ' is-reference' : ''}${lit ? ' is-lit' : ''}${faded ? ' is-faded' : ''}`}
-                        style={{ '--delay': `${420 + (index % 24) * 18}ms` }}
-                        pathLength={reference ? undefined : 1}
-                        d={edgePath(from, to)}
-                      />
+                      <g key={key}>
+                        {lit && <path className="graph-edge-bloom" d={d} filter="url(#graph-bloom)" />}
+                        <path
+                          className={`graph-edge${reference ? ' is-reference' : ''}${lit ? ' is-lit' : ''}${faded ? ' is-faded' : ''}`}
+                          style={{ '--delay': `${650 + (index % 30) * 22}ms` }}
+                          pathLength={reference ? undefined : 1}
+                          d={d}
+                        />
+                      </g>
                     );
                   })}
                 </g>
 
+                {/* 能量粒子：从应用技能沿连线汇入元技能，越靠近越快 */}
+                {!calm && (
+                  <g className="graph-particles" key={`particles-${sourceKey}`} aria-hidden="true">
+                    {visibleEdges.slice(0, MAX_PARTICLES).map(({ edge, key, d }, index) => {
+                      const lit = activeId != null && (edge.source === activeId || edge.target === activeId);
+                      const faded = activeId != null ? !lit : Boolean(needle) && !matches.has(edge.source) && !matches.has(edge.target);
+                      const duration = `${2.8 + (index % 7) * .38}s`;
+                      const begin = `${-((index * .83) % 3.4).toFixed(2)}s`;
+                      return (
+                        <circle key={key} className={`graph-particle${lit ? ' is-lit' : ''}${faded ? ' is-faded' : ''}`} r={lit ? 2.3 : 1.6}>
+                          <animateMotion dur={duration} begin={begin} repeatCount="indefinite" path={d} calcMode="spline" keyTimes="0;1" keySplines=".5 0 .9 .6" />
+                          <animate attributeName="opacity" dur={duration} begin={begin} repeatCount="indefinite" values="0;1;1;0" keyTimes="0;.2;.85;1" />
+                        </circle>
+                      );
+                    })}
+                  </g>
+                )}
+
                 <g className="graph-nodes" key={`nodes-${sourceKey}`}>
-                  {visible.map((raw) => {
+                  {visible.map((raw, order) => {
                     const node = positions.get(raw.id);
                     const active = node.id === activeId;
                     const isSelected = node.id === selectedId;
+                    const neighbor = activeId != null && !active && neighborhood.has(node.id);
                     const dim = isDimmed(node.id);
                     const radius = Math.hypot(node.x - GRAPH.cx, node.y - GRAPH.cy);
-                    const delay = node.meta ? metaNodes.indexOf(node) * 45 : 160 + radius * 1.1;
-                    const showName = node.meta || labels || zoom >= 1.8 || active || isSelected || (neighborhood.has(node.id) && activeId != null) || matches.has(node.id);
+                    // 入场：所有节点从圆心迸发，按离心距离依次落位；元技能最后抵达外环
+                    const delay = node.meta ? 380 + metaNodes.indexOf(node) * 60 : 120 + radius * 1.4;
+                    const showName = node.meta || labels || zoom >= 1.8 || active || isSelected || neighbor || matches.has(node.id);
                     const label = node.meta ? metaLabel(node) : { x: 8, y: 3.5, anchor: 'start' };
+                    const size = node.meta ? metaRadius(node.usage) : 3.6;
                     return (
                       <g
                         key={node.id}
-                        className={`graph-node${node.meta ? ' is-meta' : ''}${node.meta || connected.has(node.id) ? '' : ' is-loose'}${active ? ' is-active' : ''}${isSelected ? ' is-selected' : ''}${dim ? ' is-dim' : ''}${matches.has(node.id) ? ' is-match' : ''}`}
+                        className={`graph-node${node.meta ? ' is-meta' : ''}${node.meta || connected.has(node.id) ? '' : ' is-loose'}${active ? ' is-active' : ''}${isSelected ? ' is-selected' : ''}${neighbor ? ' is-neighbor' : ''}${dim ? ' is-dim' : ''}${matches.has(node.id) ? ' is-match' : ''}`}
                         transform={`translate(${node.x} ${node.y})`}
                         role="button"
                         tabIndex={0}
@@ -343,11 +429,15 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
                         }}
                       >
                         <title>{node.meta ? `${node.name} · 被 ${node.usage} 个技能使用` : node.name}</title>
-                        <g className="graph-node-body" style={{ '--delay': `${Math.round(delay)}ms` }}>
+                        <g className="graph-node-body" style={{ '--delay': `${Math.round(delay)}ms`, '--fx': `${GRAPH.cx - node.x}px`, '--fy': `${GRAPH.cy - node.y}px` }}>
                           <circle className="graph-node-hit" r={node.meta ? 20 : 11} />
-                          {isSelected && <circle className="graph-node-pulse" r={node.meta ? metaRadius(node.usage) : 4} />}
-                          {node.meta && <circle className="graph-node-halo" r={metaRadius(node.usage) + 5} />}
-                          <circle className="graph-node-dot" r={node.meta ? metaRadius(node.usage) : 3.6} />
+                          <g className="graph-float" style={{ '--float-delay': `${-((order * 1.37) % 6).toFixed(2)}s`, '--float-dur': `${5 + (order % 5) * .7}s` }}>
+                            {isSelected && <circle className="graph-node-pulse" r={size} />}
+                            {node.meta && <circle className="graph-node-bloom" r={size + 3} filter="url(#graph-bloom)" />}
+                            {node.meta && <circle className="graph-node-orbit" r={size + 9} />}
+                            {node.meta && <circle className="graph-node-halo" r={size + 4.5} />}
+                            <circle className="graph-node-dot" r={size} />
+                          </g>
                           {showName && (
                             <text className="graph-node-label" x={label.x} y={label.y} textAnchor={label.anchor}>
                               {node.name}

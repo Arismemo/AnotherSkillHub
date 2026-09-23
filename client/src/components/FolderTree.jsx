@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Star,
   Trash2,
+  Network,
 } from 'lucide-react';
 import FolderPicker from './FolderPicker';
 import ContextMenu from './ContextMenu';
@@ -62,6 +63,8 @@ export default function FolderTree({
   onOpenSetup,
   recentSkills = [],
   onDropOnFolder,
+  graphActive = false,
+  onOpenGraph,
 }) {
   const [expanded, setExpanded] = usePersistedState('expanded-folders', {}, (value) => value !== null && typeof value === 'object' && !Array.isArray(value));
   const [menuOpen, setMenuOpen] = useState(null);
@@ -263,18 +266,19 @@ export default function FolderTree({
     const railItems = [
       ...systemItems.map((item) => ({ ...item, count: stats[item.id] || 0 })),
       { id: 'recent', label: folderLabels.recent, icon: Clock3, count: recentSkills.length },
+      { id: 'graph', label: '技能依赖图', icon: Network, count: 0, onSelect: onOpenGraph, active: graphActive },
     ];
     return (
       <div className="sidebar-content sidebar-rail">
         <ul className="nav-list" aria-label="系统分类">
-          {railItems.map(({ id, label, icon: Icon, count, droppable }) => {
-            const active = currentFolder === id && !currentTag;
+          {railItems.map(({ id, label, icon: Icon, count, droppable, onSelect, active: forced }) => {
+            const active = forced ?? (currentFolder === id && !currentTag);
             return (
               <li key={id}>
                 <button
                   type="button"
                   className={`nav-item rail-item ${active ? 'is-active' : ''}${dropTarget === id ? ' is-drop-target' : ''}`}
-                  onClick={() => onSelectFolder(id)}
+                  onClick={() => (onSelect ? onSelect() : onSelectFolder(id))}
                   aria-current={active ? 'true' : undefined}
                   aria-label={count > 0 ? `${label}（${count}）` : label}
                   title={count > 0 ? `${label}（${count}）` : label}
@@ -358,6 +362,17 @@ export default function FolderTree({
                   <Clock3 size={16} aria-hidden="true" />
                   <span>最近浏览</span>
                   <span className="nav-count">{recentSkills.length}</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  className={`nav-item ${graphActive ? 'is-active' : ''}`}
+                  onClick={onOpenGraph}
+                  aria-current={graphActive ? 'page' : undefined}
+                >
+                  <Network size={16} aria-hidden="true" />
+                  <span>技能依赖图</span>
                 </button>
               </li>
           </ul>
