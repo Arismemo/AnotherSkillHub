@@ -698,11 +698,11 @@ export default function App() {
       />
       <AddToBundleModal
         isOpen={Boolean(addToBundleTarget)}
-        skillId={addToBundleTarget?.id}
-        skillName={addToBundleTarget?.name}
+        skillIds={addToBundleTarget?.ids || []}
+        label={addToBundleTarget?.label}
         bundles={bundles}
         onClose={() => setAddToBundleTarget(null)}
-        onDone={() => { fetchFoldersAndStats(); showToast(`已加入组合`); }}
+        onDone={() => { fetchFoldersAndStats(); showToast(`已加入组合（${addToBundleTarget?.ids.length ?? 1} 个技能）`); }}
       />
       <NewBundleModal
         isOpen={showBundleModal}

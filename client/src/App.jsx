@@ -613,6 +613,7 @@ export default function App() {
           onTrashSkill={handleTrashSkill}
           onAddToBundle={(skillId) => setAddToBundleTarget({ ids: [skillId], label: skills.find((x) => x.id === skillId)?.name ?? '技能' })}
           onBatchAddToBundle={() => setAddToBundleTarget({ ids: [...selectedIds], label: `${selectedIds.size} 个技能` })}
+          onCopySkill={handleCopySkill}
           onBatchStar={handleBatchStar}
           onBatchRestore={handleBatchRestore}
           onBatchDelete={handleBatchDelete}

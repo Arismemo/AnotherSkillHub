@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import FolderPicker from './FolderPicker';
+import ContextMenu from './ContextMenu';
+import { showToast } from './toastBus';
 import {
   ArrowDownAZ,
   Check,
@@ -57,6 +59,7 @@ export default function SkillList({
   onToggleStar,
   onTrashSkill,
   onAddToBundle,
+  onCopySkill,
   onRestoreSkill,
   onPermanentDelete,
   onNewSkill,
@@ -82,6 +85,40 @@ export default function SkillList({
   const currentDensity = densities[densityIndex];
   const nextDensity = densities[(densityIndex + 1) % densities.length];
   const DensityIcon = currentDensity.icon;
+
+  const [contextMenu, setContextMenu] = useState(null);
+
+  // 右键菜单：把 hover 才出现的行内图标变成可发现的入口，并带上对应快捷键提示
+  const openContextMenu = (event, skill) => {
+    event.preventDefault();
+    if (!selectedIds.has(skill.id)) onSelectSkill(skill.id, null);
+    setContextMenu({ x: event.clientX, y: event.clientY, skill });
+  };
+
+  const contextItems = (skill) => (isTrash ? [
+    { label: '恢复', onSelect: () => onRestoreSkill(skill.id) },
+    { label: '永久删除', danger: true, onSelect: () => onPermanentDelete(skill.id) },
+  ] : [
+    { label: skill.is_starred ? '取消收藏' : '收藏', hint: 'S', onSelect: () => onToggleStar(skill.id) },
+    { label: '加入技能组合', onSelect: () => onAddToBundle?.(skill.id) },
+    { label: '复制为新技能', onSelect: () => onCopySkill?.(skill.id) },
+    { separator: true },
+    {
+      label: '复制 slug',
+      onSelect: () => navigator.clipboard.writeText(skill.slug)
+        .then(() => showToast(`已复制 slug：${skill.slug}`))
+        .catch(() => showToast('复制失败，请检查浏览器的剪贴板权限。')),
+    },
+    {
+      label: '复制仓库路径',
+      onSelect: () => navigator.clipboard.writeText(`${skill.folder_path}/${skill.slug}`)
+        .then(() => showToast(`已复制路径：${skill.folder_path}/${skill.slug}`))
+        .catch(() => showToast('复制失败，请检查浏览器的剪贴板权限。')),
+    },
+    { label: '下载技能包', onSelect: () => { window.location.href = `/s/${skill.slug}/archive.tar.gz`; } },
+    { separator: true },
+    { label: '移入废纸篓', hint: 'Del', danger: true, onSelect: () => onTrashSkill(skill.id) },
+  ]);
 
   // 键盘移动选中项时把它滚进视口（j/k 走到屏幕外就看不见了）
   const selectedRowRef = useRef(null);
@@ -230,6 +267,7 @@ export default function SkillList({
                   ref={isSelected ? selectedRowRef : undefined}
                   className={`skill-row${isSelected ? ' is-selected' : ''}${isChecked ? ' is-checked' : ''}`}
                   onClick={(event) => onSelectSkill(skill.id, event)}
+                  onContextMenu={(event) => openContextMenu(event, skill)}
                   onKeyDown={(event) => selectFromKeyboard(event, skill.id)}
                   draggable
                   onDragStart={(event) => dragStart(event, skill)}
@@ -290,6 +328,15 @@ export default function SkillList({
           </ul>
         )}
       </div>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextItems(contextMenu.skill)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

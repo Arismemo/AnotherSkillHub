@@ -351,12 +351,14 @@ export default function App() {
       // 并入而不是覆盖：Cmd 攒下的选择不该被一次 Shift 清掉
       setSelectedIds((prev) => new Set([...prev, ...range]));
       setLastSelectedIndex(currentIdx);
+      setMultiSelectMode(true);
       return;
     }
     rememberRecent(id);
     setSelectedSkillId(id);
     setSelectedIds(new Set([id]));
     setLastSelectedIndex(currentIdx);
+    setMultiSelectMode(false);
   };
 
   // 跨目录跳转：命令面板现在检索全库，选中的技能可能不在当前结果集里，

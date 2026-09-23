@@ -389,21 +389,6 @@ export default function FolderTree({
           <span>终端接入</span>
         </button>
       </div>
-
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          items={[
-            { label: '在此目录中查看', onSelect: () => onSelectFolder(contextMenu.node.path) },
-            { label: '新建子文件夹', onSelect: () => createFolder(contextMenu.node.path) },
-            { label: '重命名', onSelect: () => renameFolder(contextMenu.node) },
-            { separator: true },
-            { label: '删除文件夹', danger: true, onSelect: () => deleteFolder(contextMenu.node) },
-          ]}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
     </div>
   );
 }

@@ -133,6 +133,7 @@ export default function App() {
           return list[0]?.id ?? null;
         });
         setSelectedIds(new Set());
+        setMultiSelectMode(false);
       }
     } catch (error) {
       setSkills([]);

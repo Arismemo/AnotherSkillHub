@@ -622,7 +622,7 @@ export default function App() {
           onBatchMove={handleBatchMove}
           onBatchTrash={handleBatchTrash}
           folders={folders}
-          onClearSelection={() => setSelectedIds(new Set())}
+          onClearSelection={() => { setSelectedIds(selectedSkillId ? new Set([selectedSkillId]) : new Set()); setMultiSelectMode(false); }}
           loading={loading}
           error={appError}
           onRetry={refreshAll}

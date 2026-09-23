@@ -342,6 +342,7 @@ export default function App() {
       });
       // Cmd 点选也要移动锚点，否则随后的 Shift 会从上一次普通点击起算
       if (currentIdx !== -1) setLastSelectedIndex(currentIdx);
+      setMultiSelectMode(true);
       return;
     }
     if (event && event.shiftKey && lastSelectedIndex != null && currentIdx !== -1) {

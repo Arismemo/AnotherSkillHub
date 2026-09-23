@@ -265,6 +265,7 @@ export default function App() {
       body: JSON.stringify({ target_folder: targetFolder }),
     }).catch(() => null)));
     await refreshAll();
+    setMultiSelectMode(false);
     showToast(`已移动 ${ids.length} 个技能到 ${targetFolder}`, {
       actionLabel: '撤销',
       onAction: () => Promise.all(targets.map((s) => requestJson(`/api/skills/${s.id}/move`, {
