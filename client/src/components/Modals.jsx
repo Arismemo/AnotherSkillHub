@@ -1,24 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, Plus, Tag, X } from 'lucide-react';
+import { Check, Copy, GitCompare, Plus, Tag, X } from 'lucide-react';
 import FolderPicker from './FolderPicker';
+import DiffView from './DiffView';
 import { formatKeys } from '../hooks/useHotkeys';
+import useDebouncedValue from '../hooks/useDebouncedValue';
+import { onboardingPrompt } from '../utils/agentPrompts';
+import { formatDateTime } from '../utils/date';
 import { requestJson } from '../utils/requestJson';
 
 const defaultContent = `---
 name: my-new-skill
-description: 技能说明与触发条件
+description: 一句话说明「什么时候应该使用这个技能」
 tags: []
 version: 1.0.0
 ---
 
 # 新技能名称
 
-## 触发场景
-何时调用该技能。
+## 何时使用
+触发条件与适用范围。
 
-## 指令流程
-1. 第一步
-2. 第二步
+## 步骤
+1. 具体、可执行的命令或操作
+2. …
+
+## 验证
+如何确认完成；常见失败的处理办法。
 `;
 
 async function ensureSkillSlugAvailable(slug) {
@@ -198,39 +205,32 @@ export function NewSkillModal({ isOpen, onClose, onCreate, folders, defaultFolde
 }
 
 
-function parseSkillMarkdown(text) {
-  let name = '';
-  let description = '';
-  let tags = [];
-  const trimmed = text.trim();
-  if (trimmed.startsWith('---')) {
-    const end = trimmed.indexOf('---', 3);
-    if (end !== -1) {
-      const frontmatter = trimmed.slice(3, end);
-      name = frontmatter.match(/^name:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, '') || '';
-      description = frontmatter.match(/^description:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, '') || '';
-      const rawTags = frontmatter.match(/^tags:\s*\[(.*)\]/m)?.[1];
-      if (rawTags) tags = rawTags.split(',').map((tag) => tag.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
-    }
-  }
-  if (!name) name = text.match(/^#\s+(.+)$/m)?.[1]?.trim() || '';
-  const slug = name.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || `skill-${Date.now().toString().slice(-4)}`;
-  return { name: name || slug, slug, description, tags };
-}
-
 export function PasteSkillModal({ isOpen, onClose, onImport, folders, defaultFolder = 'inbox' }) {
   const [rawText, setRawText] = useState('');
   const [folderPath, setFolderPath] = useState(defaultFolder);
   const [parsedInfo, setParsedInfo] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const debouncedText = useDebouncedValue(rawText, 250);
+
+  // 预览走服务端 /api/skills/parse：与创建、Agent 推送共用同一套 slug/名称/标签规则
+  useEffect(() => {
+    if (!debouncedText.trim()) return undefined;
+    const controller = new AbortController();
+    requestJson('/api/skills/parse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: debouncedText }),
+      signal: controller.signal,
+    }).then(setParsedInfo).catch(() => null);
+    return () => controller.abort();
+  }, [debouncedText]);
 
   if (!isOpen) return null;
 
-  const updateText = (text) => {
-    setRawText(text);
-    setParsedInfo(text.trim() ? parseSkillMarkdown(text) : null);
-  };
+  // 清空输入后不再展示上一次的解析结果
+  const preview = rawText.trim() ? parsedInfo : null;
+  const blocking = preview && (preview.errors.length > 0 || preview.conflict);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -241,9 +241,8 @@ export function PasteSkillModal({ isOpen, onClose, onImport, folders, defaultFol
     setSubmitting(true);
     setError('');
     try {
-      const info = parsedInfo || parseSkillMarkdown(rawText);
-      await ensureSkillSlugAvailable(info.slug);
-      const imported = await onImport({ ...info, folder_path: folderPath, content: rawText });
+      // 只提交正文与目录，slug/名称/标签由服务端按统一规则推导；冲突与无效标识由服务端返回明确错误
+      const imported = await onImport({ folder_path: folderPath, content: rawText });
       if (imported) onClose();
       else setError('导入失败，请查看提示后重试。');
     } catch (e) { setError(e.message); }
@@ -254,10 +253,16 @@ export function PasteSkillModal({ isOpen, onClose, onImport, folders, defaultFol
     <DialogShell title="粘贴导入" description="粘贴完整 SKILL.md，名称、描述和标签会自动识别。" onClose={onClose} size="large">
       <form className="form-stack" onSubmit={handleSubmit}>
         {error && <div className="inline-error" role="alert">{error}</div>}
-        {parsedInfo && <div className="parse-preview"><div><strong>{parsedInfo.name}</strong><code>/{parsedInfo.slug}</code></div><span>已识别</span></div>}
-        <label>SKILL.md<textarea rows={16} value={rawText} onChange={(event) => updateText(event.target.value)} placeholder={'---\nname: my-skill\ndescription: 技能说明\n---\n\n# 标题'} spellCheck="false" required /></label>
+        {preview && preview.errors.length === 0 && (
+          <div className="parse-preview"><div><strong>{preview.name}</strong><code>/{preview.slug}</code>{preview.tags.length > 0 && <code>{preview.tags.join(', ')}</code>}</div><span>{preview.conflict ? '' : '已识别'}</span></div>
+        )}
+        {preview?.errors.map((message) => <div key={message} className="inline-error" role="alert">{message}</div>)}
+        {preview?.conflict && <div className="inline-error" role="alert">标识符「{preview.slug}」已存在{preview.conflict.in_trash ? '（在废纸篓中）' : ''}，请修改 frontmatter 的 name，或直接编辑已有技能。</div>}
+        {preview?.warnings.map((message) => <p key={message} className="step-note">{message}</p>)}
+        {preview?.security_warnings.map((w) => <p key={w.msg} className="step-note">⚠️ 安全提醒：{w.msg}</p>)}
+        <label>SKILL.md<textarea rows={16} value={rawText} onChange={(event) => setRawText(event.target.value)} placeholder={'---\nname: my-skill\ndescription: 技能说明\n---\n\n# 标题'} spellCheck="false" required /></label>
         <label className="compact-field">归档到<FolderPicker folders={folders} value={folderPath} onChange={setFolderPath} /></label>
-        <footer className="dialog-footer"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button type="submit" className="primary-button" disabled={submitting}>{submitting ? '导入中…' : '导入技能'}</button></footer>
+        <footer className="dialog-footer"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button type="submit" className="primary-button" disabled={submitting || Boolean(blocking)}>{submitting ? '导入中…' : '导入技能'}</button></footer>
       </form>
     </DialogShell>
   );
@@ -271,8 +276,8 @@ export function AgentSetupModal({ isOpen, onClose }) {
 
   const origin = window.location.origin;
   const setupCommand = `curl -fsSL ${origin}/setup.sh | bash`;
-  const pushExamples = `# 推送整个技能目录（推荐，含附属文件）\nash push ~/.hermes/profiles/<profile>/skills/my-skill/\n\n# 推送单个 SKILL.md\nash push ./SKILL.md`;
-  const agentPrompt = `已接入 AnotherSkillHub（${origin}）。\n- 搜索技能：ash search <keyword>\n- 拉取使用：ash pull <slug>\n- 推送本地技能（整个技能目录，含 references/scripts 附属文件）：ash push <技能目录>\n- 推送单个文件：ash push SKILL.md`;
+  const pushExamples = `# 推送整个技能目录（推荐，含 scripts/ references/ 等附属文件）\nash push ~/.agents/skills/my-skill/\n\n# 更新已有技能（同名 slug 已存在时必须加 --update）\nash push ~/.agents/skills/my-skill/ --update\n\n# 推送单个 SKILL.md\nash push ./SKILL.md`;
+  const agentPrompt = onboardingPrompt(origin);
   const copyText = async (text, type) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -295,12 +300,12 @@ export function AgentSetupModal({ isOpen, onClose }) {
         <section>
           <div><h3><span className="step-badge" aria-hidden="true">2</span>Agent 引导指令</h3><button type="button" onClick={() => copyText(agentPrompt, 'prompt')}>{copied === 'prompt' ? <Check size={14} /> : <Copy size={14} />}{copied === 'prompt' ? '已复制' : '复制'}</button></div>
           <pre><code>{agentPrompt}</code></pre>
-          <p className="step-note">发给任意 Agent 对话窗，让 Agent 知道如何使用 ash。两步都需要完成。</p>
+          <p className="step-note">发给任意 Agent，或写进它的全局指令（CLAUDE.md / AGENTS.md 等）。详细规范由服务端 <a href={`${origin}/agent.md`} target="_blank" rel="noreferrer">/agent.md</a> 下发，修改后各 Agent 自动生效。</p>
         </section>
         <section>
           <div><h3><span className="step-badge" aria-hidden="true">3</span>推送技能（含附属文件）</h3><button type="button" onClick={() => copyText(pushExamples, 'push')}>{copied === 'push' ? <Check size={14} /> : <Copy size={14} />}{copied === 'push' ? '已复制' : '复制'}</button></div>
           <pre><code>{pushExamples}</code></pre>
-          <p className="step-note">目录推送会自动打包整个技能（SKILL.md + references/ + scripts/ 等），云端保留完整结构，pull 时原样恢复。</p>
+          <p className="step-note">目录推送会打包整个技能，pull 时原样恢复。Agent 推送的新技能和更新会进入「待审核」，在这里采纳后其他 Agent 才能拉取。</p>
         </section>
         <footer className="dialog-footer"><button type="button" className="primary-button" onClick={onClose}>完成</button></footer>
       </div>
@@ -315,6 +320,7 @@ export function VersionHistoryModal({ isOpen, onClose, skillId, onRestored }) {
   const [restoring, setRestoring] = useState(null);
   const [labelSaving, setLabelSaving] = useState(null);
   const [error, setError] = useState('');
+  const [compare, setCompare] = useState(null); // { version, current }
 
   useEffect(() => {
     if (!isOpen || !skillId) return;
@@ -343,7 +349,39 @@ export function VersionHistoryModal({ isOpen, onClose, skillId, onRestored }) {
     }
   };
 
-  const sourceLabel = { web: '网页', agent: 'Agent', 'restore-backup': '恢复前备份' };
+  const openCompare = async (versionId) => {
+    setError('');
+    try {
+      const [version, current] = await Promise.all([
+        requestJson(`/api/skills/${skillId}/versions/${versionId}`),
+        requestJson(`/api/skills/${skillId}`),
+      ]);
+      setCompare({ version, current });
+    } catch (e) { setError(e.message); }
+  };
+
+  // 快照记录的是「被替换掉的旧内容」，source 表示是谁的改动导致了这次快照
+  const sourceLabel = { web: '网页编辑前', agent: 'Agent 更新前', 'restore-backup': '恢复前备份' };
+
+  if (compare) {
+    const time = formatDateTime(compare.version.created_at);
+    return (
+      <DialogShell title="版本对比" description={`${sourceLabel[compare.version.source] || compare.version.source} · ${time} → 当前版本`} onClose={() => setCompare(null)} size="large">
+        <DiffView
+          before={compare.version.content}
+          after={compare.current.content}
+          beforeLabel={`历史版本${compare.version.label ? `（${compare.version.label}）` : ''}`}
+          afterLabel="当前版本"
+          beforeFiles={compare.version.files || []}
+          afterFiles={compare.current.files || []}
+        />
+        <footer className="dialog-footer">
+          <button type="button" className="secondary-button" onClick={() => setCompare(null)}>返回列表</button>
+          <button type="button" className="primary-button" disabled={restoring === compare.version.id} onClick={async () => { await restore(compare.version.id); setCompare(null); }}>恢复此版本</button>
+        </footer>
+      </DialogShell>
+    );
+  }
 
   return (
     <DialogShell title="历史版本" description="每次内容变更前自动保存快照，可恢复任意版本。" onClose={onClose} size="medium">
@@ -357,7 +395,7 @@ export function VersionHistoryModal({ isOpen, onClose, skillId, onRestored }) {
           <div key={v.id} className="version-row">
             <div className="version-meta">
               <span className="version-source">{sourceLabel[v.source] || v.source}</span>
-              <time>{new Date(v.created_at + 'Z').toLocaleString('zh-CN', { hour12: false })}</time>
+              <time>{formatDateTime(v.created_at)}</time>
               <span className="version-size">{Math.round((v.content_size || 0) / 1024)} KB</span>
               {v.label && <span className="version-label-tag"><Tag size={11} aria-hidden="true" />{v.label}</span>}
             </div>
@@ -385,6 +423,9 @@ export function VersionHistoryModal({ isOpen, onClose, skillId, onRestored }) {
                   finally { setLabelSaving(null); }
                 }}
               />
+              <button type="button" className="secondary-button" onClick={() => openCompare(v.id)} title="与当前版本对比">
+                <GitCompare size={13} />对比
+              </button>
               <button
                 type="button"
                 className="secondary-button"

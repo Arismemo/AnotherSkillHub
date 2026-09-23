@@ -6,5 +6,5 @@
   "files": ["bin/"],
   "keywords": ["agent", "skills", "skillhub", "cli", "another-skillhub"],
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/Arismemo/skillhub" }
+  "repository": { "type": "git", "url": "https://github.com/Arismemo/AnotherSkillHub" }
 }

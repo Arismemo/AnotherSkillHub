@@ -98,4 +98,18 @@ try {
   if (!cols.includes('label')) db.exec('ALTER TABLE skill_versions ADD COLUMN label TEXT DEFAULT NULL');
 } catch (e) { console.error('migration:', e.message); }
 
+// 审核流：status=pending 的技能只对人可见，Agent 默认拉不到；
+// pending_* 存放 Agent 对已发布技能提交、尚未采纳的更新（采纳前磁盘上仍是已发布版本）。
+try {
+  const cols = db.prepare('PRAGMA table_info(skills)').all().map((c) => c.name);
+  const add = (name, ddl) => { if (!cols.includes(name)) db.exec(`ALTER TABLE skills ADD COLUMN ${ddl}`); };
+  add('status', "status TEXT DEFAULT 'approved'");
+  add('security_warnings', "security_warnings TEXT DEFAULT '[]'");
+  add('pending_content', 'pending_content TEXT DEFAULT NULL');
+  add('pending_files', 'pending_files TEXT DEFAULT NULL');
+  add('pending_meta', 'pending_meta TEXT DEFAULT NULL');
+  add('pending_at', 'pending_at DATETIME DEFAULT NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_skills_status ON skills(status)');
+} catch (e) { console.error('migration:', e.message); }
+
 module.exports = db;

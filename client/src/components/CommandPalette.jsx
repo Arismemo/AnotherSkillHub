@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Command, FileText, Folder, Package, Search, Zap } from 'lucide-react';
 import { fuzzyScore } from '../utils/fuzzyScore';
+import { skillPrompt } from '../utils/agentPrompts';
 
 const typeMeta = {
   action: { icon: Zap, label: '当前技能' },
@@ -78,7 +79,7 @@ export default function CommandPalette({
     const items = [];
     // 面板原来只会「导航」不会「操作」：对当前技能的动作置顶
     if (selectedSkill) {
-      const agentPrompt = `请加载并使用技能：${window.location.origin}/s/${selectedSkill.slug}`;
+      const agentPrompt = skillPrompt(window.location.origin, selectedSkill);
       items.push(
         { type: 'action', key: 'act-star', title: selectedSkill.is_starred ? '取消收藏' : '收藏', subtitle: `对「${selectedSkill.name}」· S`, keywords: 'star 收藏', action: () => onToggleStar(selectedSkill.id) },
         { type: 'action', key: 'act-move', title: '移动到…', subtitle: `对「${selectedSkill.name}」`, keywords: 'move 移动 目录', keepOpen: true, action: () => setSubmode('move') },

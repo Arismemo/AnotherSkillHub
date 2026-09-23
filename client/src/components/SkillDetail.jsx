@@ -20,10 +20,12 @@ import typescript from 'highlight.js/lib/languages/typescript';
 import xml from 'highlight.js/lib/languages/xml';
 import yaml from 'highlight.js/lib/languages/yaml';
 import { VersionHistoryModal } from './Modals';
+import ReviewPanel from './ReviewPanel';
+import { installCommand, skillPrompt } from '../utils/agentPrompts';
 import { showToast } from './toastBus';
 import useResizableWidth from '../hooks/useResizableWidth';
 import { requestJson } from '../utils/requestJson';
-import { relativeTime } from '../utils/date';
+import { formatDateTime, relativeTime } from '../utils/date';
 import {
   Check,
   ChevronDown,
@@ -324,7 +326,7 @@ function readSkillDraft(skillId) {
   return null;
 }
 
-export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag, onCopySkill, apiRef }) {
+export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag, onCopySkill, onChanged, apiRef }) {
   const [mode, setMode] = useState('preview');
   const [content, setContent] = useState('');
   // 列表接口不再回传 content，详情接口是唯一来源；savedContent 是「服务端上那一份」，用来判 dirty
@@ -339,6 +341,9 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   const isWideFileView = selectedFile !== 'SKILL.md' && !selectedFile.endsWith('.md');
   const [auxFileContent, setAuxFileContent] = useState('');
   const [loadingDetail, setLoadingDetail] = useState(true);
+  // 审核相关字段（状态 / 待审更新 / 安全提醒）；审核操作后 reloadKey 触发重新拉取详情
+  const [reviewDetail, setReviewDetail] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [loadingFile, setLoadingFile] = useState(false);
   const [saving, setSaving] = useState(false);
   const [detailError, setDetailError] = useState('');
@@ -420,6 +425,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
         setDescription(restoreDraft ? draft.description : nextDescription);
         if (restoreDraft) setMode('edit');
         setFileTree(Array.isArray(detail.file_tree) ? detail.file_tree : []);
+        setReviewDetail(detail);
       })
       .catch((error) => {
         if (!cancelled) setDetailError(error.message);
@@ -430,7 +436,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     return () => {
       cancelled = true;
     };
-  }, [skill.id]);
+  }, [skill.id, reloadKey]);
 
   useEffect(() => {
     if (selectedFile === 'SKILL.md') return undefined;
@@ -636,8 +642,8 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   };
 
   const origin = window.location.origin;
-  const agentPrompt = `请加载并使用技能：${origin}/s/${skill.slug}`;
-  const cliCommand = `curl -fsSL ${origin}/s/${skill.slug}/install.sh | bash`;
+  const agentPrompt = skillPrompt(origin, { ...skill, file_count: fileTree.length || skill.file_count });
+  const cliCommand = installCommand(origin, skill.slug);
 
   const copyToClipboard = async (text, type, toastLabel) => {
     try {
@@ -743,7 +749,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
         {/* 头部中段原来是一大片空白：放只读身份信息（版本 / 更新时间 / 文件数 / 来源终端） */}
         <div className="detail-meta" aria-label="技能信息">
           {skill.version && <span className="chip" title={`版本 ${skill.version}`}>v{skill.version}</span>}
-          {skill.updated_at && <span title={`更新于 ${skill.updated_at}`}>{relativeTime(skill.updated_at)}</span>}
+          {skill.updated_at && <span title={`更新于 ${formatDateTime(skill.updated_at)}`}>{relativeTime(skill.updated_at)}</span>}
           {fileTree.length > 1 && <span>{fileTree.length} 个文件</span>}
           {skill.terminal_source && <span className="chip row-source" title={`来自终端 ${skill.terminal_source}`}>{skill.terminal_source}</span>}
         </div>
@@ -891,6 +897,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
           <div className={`detail-content${isWideFileView ? ' is-wide-file' : ''}`}>
             <div className="sr-only" aria-live="polite">{copied ? '内容已复制' : ''}</div>
             {detailError && <div className="inline-error" role="alert">{detailError}</div>}
+            <ReviewPanel detail={reviewDetail} onChanged={async () => { setReloadKey((k) => k + 1); await onChanged?.(); }} />
 
             {mode === 'preview' ? (
               <>
