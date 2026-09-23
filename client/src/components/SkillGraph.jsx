@@ -37,13 +37,6 @@ const STARS = (() => {
     o: .12 + rand() * .5, twinkle: index % 3 === 0, delay: -rand() * 7,
   }));
 })();
-// 雷达扫描扇区：前缘在 0°，向后拖出 44° 的渐隐尾迹
-const SWEEP_ANGLE = 44 * Math.PI / 180;
-const SWEEP = {
-  d: `M ${GRAPH.cx} ${GRAPH.cy} L ${GRAPH.cx + GRAPH.ring * Math.cos(-SWEEP_ANGLE)} ${GRAPH.cy + GRAPH.ring * Math.sin(-SWEEP_ANGLE)} A ${GRAPH.ring} ${GRAPH.ring} 0 0 1 ${GRAPH.cx + GRAPH.ring} ${GRAPH.cy} Z`,
-  x1: GRAPH.cx + GRAPH.ring * .7 * Math.cos(-SWEEP_ANGLE), y1: GRAPH.cy + GRAPH.ring * .7 * Math.sin(-SWEEP_ANGLE),
-  x2: GRAPH.cx + GRAPH.ring * .7, y2: GRAPH.cy,
-};
 const MAX_PARTICLES = 90; // 能量粒子上限：连线再多也不拖慢页面
 
 const metaRadius = (usage) => 5.5 + Math.min(6.5, Math.sqrt(usage) * 1.5);
@@ -375,10 +368,6 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
                   <stop offset=".45" stopColor="var(--accent)" stopOpacity=".05" />
                   <stop offset="1" stopColor="var(--accent)" stopOpacity="0" />
                 </radialGradient>
-                <linearGradient id="graph-sweep" gradientUnits="userSpaceOnUse" x1={SWEEP.x1} y1={SWEEP.y1} x2={SWEEP.x2} y2={SWEEP.y2}>
-                  <stop offset="0" stopColor="var(--accent)" stopOpacity="0" />
-                  <stop offset="1" stopColor="var(--accent)" stopOpacity=".13" />
-                </linearGradient>
                 <filter id="graph-bloom" x="-150%" y="-150%" width="400%" height="400%">
                   <feGaussianBlur stdDeviation="4" />
                 </filter>
@@ -392,7 +381,7 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
 
               <g ref={sceneRef} className="graph-scene">
                 <circle className="graph-nebula" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.ring + 90} fill="url(#graph-nebula)" />
-                <g className={`graph-dial${activeId != null || needle ? ' is-quiet' : ''}`} aria-hidden="true">
+                <g className="graph-dial" aria-hidden="true">
                   <g className="graph-ticks">
                     {TICKS.map((angle, index) => {
                       const long = index % 10 === 0;
@@ -400,16 +389,9 @@ export default function SkillGraph({ onClose, onOpenSkill, dataVersion }) {
                       return <line key={index} className={long ? 'is-long' : undefined} x1={GRAPH.cx + r1 * Math.cos(angle)} y1={GRAPH.cy + r1 * Math.sin(angle)} x2={GRAPH.cx + r2 * Math.cos(angle)} y2={GRAPH.cy + r2 * Math.sin(angle)} />;
                     })}
                   </g>
-                  {!calm && metaNodes.length > 0 && (
-                    <g className="graph-sweep">
-                      <path d={SWEEP.d} fill="url(#graph-sweep)" />
-                      <line x1={GRAPH.cx} y1={GRAPH.cy} x2={GRAPH.cx + GRAPH.ring} y2={GRAPH.cy} />
-                    </g>
-                  )}
                   <circle className="graph-ring" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.ring} pathLength="1" />
                   <circle className="graph-band" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.inner} />
                   <circle className="graph-core" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.core} />
-                  {!calm && <circle className="graph-wave" cx={GRAPH.cx} cy={GRAPH.cy} r={GRAPH.core} />}
                   {unlinkedCount > 0 && !onlyConnected && <text className="graph-core-label" x={GRAPH.cx} y={GRAPH.cy + GRAPH.core} dy="1.4em" textAnchor="middle">未关联 · {unlinkedCount}</text>}
                 </g>
 

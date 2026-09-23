@@ -102,7 +102,7 @@
 .graph-nebula { pointer-events: none; animation: graph-fade 1.4s ease both; }
 .graph-dial { pointer-events: none; }
 /* 线条保持屏幕像素粗细，放大后依旧是细线 */
-.graph-ticks line, .graph-ring, .graph-band, .graph-core, .graph-sweep line, .graph-edge, .graph-edge-bloom { vector-effect: non-scaling-stroke; }
+.graph-ticks line, .graph-ring, .graph-band, .graph-core, .graph-edge, .graph-edge-bloom { vector-effect: non-scaling-stroke; }
 .graph-ticks { transform-box: view-box; transform-origin: 500px 400px; animation: graph-fade 1s ease .2s both, graph-spin 240s linear infinite; }
 .graph-ticks line { stroke: var(--graph-line); stroke-width: .6; opacity: .45; }
 .graph-ticks line.is-long { stroke: var(--accent); opacity: .7; }
@@ -111,15 +111,6 @@
 .graph-band { fill: none; stroke: var(--graph-line); stroke-opacity: .35; stroke-dasharray: 1 6; stroke-linecap: round; }
 .graph-core { fill: color-mix(in srgb, var(--accent) 4%, transparent); stroke: var(--graph-line); stroke-opacity: .45; stroke-dasharray: 2 5; }
 .graph-core-label { fill: var(--text-subtle); font-size: calc(10px / var(--k, 1)); font-family: var(--mono); letter-spacing: .06em; animation: graph-fade .6s ease .9s both; }
-/* 雷达扫描：一束扇形尾迹绕外环缓慢巡航 */
-.graph-sweep { transform-box: view-box; transform-origin: 500px 400px; animation: graph-fade 1s ease 1.2s both, graph-spin 11s linear infinite; }
-.graph-sweep line { stroke: var(--accent); stroke-opacity: .3; stroke-width: .7; }
-/* 有焦点（悬停/选中/搜索）时装饰层退后，把舞台让给高亮的关系 */
-.graph-sweep > *, .graph-wave { transition: opacity .4s ease; }
-.graph-dial.is-quiet .graph-sweep > *, .graph-dial.is-quiet .graph-wave { opacity: .25; }
-:root[data-theme="light"] .graph-sweep path { opacity: .6; }
-/* 冲击波：从圆心向外环扩散 */
-.graph-wave { fill: none; stroke: var(--accent); stroke-width: 1; transform-box: fill-box; transform-origin: center; opacity: 0; animation: graph-wave 6s cubic-bezier(.2, .6, .3, 1) 1.4s infinite; }
 
 /* 连线：声明依赖=实线（入场时顺着方向描出），文档引用=虚线 */
 .graph-edge {
@@ -342,7 +333,6 @@
 @keyframes graph-burst { from { opacity: 0; transform: translate(var(--fx), var(--fy)) scale(.15); } 35% { opacity: 1; } }
 @keyframes graph-spin { to { transform: rotate(360deg); } }
 @keyframes graph-twinkle { 0%, 100% { opacity: var(--o); } 50% { opacity: calc(var(--o) * .15); } }
-@keyframes graph-wave { 0% { opacity: .32; transform: scale(1); } 60% { opacity: .06; } 100% { opacity: 0; transform: scale(3.5); } }
 @keyframes graph-float { from { transform: translate(-1.2px, -1.6px); } to { transform: translate(1.2px, 1.6px); } }
 @keyframes graph-breathe-glow { 50% { opacity: .3; } }
 @keyframes graph-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
