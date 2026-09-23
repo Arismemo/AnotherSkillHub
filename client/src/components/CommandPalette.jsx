@@ -11,7 +11,7 @@ const typeMeta = {
 
 // ⌘K 命令面板：模糊搜索技能 + 执行命令，键盘全程操作（Linear/Raycast 式）
 // 模糊匹配：连续命中加分、前缀命中加分、精确匹配最高
-function fuzzyScore(query, text) {
+export function fuzzyScore(query, text) {
   if (!query) return 1;
   const q = query.toLowerCase();
   const t = text.toLowerCase();

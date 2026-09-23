@@ -160,12 +160,20 @@ export default function CommandPalette({
   const execute = useCallback((item) => {
     if (!item) return;
     item.action();
+    if (item.keepOpen) {
+      // 进入二级模式：清空搜索词并把选中项复位
+      setQuery('');
+      setActiveIndex(0);
+      return;
+    }
     onClose();
   }, [onClose]);
 
   const onKeyDown = (event) => {
     if (event.key === 'Escape') {
       event.preventDefault();
+      // 二级模式先退回一级，不直接关面板
+      if (submode !== 'root') { setSubmode('root'); setQuery(''); setActiveIndex(0); return; }
       onClose();
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();

@@ -58,6 +58,7 @@ export default function CommandPalette({
   onToggleSort,
 }) {
   const [query, setQuery] = useState('');
+  const [submode, setSubmode] = useState('root'); // 'root' | 'move'
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef(null);
   const listRef = useRef(null);

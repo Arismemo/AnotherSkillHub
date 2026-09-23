@@ -68,6 +68,7 @@ export default function CommandPalette({
     // 打开时重置并聚焦（setState 在 setTimeout 中，避免 effect 同步级联渲染警告）
     const timer = window.setTimeout(() => {
       setQuery('');
+      setSubmode('root');
       setActiveIndex(0);
       inputRef.current?.focus();
     }, 0);

@@ -39,12 +39,16 @@ export default function CommandPalette({
   onClose,
   skills,
   folders,
+  bundles = [],
   onSelectSkill,
   onSelectFolder,
+  onSelectBundle,
   onNewSkill,
   onPasteImport,
+  onNewBundle,
   onOpenSetup,
   onToggleSidebar,
+  onToggleSort,
 }) {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Command, FileText, Folder, Package, Search } from 'lucide-react';
 
 const typeMeta = {
+  action: { icon: Zap, label: '当前技能' },
   skill: { icon: FileText, label: '技能' },
   folder: { icon: Folder, label: '目录' },
   bundle: { icon: Package, label: '组合' },

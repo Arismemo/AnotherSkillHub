@@ -207,7 +207,7 @@ export default function CommandPalette({
             value={query}
             onChange={(e) => { setQuery(e.target.value); setActiveIndex(0); }}
             onKeyDown={onKeyDown}
-            placeholder="搜索技能、目录或命令…"
+            placeholder={submode === 'move' ? `移动「${selectedSkill?.name}」到哪个目录？` : '搜索技能、目录或命令…'}
             aria-label="搜索"
             role="combobox"
             aria-expanded="true"

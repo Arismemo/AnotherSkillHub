@@ -143,7 +143,7 @@ export default function CommandPalette({
       });
     });
     return items;
-  }, [skills, folders, bundles, onSelectSkill, onSelectFolder, onSelectBundle, onNewSkill, onPasteImport, onNewBundle, onOpenSetup, onToggleSidebar, onToggleSort]);
+  }, [skills, folders, bundles, submode, selectedSkill, onToggleStar, onAddToBundle, onCopySkill, onTrashSkill, onMoveSkill, onSelectSkill, onSelectFolder, onSelectBundle, onNewSkill, onPasteImport, onNewBundle, onOpenSetup, onToggleSidebar, onToggleSort]);
 
   const results = useMemo(() => {
     if (!query.trim()) return commands.slice(0, 12);

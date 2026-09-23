@@ -630,6 +630,10 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .bundle-add-list { display: flex; flex-direction: column; gap: .3rem; max-height: 12rem; overflow-y: auto; width: 100%; }
 .bundle-add-list button { display: flex; align-items: center; gap: .45rem; padding: .4rem .55rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font-size: var(--fs-xs); cursor: pointer; text-align: left; }
 .bundle-add-list button:hover { background: var(--surface-hover); }
+.bundle-add-list button.is-picked { border-color: var(--accent-border); background: var(--accent-muted); color: var(--text); }
+.bundle-add-panel { display: grid; gap: .45rem; width: 100%; }
+.bundle-add-search { height: 2rem; padding: 0 .55rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font-size: var(--fs-xs); }
+.bundle-add-footer { display: flex; gap: .4rem; justify-content: flex-end; }
 .bundle-new { display: flex; flex-direction: column; gap: .7rem; }
 
 /* 历史版本列表 */

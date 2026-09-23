@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Copy, Package, Plus, Trash2, X } from 'lucide-react';
 import { DialogShell } from './Modals';
+import { fuzzyScore } from './CommandPalette';
 
 // 技能组合详情：展示组合内技能（快捷方式），支持移除/添加/复制组合指令
 // 删除组合或移除项都不影响技能本身
@@ -11,6 +12,8 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
   const [allSkills, setAllSkills] = useState([]);
   const [copied, setCopied] = useState(false);
   const [nameDraft, setNameDraft] = useState(bundle?.name || '');
+  const [addFilter, setAddFilter] = useState('');
+  const [pending, setPending] = useState(() => new Set());
 
   const load = async () => {
     try {
@@ -49,12 +52,24 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
     } catch { setAllSkills([]); }
   };
 
-  const addSkill = async (skillId) => {
-    await fetch(`/api/bundles/${bundle.id}/skills`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ skill_id: skillId }),
-    });
+  const togglePending = (skillId) => setPending((prev) => {
+    const next = new Set(prev);
+    if (next.has(skillId)) next.delete(skillId);
+    else next.add(skillId);
+    return next;
+  });
+
+  const addPending = async () => {
+    for (const skillId of pending) {
+      await fetch(`/api/bundles/${bundle.id}/skills`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skill_id: skillId }),
+      });
+    }
+    showToast?.(`已添加 ${pending.size} 个技能到组合`);
+    setPending(new Set());
+    setAddFilter('');
     load();
     onChanged?.();
   };
@@ -67,6 +82,13 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
   };
 
   const inBundle = new Set((detail?.items || []).map((i) => i.id));
+  const query = addFilter.trim();
+  const candidates = allSkills
+    .filter((s) => !inBundle.has(s.id))
+    .map((s) => ({ skill: s, score: query ? Math.max(fuzzyScore(query, s.name), fuzzyScore(query, `${s.slug} ${s.description || ''}`) * 0.8) : 1 }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.skill);
 
   return (
     <DialogShell
@@ -127,14 +149,33 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
           {!adding ? (
             <button type="button" className="secondary-button" onClick={openAdd}><Plus size={14} />添加技能</button>
           ) : (
-            <div className="bundle-add-list">
-              {allSkills.filter((s) => !inBundle.has(s.id)).map((s) => (
-                <button type="button" key={s.id} onClick={() => addSkill(s.id)}>
-                  <Plus size={13} />{s.name}<span className="bundle-item-slug">{s.slug}</span>
-                </button>
-              ))}
-              {allSkills.filter((s) => !inBundle.has(s.id)).length === 0 && <span className="bundle-empty">全部技能都已在组合中</span>}
-              <button type="button" className="secondary-button" onClick={() => setAdding(false)}>完成</button>
+            // 原来是一面无过滤、无多选的全量技能墙：组 8 个技能 = 8 次「滚动定位 + 点击」
+            <div className="bundle-add-panel">
+              <input
+                className="bundle-add-search"
+                type="search"
+                value={addFilter}
+                onChange={(event) => setAddFilter(event.target.value)}
+                placeholder="搜索要添加的技能…"
+                aria-label="搜索要添加的技能"
+              />
+              <div className="bundle-add-list">
+                {candidates.map((s) => {
+                  const picked = pending.has(s.id);
+                  return (
+                    <button type="button" key={s.id} className={picked ? 'is-picked' : ''} aria-pressed={picked} onClick={() => togglePending(s.id)}>
+                      {picked ? <Check size={13} /> : <Plus size={13} />}{s.name}<span className="bundle-item-slug">{s.slug}</span>
+                    </button>
+                  );
+                })}
+                {candidates.length === 0 && (
+                  <span className="bundle-empty">{addFilter.trim() ? `没有匹配「${addFilter.trim()}」的技能` : '全部技能都已在组合中'}</span>
+                )}
+              </div>
+              <div className="bundle-add-footer">
+                <button type="button" className="primary-button" disabled={!pending.size} onClick={addPending}>添加选中（{pending.size}）</button>
+                <button type="button" className="secondary-button" onClick={() => { setAdding(false); setPending(new Set()); setAddFilter(''); }}>完成</button>
+              </div>
             </div>
           )}
           <button type="button" className="secondary-button danger-button" onClick={deleteBundle}><Trash2 size={14} />删除组合</button>
