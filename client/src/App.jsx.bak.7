@@ -51,6 +51,13 @@ export default function App() {
   const [recentSkillIds, setRecentSkillIds] = usePersistedState('recent-skills', []);
   const recentIdsRef = useRef([]);
   useEffect(() => { recentIdsRef.current = recentSkillIds; }, [recentSkillIds]);
+  // A4: 最近浏览记录——只记用户主动点选的技能。
+  // 原实现挂在 selectedSkillId 的 effect 上，fetchSkills 自动选中的首条也会被记进去，
+  // 每切一次目录就污染一条；改为在「用户点选」的调用点显式登记。
+  const rememberRecent = useCallback((skillId) => {
+    if (skillId == null) return;
+    setRecentSkillIds((prev) => [skillId, ...prev.filter((id) => id !== skillId)].slice(0, 8));
+  }, [setRecentSkillIds]);
   const [skills, setSkills] = useState([]);
   const [stats, setStats] = useState({ inbox: 0, starred: 0, all: 0, trash: 0 });
   const [folders, setFolders] = useState([]);
@@ -308,8 +315,16 @@ export default function App() {
     body: JSON.stringify(updatedData),
   }));
 
+  const sortedSkills = useMemo(() => [...skills].sort((a, b) => {
+    if (sortBy === 'name') return a.name.localeCompare(b.name, 'zh-CN');
+    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+  }), [skills, sortBy]);
+
   // C4: 多选（Cmd 点选 / Shift 范围选）
+  // 锚点与展示顺序都以 sortedSkills 为准——skills 是未排序的原始结果，
+  // 拿它算区间会选到屏幕上不连续的行。
   const handleSelectSkill = (id, event) => {
+    const currentIdx = sortedSkills.findIndex((s) => s.id === id);
     if (event && (event.metaKey || event.ctrlKey)) {
       setSelectedIds((prev) => {
         const next = new Set(prev);
@@ -317,26 +332,23 @@ export default function App() {
         else next.add(id);
         return next;
       });
+      // Cmd 点选也要移动锚点，否则随后的 Shift 会从上一次普通点击起算
+      if (currentIdx !== -1) setLastSelectedIndex(currentIdx);
       return;
     }
-    if (event && event.shiftKey && lastSelectedIndex != null) {
-      const currentIdx = skills.findIndex((s) => s.id === id);
-      if (currentIdx !== -1) {
-        const [from, to] = lastSelectedIndex < currentIdx ? [lastSelectedIndex, currentIdx] : [currentIdx, lastSelectedIndex];
-        setSelectedIds(new Set(skills.slice(from, to + 1).map((s) => s.id)));
-        return;
-      }
+    if (event && event.shiftKey && lastSelectedIndex != null && currentIdx !== -1) {
+      const [from, to] = lastSelectedIndex < currentIdx ? [lastSelectedIndex, currentIdx] : [currentIdx, lastSelectedIndex];
+      const range = sortedSkills.slice(from, to + 1).map((s) => s.id);
+      // 并入而不是覆盖：Cmd 攒下的选择不该被一次 Shift 清掉
+      setSelectedIds((prev) => new Set([...prev, ...range]));
+      setLastSelectedIndex(currentIdx);
+      return;
     }
-    userPickedRef.current = true;
+    rememberRecent(id);
     setSelectedSkillId(id);
     setSelectedIds(new Set([id]));
-    setLastSelectedIndex(skills.findIndex((s) => s.id === id));
+    setLastSelectedIndex(currentIdx);
   };
-
-  const sortedSkills = useMemo(() => [...skills].sort((a, b) => {
-    if (sortBy === 'name') return a.name.localeCompare(b.name, 'zh-CN');
-    return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-  }), [skills, sortBy]);
 
   const recentSkills = useMemo(
     () => recentSkillIds.map((id) => skills.find((s) => s.id === id)).filter(Boolean).slice(0, 5),
@@ -512,7 +524,7 @@ export default function App() {
         onClose={() => setShowPalette(false)}
         skills={skills}
         folders={folders}
-        onSelectSkill={(id) => { userPickedRef.current = true; setSelectedSkillId(id); const s = skills.find((x) => x.id === id); if (s && !['inbox', 'all', 'starred', 'trash'].includes(s.folder_path)) setCurrentFolder('all'); }}
+        onSelectSkill={(id) => { rememberRecent(id); setSelectedSkillId(id); const s = skills.find((x) => x.id === id); if (s && !['inbox', 'all', 'starred', 'trash'].includes(s.folder_path)) setCurrentFolder('all'); }}
         onSelectFolder={handleSelectFolder}
         onNewSkill={() => setShowNewModal(true)}
         onPasteImport={() => setShowPasteModal(true)}

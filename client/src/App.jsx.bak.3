@@ -51,7 +51,16 @@ export default function App() {
   const [recentSkillIds, setRecentSkillIds] = usePersistedState('recent-skills', []);
   const recentIdsRef = useRef([]);
   useEffect(() => { recentIdsRef.current = recentSkillIds; }, [recentSkillIds]);
+  // A4: 最近浏览记录——只记用户主动点选的技能。
+  // 原实现挂在 selectedSkillId 的 effect 上，fetchSkills 自动选中的首条也会被记进去，
+  // 每切一次目录就污染一条；改为在「用户点选」的调用点显式登记。
+  const rememberRecent = useCallback((skillId) => {
+    if (skillId == null) return;
+    setRecentSkillIds((prev) => [skillId, ...prev.filter((id) => id !== skillId)].slice(0, 8));
+  }, [setRecentSkillIds]);
   const [skills, setSkills] = useState([]);
+  // 全库索引：⌘K 命令面板与「最近浏览」都不该被当前目录的结果集限制住
+  const [allSkills, setAllSkills] = useState([]);
   const [stats, setStats] = useState({ inbox: 0, starred: 0, all: 0, trash: 0 });
   const [folders, setFolders] = useState([]);
   const [tags, setTags] = useState([]);
@@ -71,16 +80,18 @@ export default function App() {
 
   const fetchFoldersAndStats = useCallback(async () => {
     try {
-      const [folderData, statData, tagData, bundleData] = await Promise.all([
+      const [folderData, statData, tagData, bundleData, allData] = await Promise.all([
         requestJson('/api/folders'),
         requestJson('/api/skills/stats'),
         requestJson('/api/skills/tags'),
         requestJson('/api/bundles').catch(() => []),
+        requestJson('/api/skills?folder=all').catch(() => []),
       ]);
       setFolders(folderData);
       setStats(statData);
       setTags(tagData);
       setBundles(Array.isArray(bundleData) ? bundleData : []);
+      setAllSkills(Array.isArray(allData) ? allData : allData.data || []);
     } catch (error) {
       setAppError(error.message);
     }
@@ -147,7 +158,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [rememberRecent]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchSkills, 0);
@@ -165,14 +176,6 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-
-  // A4: 最近浏览记录——只记用户主动点选的技能。
-  // 原实现挂在 selectedSkillId 的 effect 上，fetchSkills 自动选中的首条也会被记进去，
-  // 每切一次目录就污染一条；改为在「用户点选」的调用点显式登记。
-  const rememberRecent = useCallback((skillId) => {
-    if (skillId == null) return;
-    setRecentSkillIds((prev) => [skillId, ...prev.filter((id) => id !== skillId)].slice(0, 8));
-  }, [setRecentSkillIds]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([fetchSkills(), fetchFoldersAndStats()]);

@@ -59,6 +59,8 @@ export default function App() {
     setRecentSkillIds((prev) => [skillId, ...prev.filter((id) => id !== skillId)].slice(0, 8));
   }, [setRecentSkillIds]);
   const [skills, setSkills] = useState([]);
+  // 全库索引：⌘K 命令面板与「最近浏览」都不该被当前目录的结果集限制住
+  const [allSkills, setAllSkills] = useState([]);
   const [stats, setStats] = useState({ inbox: 0, starred: 0, all: 0, trash: 0 });
   const [folders, setFolders] = useState([]);
   const [tags, setTags] = useState([]);
@@ -78,16 +80,18 @@ export default function App() {
 
   const fetchFoldersAndStats = useCallback(async () => {
     try {
-      const [folderData, statData, tagData, bundleData] = await Promise.all([
+      const [folderData, statData, tagData, bundleData, allData] = await Promise.all([
         requestJson('/api/folders'),
         requestJson('/api/skills/stats'),
         requestJson('/api/skills/tags'),
         requestJson('/api/bundles').catch(() => []),
+        requestJson('/api/skills?folder=all').catch(() => []),
       ]);
       setFolders(folderData);
       setStats(statData);
       setTags(tagData);
       setBundles(Array.isArray(bundleData) ? bundleData : []);
+      setAllSkills(Array.isArray(allData) ? allData : allData.data || []);
     } catch (error) {
       setAppError(error.message);
     }
@@ -342,9 +346,22 @@ export default function App() {
     setLastSelectedIndex(currentIdx);
   };
 
+  // 跨目录跳转：命令面板现在检索全库，选中的技能可能不在当前结果集里，
+  // 先把视图切到它所在目录（并清掉会挡住它的搜索/标签筛选）再选中。
+  const handleRevealSkill = useCallback((id) => {
+    rememberRecent(id);
+    setSelectedSkillId(id);
+    if (skills.some((s) => s.id === id)) return;
+    const target = allSkills.find((s) => s.id === id);
+    if (!target) return;
+    setCurrentTag(null);
+    setSearchQuery('');
+    setCurrentFolder(target.folder_path || 'all');
+  }, [allSkills, skills, rememberRecent]);
+
   const recentSkills = useMemo(
-    () => recentSkillIds.map((id) => skills.find((s) => s.id === id)).filter(Boolean).slice(0, 5),
-    [recentSkillIds, skills],
+    () => recentSkillIds.map((id) => allSkills.find((s) => s.id === id)).filter(Boolean).slice(0, 5),
+    [recentSkillIds, allSkills],
   );
 
   const selectedSkill = skills.find((skill) => skill.id === selectedSkillId) || null;
@@ -514,14 +531,18 @@ export default function App() {
       <CommandPalette
         isOpen={showPalette}
         onClose={() => setShowPalette(false)}
-        skills={skills}
+        skills={allSkills}
         folders={folders}
-        onSelectSkill={(id) => { rememberRecent(id); setSelectedSkillId(id); const s = skills.find((x) => x.id === id); if (s && !['inbox', 'all', 'starred', 'trash'].includes(s.folder_path)) setCurrentFolder('all'); }}
+        bundles={bundles}
+        onSelectSkill={handleRevealSkill}
         onSelectFolder={handleSelectFolder}
+        onSelectBundle={setActiveBundle}
         onNewSkill={() => setShowNewModal(true)}
         onPasteImport={() => setShowPasteModal(true)}
+        onNewBundle={() => setShowBundleModal(true)}
         onOpenSetup={() => setShowSetupModal(true)}
         onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
+        onToggleSort={() => setSortBy((v) => (v === 'updated' ? 'name' : 'updated'))}
       />
 
       <NewSkillModal

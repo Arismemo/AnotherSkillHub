@@ -59,6 +59,8 @@ export default function App() {
     setRecentSkillIds((prev) => [skillId, ...prev.filter((id) => id !== skillId)].slice(0, 8));
   }, [setRecentSkillIds]);
   const [skills, setSkills] = useState([]);
+  // 全库索引：⌘K 命令面板与「最近浏览」都不该被当前目录的结果集限制住
+  const [allSkills, setAllSkills] = useState([]);
   const [stats, setStats] = useState({ inbox: 0, starred: 0, all: 0, trash: 0 });
   const [folders, setFolders] = useState([]);
   const [tags, setTags] = useState([]);
@@ -78,16 +80,18 @@ export default function App() {
 
   const fetchFoldersAndStats = useCallback(async () => {
     try {
-      const [folderData, statData, tagData, bundleData] = await Promise.all([
+      const [folderData, statData, tagData, bundleData, allData] = await Promise.all([
         requestJson('/api/folders'),
         requestJson('/api/skills/stats'),
         requestJson('/api/skills/tags'),
         requestJson('/api/bundles').catch(() => []),
+        requestJson('/api/skills?folder=all').catch(() => []),
       ]);
       setFolders(folderData);
       setStats(statData);
       setTags(tagData);
       setBundles(Array.isArray(bundleData) ? bundleData : []);
+      setAllSkills(Array.isArray(allData) ? allData : allData.data || []);
     } catch (error) {
       setAppError(error.message);
     }
@@ -154,7 +158,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [rememberRecent]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchSkills, 0);
@@ -343,8 +347,8 @@ export default function App() {
   };
 
   const recentSkills = useMemo(
-    () => recentSkillIds.map((id) => skills.find((s) => s.id === id)).filter(Boolean).slice(0, 5),
-    [recentSkillIds, skills],
+    () => recentSkillIds.map((id) => allSkills.find((s) => s.id === id)).filter(Boolean).slice(0, 5),
+    [recentSkillIds, allSkills],
   );
 
   const selectedSkill = skills.find((skill) => skill.id === selectedSkillId) || null;
@@ -514,9 +518,9 @@ export default function App() {
       <CommandPalette
         isOpen={showPalette}
         onClose={() => setShowPalette(false)}
-        skills={skills}
+        skills={allSkills}
         folders={folders}
-        onSelectSkill={(id) => { rememberRecent(id); setSelectedSkillId(id); const s = skills.find((x) => x.id === id); if (s && !['inbox', 'all', 'starred', 'trash'].includes(s.folder_path)) setCurrentFolder('all'); }}
+        onSelectSkill={handleRevealSkill}
         onSelectFolder={handleSelectFolder}
         onNewSkill={() => setShowNewModal(true)}
         onPasteImport={() => setShowPasteModal(true)}
