@@ -20,14 +20,8 @@ const SkillGraph = lazy(() => import('./components/SkillGraph'));
 const SkillDetail = lazy(() => import('./components/SkillDetail'));
 
 export default function App() {
+  // 依赖图是一个"视图"而非弹层：开关写进 URL（?view=graph），可刷新、可后退
   const [graphOpen, setGraphOpen] = useState(() => new URLSearchParams(window.location.search).get('view') === 'graph');
-  const toggleGraph = (open) => {
-    setGraphOpen(open);
-    const url = new URL(window.location.href);
-    if (open) url.searchParams.set('view', 'graph');
-    else url.searchParams.delete('view');
-    window.history.replaceState(null, '', url);
-  };
   const [currentFolder, setCurrentFolder] = usePersistedState('current-folder', 'inbox', (value) => typeof value === 'string');
   const [currentTag, setCurrentTag] = usePersistedState('current-tag', null, (value) => value === null || typeof value === 'string');
   const [searchQuery, setSearchQuery] = useState('');
@@ -255,14 +249,14 @@ export default function App() {
   };
 
   const handleSelectFolder = (folder) => {
-    toggleGraph(false);
+    setGraphOpen(false);
     setCurrentFolder(folder);
     setCurrentTag(null);
   };
 
   // 标签筛选是全库的：站在某个目录里点标签，只看到该目录内的同标签技能没有意义
   const handleSelectTag = (tag) => {
-    toggleGraph(false);
+    setGraphOpen(false);
     setCurrentTag(tag || null);
     if (tag) setCurrentFolder('all');
   };
@@ -509,28 +503,40 @@ export default function App() {
   }, [selectedSkill?.slug, currentFolder, currentTag]);
 
   // ——— URL & 标签页标题同步 ———
-  // 选中变化 → pushState ?skill=<slug>（后退键可在笔记间移动）；标题随笔记名
+  // 选中 / 依赖图开关变化 → pushState ?skill=<slug>&view=graph（后退键可在笔记与图谱间移动）；标题随之变化。
+  // URL 定位期间（首开直达、后退前进）URL 本身就是事实来源，不回写，免得把正要恢复的状态冲掉。
   useEffect(() => {
-    if (!selectedSkill) { document.title = 'AnotherSkillHub'; return undefined; }
-    document.title = selectedSkill.name;
-    const target = `/?skill=${encodeURIComponent(selectedSkill.slug)}`;
-    if (window.location.search !== target) {
-      window.history.pushState({ skillId: selectedSkill.id }, '', target);
-    }
-    return undefined;
-  }, [selectedSkill?.id, selectedSkill?.slug, selectedSkill?.name]);
+    document.title = graphOpen ? '技能依赖图 · AnotherSkillHub' : selectedSkill?.name || 'AnotherSkillHub';
+    if (urlTargetingRef.current) return;
+    const current = new URLSearchParams(window.location.search);
+    // 暂时没有选中（列表还在加载、空目录）时沿用地址里的 skill，不把它抹掉
+    const slug = selectedSkill?.slug || current.get('skill');
+    const sameView = (current.get('view') === 'graph') === graphOpen;
+    if (current.get('skill') === slug && sameView) return;
+    const next = new URLSearchParams();
+    if (slug) next.set('skill', slug);
+    if (graphOpen) next.set('view', 'graph');
+    const query = next.toString();
+    // 只是给还没有 ?skill= 的地址补上首个选中 → 替换，不多留一条历史
+    const method = !current.get('skill') && sameView ? 'replaceState' : 'pushState';
+    window.history[method]({ skillId: selectedSkill?.id ?? null }, '', query ? `/?${query}` : '/');
+  }, [selectedSkill?.id, selectedSkill?.slug, selectedSkill?.name, graphOpen]);
 
   // 后退/前进：URL 的 ?skill= 变化 → 同步选中
   useEffect(() => {
     const onPopState = () => {
-      const slug = new URLSearchParams(window.location.search).get('skill');
-      if (!slug) return;
+      const params = new URLSearchParams(window.location.search);
+      const slug = params.get('skill');
+      const release = () => { window.setTimeout(() => { urlTargetingRef.current = false; }, 300); };
       urlTargetingRef.current = true;
+      setGraphOpen(params.get('view') === 'graph');
+      if (!slug) { release(); return; }
       requestJson(`/api/skills/${encodeURIComponent(slug)}`)
         .then((skill) => {
           if (skill?.id) { setSelectedSkillId(skill.id); setCurrentFolder(skill.folder_path || 'all'); }
         })
-        .finally(() => { window.setTimeout(() => { urlTargetingRef.current = false; }, 300); });
+        .catch(() => null)
+        .finally(release);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -697,7 +703,7 @@ export default function App() {
             </>
           )}
         </div>
-        <button type="button" className={`nav-item graph-nav${graphOpen ? ' is-active' : ''}`} title="技能依赖图" aria-label="技能依赖图" aria-current={graphOpen ? 'page' : undefined} onClick={() => toggleGraph(true)}>
+        <button type="button" className={`nav-item graph-nav${graphOpen ? ' is-active' : ''}`} title="技能依赖图" aria-label="技能依赖图" aria-current={graphOpen ? 'page' : undefined} onClick={() => setGraphOpen(true)}>
           <Network size={16} />{!sidebarCollapsed && <span>技能依赖图</span>}
         </button>
         <FolderTree
@@ -724,7 +730,7 @@ export default function App() {
         {!sidebarCollapsed && <div {...sidebarResizer} />}
       </aside>
 
-      <section style={graphOpen ? { display: 'none' } : undefined} className={`app-list${listCollapsed ? ' is-collapsed' : ''}`} aria-label="技能列表">
+      <section className={`app-list${listCollapsed ? ' is-collapsed' : ''}`} aria-label="技能列表">
         {listCollapsed ? (
           <button
             type="button"
@@ -780,7 +786,7 @@ export default function App() {
         )}
       </section>
 
-      <main id="skill-detail" className="app-detail" tabIndex="-1" style={graphOpen ? { display: 'none' } : undefined}>
+      <main id="skill-detail" className="app-detail" tabIndex="-1">
         {appError && (
           <div className="app-error" role="alert">
             <span>{appError}</span>
@@ -816,9 +822,11 @@ export default function App() {
         )}
       </main>
 
-      {graphOpen && <Suspense fallback={<div className="detail-empty" role="status">正在载入依赖图…</div>}>
-        <SkillGraph dataVersion={allSkills} onClose={() => toggleGraph(false)} onOpenSkill={(skill) => { toggleGraph(false); handleRevealSkill(skill.id); }} />
-      </Suspense>}
+      {graphOpen && (
+        <Suspense fallback={<div className="detail-empty" role="status">正在载入依赖图…</div>}>
+          <SkillGraph dataVersion={allSkills} onClose={() => setGraphOpen(false)} onOpenSkill={(skill) => { setGraphOpen(false); handleRevealSkill(skill.id); }} />
+        </Suspense>
+      )}
 
       <CommandPalette
         isOpen={showPalette}
@@ -832,7 +840,7 @@ export default function App() {
         onCopySkill={handleCopySkill}
         onTrashSkill={handleTrashSkill}
         onMoveSkill={handleMoveSkill}
-        onSelectSkill={(id) => { toggleGraph(false); handleRevealSkill(id); }}
+        onSelectSkill={(id) => { setGraphOpen(false); handleRevealSkill(id); }}
         onSelectFolder={handleSelectFolder}
         onSelectBundle={setActiveBundle}
         onNewSkill={() => setShowNewModal(true)}

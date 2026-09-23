@@ -795,5 +795,8 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 
-/* The graph navigation entry is also visible before its lazy-loaded page mounts. */
-.graph-nav { margin: 8px; width: calc(100% - 16px); }
+/* 依赖图视图：列表与详情让位，图谱占满侧栏右侧。写在主样式里，懒加载的图谱样式到位前布局就已正确 */
+.app-shell.is-graph-view { grid-template-columns: var(--w-sidebar, 13rem) minmax(0, 1fr); }
+.app-shell.is-graph-view > .app-list, .app-shell.is-graph-view > .app-detail { display: none; }
+.graph-nav { width: calc(100% - 1rem); margin: .5rem .5rem 0; }
+.app-sidebar.is-collapsed .graph-nav { justify-content: center; width: calc(100% - .5rem); margin: .5rem .25rem 0; padding: .35rem 0; }
