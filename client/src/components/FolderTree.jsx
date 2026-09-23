@@ -10,6 +10,7 @@ import {
   Inbox,
   MoreHorizontal,
   Plus,
+  Settings,
   Star,
   Trash2,
 } from 'lucide-react';
@@ -228,7 +229,6 @@ export default function FolderTree({
       <div className="sidebar-actions" aria-label="快捷操作">
         <button type="button" onClick={onNewSkill}><Plus size={14} />新建</button>
         <button type="button" onClick={onPasteImport}>粘贴导入</button>
-        <button type="button" onClick={onOpenSetup}>终端接入</button>
       </div>
 
       <div className="sidebar-scroll" ref={treeRef}>
@@ -313,6 +313,13 @@ export default function FolderTree({
             />
           </section>
         )}
+      </div>
+
+      <div className="sidebar-footer">
+        <button type="button" className="nav-item" onClick={onOpenSetup}>
+          <Settings size={16} aria-hidden="true" />
+          <span>终端接入</span>
+        </button>
       </div>
     </div>
   );

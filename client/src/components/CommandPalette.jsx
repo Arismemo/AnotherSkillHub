@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Command, FileText, Folder, Search } from 'lucide-react';
+
+const typeMeta = {
+  skill: { icon: FileText, label: '技能' },
+  folder: { icon: Folder, label: '目录' },
+  command: { icon: Command, label: '命令' },
+};
 
 // ⌘K 命令面板：模糊搜索技能 + 执行命令，键盘全程操作（Linear/Raycast 式）
 // 模糊匹配：连续命中加分、前缀命中加分、精确匹配最高
@@ -122,9 +128,12 @@ export default function CommandPalette({
   };
 
   useEffect(() => {
-    const el = listRef.current?.children[activeIndex];
+    const el = listRef.current?.querySelectorAll('[role="option"]')[activeIndex];
     el?.scrollIntoView({ block: 'nearest' });
   }, [activeIndex]);
+
+  // 无搜索词时按类型分组显示小标题；有搜索词时按得分混排
+  const grouped = !query.trim();
 
   if (!isOpen) return null;
 
@@ -150,22 +159,26 @@ export default function CommandPalette({
           {results.length === 0 && (
             <li className="palette-empty">没有匹配「{query.trim()}」的结果</li>
           )}
-          {results.map((item, index) => (
-            <li
-              key={item.key}
-              role="option"
-              aria-selected={index === activeIndex}
-              className={index === activeIndex ? 'is-active' : ''}
-              onMouseEnter={() => setActiveIndex(index)}
-              onClick={() => execute(item)}
-            >
-              <span className="palette-item-title">{item.title}</span>
-              <span className="palette-item-sub">{item.subtitle}</span>
-              {item.type === 'skill' && <i className="palette-badge" aria-hidden="true">技能</i>}
-              {item.type === 'folder' && <i className="palette-badge" aria-hidden="true">目录</i>}
-              {item.type === 'command' && <i className="palette-badge is-cmd" aria-hidden="true">命令</i>}
-            </li>
-          ))}
+          {results.map((item, index) => {
+            const { icon: Icon, label } = typeMeta[item.type];
+            const showGroup = grouped && (index === 0 || results[index - 1].type !== item.type);
+            return [
+              showGroup && <li key={`group-${item.type}`} className="palette-group-label" role="presentation">{label}</li>,
+              <li
+                key={item.key}
+                role="option"
+                aria-selected={index === activeIndex}
+                className={index === activeIndex ? 'is-active' : ''}
+                onMouseEnter={() => setActiveIndex(index)}
+                onClick={() => execute(item)}
+              >
+                <Icon size={15} className="palette-item-icon" aria-hidden="true" />
+                <span className="palette-item-title">{item.title}</span>
+                <span className="palette-item-sub">{item.subtitle}</span>
+                {!grouped && <i className="palette-badge" aria-hidden="true">{label}</i>}
+              </li>,
+            ];
+          })}
         </ul>
         <div className="palette-footer">
           <span><kbd>↑↓</kbd> 选择</span>

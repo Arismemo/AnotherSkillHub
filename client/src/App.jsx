@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, FileText, Terminal } from 'lucide-react';
+import { ChevronLeft, FileText, Terminal } from 'lucide-react';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
 import SkillDetail from './components/SkillDetail';
@@ -363,12 +363,12 @@ export default function App() {
           {sidebarCollapsed ? (
             <button
               type="button"
-              className="icon-button sidebar-collapse-toggle"
+              className="brand-mark brand-mark-button"
               onClick={() => setSidebarCollapsed(false)}
               aria-label="展开分类导航"
               title="展开分类导航"
             >
-              <ChevronRight size={16} />
+              <Terminal size={16} />
             </button>
           ) : (
             <>
@@ -376,7 +376,7 @@ export default function App() {
                 <div className="brand-mark" aria-hidden="true"><Terminal size={16} /></div>
                 <div className="min-w-0">
                   <h1>AnotherSkillHub</h1>
-                  <p>Agent 技能库</p>
+                  <p>Agent Skills</p>
                 </div>
               </div>
               <button
