@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, Copy, Package, Plus, Trash2, X } from 'lucide-react';
 import { DialogShell } from './Modals';
 import { fuzzyScore } from './CommandPalette';
+import { requestJson } from '../utils/requestJson';
 
 // 技能组合详情：展示组合内技能（快捷方式），支持移除/添加/复制组合指令
 // 删除组合或移除项都不影响技能本身
@@ -14,14 +15,14 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
   const [nameDraft, setNameDraft] = useState(bundle?.name || '');
   const [addFilter, setAddFilter] = useState('');
   const [pending, setPending] = useState(() => new Set());
+  const [saving, setSaving] = useState(false);
 
   const load = async () => {
     try {
-      const r = await fetch(`/api/bundles/${bundle.id}`);
-      if (!r.ok) throw new Error('加载失败');
-      const data = await r.json();
+      const data = await requestJson(`/api/bundles/${bundle.id}`);
       setDetail(data);
       setNameDraft(data.name || '');
+      setError('');
     } catch (e) { setError(e.message); }
   };
 
@@ -30,26 +31,35 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
   if (!bundle) return null;
 
   const removeSkill = async (skillId) => {
-    await fetch(`/api/bundles/${bundle.id}/skills/${skillId}`, { method: 'DELETE' });
-    showToast?.('已从组合移除（技能本身不受影响）');
-    load();
-    onChanged?.();
+    setSaving(true);
+    setError('');
+    try {
+      await requestJson(`/api/bundles/${bundle.id}/skills/${skillId}`, { method: 'DELETE' });
+      showToast?.('已从组合移除（技能本身不受影响）');
+      await load();
+      onChanged?.();
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
   };
 
   const deleteBundle = async () => {
-    await fetch(`/api/bundles/${bundle.id}`, { method: 'DELETE' });
-    showToast?.('已删除组合（技能本身不受影响）');
-    onChanged?.();
-    onClose();
+    setSaving(true);
+    setError('');
+    try {
+      await requestJson(`/api/bundles/${bundle.id}`, { method: 'DELETE' });
+      showToast?.('已删除组合（技能本身不受影响）');
+      onChanged?.();
+      onClose();
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
   };
 
   const openAdd = async () => {
     setAdding(true);
     try {
-      const r = await fetch('/api/skills?folder=all');
-      const all = await r.json();
+      const all = await requestJson('/api/skills?folder=all');
       setAllSkills(Array.isArray(all) ? all : []);
-    } catch { setAllSkills([]); }
+    } catch (e) { setError(e.message); setAllSkills([]); }
   };
 
   const togglePending = (skillId) => setPending((prev) => {
@@ -60,18 +70,28 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
   });
 
   const addPending = async () => {
-    for (const skillId of pending) {
-      await fetch(`/api/bundles/${bundle.id}/skills`, {
+    setSaving(true);
+    setError('');
+    try {
+      const ids = [...pending];
+      const results = await Promise.allSettled(ids.map((skillId) => requestJson(`/api/bundles/${bundle.id}/skills`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skill_id: skillId }),
-      });
+      })));
+      const failed = ids.filter((_, index) => results[index].status === 'rejected');
+      const succeeded = ids.length - failed.length;
+      if (succeeded) {
+        showToast?.(`已添加 ${succeeded} 个技能到组合`);
+        await load();
+        onChanged?.();
+      }
+      setPending(new Set(failed));
+      if (!failed.length) setAddFilter('');
+      else setError(`${failed.length} 个技能添加失败，请重试。${results.find((r) => r.status === 'rejected')?.reason?.message || ''}`);
+    } finally {
+      setSaving(false);
     }
-    showToast?.(`已添加 ${pending.size} 个技能到组合`);
-    setPending(new Set());
-    setAddFilter('');
-    load();
-    onChanged?.();
   };
 
   const agentCommand = `curl -fsSL ${window.location.origin}/s/bundle/${detail?.slug || bundle.slug}/install.sh | bash`;
@@ -106,15 +126,19 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
             event.preventDefault();
             const next = nameDraft.trim();
             if (!next || next === (detail?.name || bundle.name)) return;
-            const response = await fetch(`/api/bundles/${bundle.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name: next }),
-            });
-            if (!response.ok) { setError('重命名失败'); return; }
-            setDetail(await response.json());
-            showToast?.('已重命名组合');
-            onChanged?.();
+            setSaving(true);
+            setError('');
+            try {
+              const updated = await requestJson(`/api/bundles/${bundle.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: next }),
+              });
+              setDetail(updated);
+              showToast?.('已重命名组合');
+              onChanged?.();
+            } catch (e) { setError(e.message); }
+            finally { setSaving(false); }
           }}
         >
           <input
@@ -123,7 +147,7 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
             aria-label="组合名称"
             placeholder="组合名称"
           />
-          <button type="submit" className="secondary-button" disabled={!nameDraft.trim() || nameDraft.trim() === (detail?.name || bundle.name)}>重命名</button>
+          <button type="submit" className="secondary-button" disabled={saving || !nameDraft.trim() || nameDraft.trim() === (detail?.name || bundle.name)}>重命名</button>
         </form>
         <div className="bundle-command">
           <code>{agentCommand}</code>
@@ -138,7 +162,7 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
               <Package size={14} aria-hidden="true" />
               <span className="bundle-item-name">{it.name}</span>
               <span className="bundle-item-slug">{it.slug}</span>
-              <button type="button" className="icon-button" onClick={() => removeSkill(it.id)} aria-label={`从组合移除 ${it.name}`} title="从组合移除（不删除技能）">
+              <button type="button" className="icon-button" disabled={saving} onClick={() => removeSkill(it.id)} aria-label={`从组合移除 ${it.name}`} title="从组合移除（不删除技能）">
                 <X size={14} />
               </button>
             </li>
@@ -173,12 +197,12 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
                 )}
               </div>
               <div className="bundle-add-footer">
-                <button type="button" className="primary-button" disabled={!pending.size} onClick={addPending}>添加选中（{pending.size}）</button>
+                <button type="button" className="primary-button" disabled={saving || !pending.size} onClick={addPending}>添加选中（{pending.size}）</button>
                 <button type="button" className="secondary-button" onClick={() => { setAdding(false); setPending(new Set()); setAddFilter(''); }}>完成</button>
               </div>
             </div>
           )}
-          <button type="button" className="secondary-button danger-button" onClick={deleteBundle}><Trash2 size={14} />删除组合</button>
+          <button type="button" className="secondary-button danger-button" disabled={saving} onClick={deleteBundle}><Trash2 size={14} />删除组合</button>
         </div>
       </div>
     </DialogShell>
@@ -189,18 +213,23 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
 export function NewBundleModal({ isOpen, onClose, onCreated }) {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   if (!isOpen) return null;
   const submit = async (event) => {
     event?.preventDefault();
     if (!name.trim()) { setError('请输入组合名称'); return; }
-    const r = await fetch('/api/bundles', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() }),
-    });
-    if (!r.ok) { setError('创建失败'); return; }
-    setName('');
-    onCreated(await r.json());
+    setSubmitting(true);
+    setError('');
+    try {
+      const created = await requestJson('/api/bundles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      setName('');
+      onCreated(created);
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
   };
   return (
     <DialogShell title="新建技能组合" description="组合内放技能的快捷方式；之后可在组合详情里添加技能、复制一键安装指令。" onClose={onClose} size="small">
@@ -209,7 +238,7 @@ export function NewBundleModal({ isOpen, onClose, onCreated }) {
         <label>组合名称<input value={name} onChange={(e) => setName(e.target.value)} placeholder="如：感知台架工具箱" /></label>
         {error && <div className="inline-error" role="alert">{error}</div>}
         <div className="dialog-footer">
-          <button type="submit" className="primary-button">创建</button>
+          <button type="submit" className="primary-button" disabled={submitting}>{submitting ? '创建中…' : '创建'}</button>
         </div>
       </form>
     </DialogShell>
@@ -221,13 +250,14 @@ export function NewBundleModal({ isOpen, onClose, onCreated }) {
 export function AddToBundleModal({ isOpen, skillIds = [], label, bundles, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState('');
+  const [createdBundle, setCreatedBundle] = useState(null);
   const [error, setError] = useState('');
   if (!isOpen) return null;
 
   const addAll = async (bundleId) => {
     for (const skillId of skillIds) {
       // 顺序发送：后端是 INSERT OR IGNORE，并发没有收益，失败也更好定位
-      await fetch(`/api/bundles/${bundleId}/skills`, {
+      await requestJson(`/api/bundles/${bundleId}/skills`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skill_id: skillId }),
@@ -237,11 +267,13 @@ export function AddToBundleModal({ isOpen, skillIds = [], label, bundles, onClos
 
   const add = async (bundleId) => {
     setBusy(true);
+    setError('');
     try {
       await addAll(bundleId);
       onDone?.(bundleId);
-    } finally { setBusy(false); }
-    onClose();
+      onClose();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
   };
 
   // 没有组合时原来是死路（提示语让用户自己去左栏新建，7+ 步）
@@ -250,17 +282,18 @@ export function AddToBundleModal({ isOpen, skillIds = [], label, bundles, onClos
     if (!newName.trim()) { setError('请输入组合名称'); return; }
     setBusy(true);
     try {
-      const response = await fetch('/api/bundles', {
+      const created = createdBundle?.name === newName.trim() ? createdBundle : await requestJson('/api/bundles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newName.trim() }),
       });
-      if (!response.ok) { setError('创建失败'); return; }
-      const created = await response.json();
+      setCreatedBundle(created);
       await addAll(created.id);
+      setCreatedBundle(null);
       onDone?.(created.id);
       onClose();
-    } finally { setBusy(false); }
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
   };
 
   return (
