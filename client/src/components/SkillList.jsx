@@ -52,6 +52,7 @@ export default function SkillList({
   searchInputRef,
   currentFolder,
   currentTag,
+  onSelectTag,
   sortBy,
   onSortChange,
   density,
@@ -159,6 +160,11 @@ export default function SkillList({
           <div>
             <h2>{listTitle}</h2>
             <span>{skills.length} 个</span>
+            {currentTag && (
+              <button type="button" className="tag-clear" onClick={() => onSelectTag?.(null)} aria-label={`清除标签筛选 ${currentTag}`} title="清除标签筛选">
+                <X size={12} />
+              </button>
+            )}
           </div>
           <div className="list-heading-actions">
             <button
@@ -291,7 +297,15 @@ export default function SkillList({
                       <span className="row-meta">
                         {skill.version && <span className="chip row-version" title={`版本 ${skill.version}`}>v{skill.version}</span>}
                         {(skill.tags || []).slice(0, 2).map((tag) => (
-                          <span key={tag} className="chip row-tag" title={`标签 ${tag}`}>{tag}</span>
+                          <button
+                            key={tag}
+                            type="button"
+                            className="chip row-tag"
+                            title={`筛选标签 ${tag}`}
+                            onClick={(event) => { event.stopPropagation(); onSelectTag?.(tag); }}
+                          >
+                            {tag}
+                          </button>
                         ))}
                         {skill.terminal_source && <span className="chip row-source" title={`来自终端 ${skill.terminal_source}`}>{skill.terminal_source}</span>}
                         <span className="skill-location">{skill.folder_path}</span>

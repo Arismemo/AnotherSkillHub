@@ -214,11 +214,25 @@ export default function App() {
   const handleToggleStar = async (skillId) => {
     // 乐观更新：本地先翻转，避免整列表刷新造成闪烁
     const prev = skills;
-    setSkills((list) => list.map((s) => (s.id === skillId ? { ...s, is_starred: s.is_starred ? 0 : 1 } : s)));
+    const wasStarred = Boolean(skills.find((s) => s.id === skillId)?.is_starred);
+    if (currentFolder === 'starred' && wasStarred) {
+      // 在「收藏」视图里取消收藏，该行必须当场消失，否则用户会以为没生效而再点一次
+      const next = skills.filter((s) => s.id !== skillId);
+      setSkills(next);
+      if (skillId === selectedSkillId) setSelectedSkillId(next[0]?.id ?? null);
+    } else {
+      setSkills((list) => list.map((s) => (s.id === skillId ? { ...s, is_starred: s.is_starred ? 0 : 1 } : s)));
+    }
     try {
       await requestJson(`/api/skills/${skillId}/star`, { method: 'POST' });
       // 只刷新左栏计数，不重载列表
       fetchFoldersAndStats();
+      if (currentFolder === 'starred' && wasStarred) {
+        showToast('已取消收藏', {
+          actionLabel: '撤销',
+          onAction: () => runMutation(`/api/skills/${skillId}/star`, { method: 'POST' }),
+        });
+      }
     } catch (error) {
       setSkills(prev); // 失败回滚
       showToast(error.message);
@@ -467,6 +481,9 @@ export default function App() {
     if (searchQuery) setSearchQuery('');
   };
 
+  // 新建/导入默认落在当前目录；系统视图不是真目录，退回 inbox
+  const defaultTargetFolder = ['all', 'starred', 'trash', 'recent'].includes(currentFolder) ? 'inbox' : currentFolder;
+
   const overlayOpen = showPalette || showShortcuts || showNewModal || showPasteModal
     || showSetupModal || showBundleModal || Boolean(activeBundle) || Boolean(addToBundleTarget);
 
@@ -704,18 +721,25 @@ export default function App() {
         onToggleSort={() => setSortBy((v) => (v === 'updated' ? 'name' : 'updated'))}
       />
 
-      <NewSkillModal
-        isOpen={showNewModal}
-        folders={folders}
-        onClose={() => setShowNewModal(false)}
-        onCreate={handleCreateSkill}
-      />
-      <PasteSkillModal
-        isOpen={showPasteModal}
-        folders={folders}
-        onClose={() => setShowPasteModal(false)}
-        onImport={handleCreateSkill}
-      />
+      {/* 条件渲染：关闭时整体卸载，下次打开的默认目录才会重新取当前目录 */}
+      {showNewModal && (
+        <NewSkillModal
+          isOpen
+          folders={folders}
+          defaultFolder={defaultTargetFolder}
+          onClose={() => setShowNewModal(false)}
+          onCreate={handleCreateSkill}
+        />
+      )}
+      {showPasteModal && (
+        <PasteSkillModal
+          isOpen
+          folders={folders}
+          defaultFolder={defaultTargetFolder}
+          onClose={() => setShowPasteModal(false)}
+          onImport={handleCreateSkill}
+        />
+      )}
       <BundleDetail
         bundle={activeBundle}
         onClose={() => setActiveBundle(null)}

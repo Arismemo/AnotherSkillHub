@@ -618,11 +618,14 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
             {moreOpen && (
               <div className="folder-menu" role="menu">
                 <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); onCopySkill?.(skill.id); }}>复制为新技能</button>
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(skill.slug, 'slug'); }}>复制 slug</button>
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(`${skill.folder_path}/${skill.slug}`, 'path'); }}>复制仓库路径</button>
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(`[${skill.name}](${origin}/s/${skill.slug})`, 'link'); }}>复制 Markdown 链接</button>
+                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(skill.slug, 'slug', 'slug'); }}>复制 slug</button>
+                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(`${skill.folder_path}/${skill.slug}`, 'path', '仓库路径'); }}>复制仓库路径</button>
+                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(`[${skill.name}](${origin}/s/${skill.slug})`, 'link', 'Markdown 链接'); }}>复制 Markdown 链接</button>
                 {selectedFile !== 'SKILL.md' && (
-                  <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(auxFileContent, 'file'); }}>复制当前文件内容</button>
+                  <>
+                    <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(auxFileContent, 'file'); showToast(`已复制 ${selectedFile} 的内容`); }}>复制当前文件内容</button>
+                    <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); downloadCurrentFile(); }}>下载当前文件</button>
+                  </>
                 )}
               </div>
             )}

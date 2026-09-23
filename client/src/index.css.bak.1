@@ -638,6 +638,14 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .version-empty, .version-error { color: var(--text-subtle); font-size: var(--fs-sm); text-align: center; padding: 1.2rem 0; }
 .version-error { color: var(--danger-text); }
 
+/* 右键菜单（技能行 / 文件夹行） */
+.context-menu { position: fixed; z-index: 60; min-width: 11rem; padding: .28rem; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); animation: pop-in var(--dur-fast) ease-out; }
+.context-menu button { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; padding: .4rem .55rem; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text); font-size: var(--fs-xs); text-align: left; }
+.context-menu button:hover, .context-menu button:focus-visible { background: var(--surface-hover); }
+.context-menu .danger-item { color: var(--danger-text); }
+.context-menu kbd { flex: 0 0 auto; color: var(--text-subtle); font-family: var(--mono); font-size: var(--fs-2xs); }
+.context-menu hr { margin: .25rem .3rem; border: 0; border-top: 1px solid var(--border-muted); }
+
 /* 组合内联重命名 */
 .bundle-rename { display: flex; gap: .4rem; }
 .bundle-rename input { flex: 1; min-width: 0; height: 2rem; padding: 0 .55rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font-size: var(--fs-sm); }

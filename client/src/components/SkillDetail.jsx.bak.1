@@ -302,6 +302,19 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
     window.localStorage.setItem('ash:outline-hidden', outlineHidden ? '1' : '0');
   }, [outlineHidden]);
 
+  // 溢出菜单：点外部或按 Esc 关闭
+  useEffect(() => {
+    if (!moreOpen) return undefined;
+    const onPointerDown = (event) => { if (!event.target.closest('.detail-more')) setMoreOpen(false); };
+    const onKeyDown = (event) => { if (event.key === 'Escape') setMoreOpen(false); };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [moreOpen]);
+
   useEffect(() => {
     let cancelled = false;
     getJson(`/api/skills/${skill.id}`)
@@ -554,6 +567,18 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
     const live = liveRef.current;
     if (live?.mode === 'edit' && live.dirty) live.save();
   }, []);
+
+  // 附属文件单独下载：/api/skills/:id/file 返回 JSON 包装，直接做成本地 Blob 更省事
+  const downloadCurrentFile = () => {
+    const url = URL.createObjectURL(new Blob([auxFileContent], { type: 'text/plain;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = selectedFile.split('/').pop();
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
 
   const openFile = (path) => {
     setFileError('');

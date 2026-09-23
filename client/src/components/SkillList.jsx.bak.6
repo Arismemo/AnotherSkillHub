@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import FolderPicker from './FolderPicker';
+import ContextMenu from './ContextMenu';
+import { showToast } from './toastBus';
 import {
   ArrowDownAZ,
   Check,
@@ -62,6 +64,11 @@ export default function SkillList({
   onNewSkill,
   onBatchMove,
   onBatchTrash,
+  onBatchStar,
+  onBatchAddToBundle,
+  onBatchRestore,
+  onBatchDelete,
+  multiSelectMode,
   folders,
   onClearSelection,
   loading,
@@ -71,7 +78,8 @@ export default function SkillList({
 }) {
   const isTrash = currentFolder === 'trash';
   const listTitle = currentTag ? `标签：${currentTag}` : folderLabels[currentFolder] || currentFolder;
-  const multiCount = selectedIds.size > 1 ? selectedIds.size : 0;
+  // 选到只剩 1 项时批量条不该消失：以「是否处于多选模式」为准，而不是 size > 1
+  const multiCount = multiSelectMode ? selectedIds.size : 0;
   const densityIndex = Math.max(0, densities.findIndex((d) => d.id === density));
   const currentDensity = densities[densityIndex];
   const nextDensity = densities[(densityIndex + 1) % densities.length];

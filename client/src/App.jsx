@@ -195,6 +195,12 @@ export default function App() {
     setCurrentTag(null);
   };
 
+  // 标签筛选是全库的：站在某个目录里点标签，只看到该目录内的同标签技能没有意义
+  const handleSelectTag = (tag) => {
+    setCurrentTag(tag || null);
+    if (tag) setCurrentFolder('all');
+  };
+
   const handleCreateFolder = (path) => runMutation('/api/folders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -601,7 +607,7 @@ export default function App() {
             stats={stats}
             tags={tags}
             currentTag={currentTag}
-            onSelectTag={setCurrentTag}
+            onSelectTag={handleSelectTag}
             onCreateFolder={handleCreateFolder}
             onRenameFolder={handleRenameFolder}
             onDeleteFolder={handleDeleteFolder}
@@ -641,6 +647,7 @@ export default function App() {
           searchInputRef={searchInputRef}
           currentFolder={currentFolder}
           currentTag={currentTag}
+          onSelectTag={handleSelectTag}
           sortBy={sortBy}
           onSortChange={setSortBy}
           density={listDensity}
@@ -684,6 +691,7 @@ export default function App() {
             skill={selectedSkill}
             onSave={handleSaveSkill}
             onSelectFolder={handleSelectFolder}
+            onSelectTag={handleSelectTag}
             onCopySkill={handleCopySkill}
             apiRef={detailApiRef}
           />

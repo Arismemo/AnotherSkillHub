@@ -246,7 +246,7 @@ function highlightMarkdownHtml(html) {
   return container.innerHTML;
 }
 
-export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill, apiRef }) {
+export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag, onCopySkill, apiRef }) {
   const [mode, setMode] = useState('preview');
   const [content, setContent] = useState(skill.content || '');
   const [name, setName] = useState(skill.name || '');
@@ -786,7 +786,14 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
                     {(description || skill.tags?.length > 0 || frontmatterPairs.length > 0) && (
                       <section className="skill-summary" aria-label="技能摘要">
                         {description && <p>{description}</p>}
-                        {skill.tags?.length > 0 && <div>{skill.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+                        {skill.tags?.length > 0 && (
+                        <div>
+                          {/* 标签可点直接筛选：原来只能记住名字再去侧栏下拉里找（4~5 步） */}
+                          {skill.tags.map((tag) => (
+                            <button key={tag} type="button" onClick={() => onSelectTag?.(tag)} title={`筛选标签 ${tag}`}>{tag}</button>
+                          ))}
+                        </div>
+                      )}
                         {frontmatterPairs.length > 0 && (
                           <details className="frontmatter frontmatter-table">
                             <summary>属性</summary>

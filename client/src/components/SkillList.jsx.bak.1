@@ -59,6 +59,7 @@ export default function SkillList({
   onToggleStar,
   onTrashSkill,
   onAddToBundle,
+  onCopySkill,
   onRestoreSkill,
   onPermanentDelete,
   onNewSkill,
@@ -290,7 +291,15 @@ export default function SkillList({
                       <span className="row-meta">
                         {skill.version && <span className="chip row-version" title={`版本 ${skill.version}`}>v{skill.version}</span>}
                         {(skill.tags || []).slice(0, 2).map((tag) => (
-                          <span key={tag} className="chip row-tag" title={`标签 ${tag}`}>{tag}</span>
+                          <button
+                            key={tag}
+                            type="button"
+                            className="chip row-tag"
+                            title={`筛选标签 ${tag}`}
+                            onClick={(event) => { event.stopPropagation(); onSelectTag?.(tag); }}
+                          >
+                            {tag}
+                          </button>
                         ))}
                         {skill.terminal_source && <span className="chip row-source" title={`来自终端 ${skill.terminal_source}`}>{skill.terminal_source}</span>}
                         <span className="skill-location">{skill.folder_path}</span>
@@ -327,6 +336,15 @@ export default function SkillList({
           </ul>
         )}
       </div>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextItems(contextMenu.skill)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

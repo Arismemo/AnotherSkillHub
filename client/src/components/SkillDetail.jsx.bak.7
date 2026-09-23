@@ -18,6 +18,7 @@ import {
   List,
   Terminal,
   History,
+  MoreHorizontal,
   PanelLeftClose,
 } from 'lucide-react';
 
@@ -264,6 +265,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
   // D1: 面板宽度/大纲显隐持久化
   const [fileSidebarWidth, , fileSidebarResizer] = useResizableWidth('file-sidebar-width', { min: 160, max: 480, initial: 240, label: '调整技能文件栏宽度' });
   const [showVersions, setShowVersions] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [outlineHidden, setOutlineHidden] = useState(() => window.localStorage.getItem('ash:outline-hidden') === '1');
   // 大纲按「视口宽度」判定，而不是滚动区宽度：滚动区永远是视口减去左两栏，
   // 用它做阈值会让大纲在 1684px 以下的视口里永远不出现。

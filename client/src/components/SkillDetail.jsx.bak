@@ -302,6 +302,19 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
     window.localStorage.setItem('ash:outline-hidden', outlineHidden ? '1' : '0');
   }, [outlineHidden]);
 
+  // 溢出菜单：点外部或按 Esc 关闭
+  useEffect(() => {
+    if (!moreOpen) return undefined;
+    const onPointerDown = (event) => { if (!event.target.closest('.detail-more')) setMoreOpen(false); };
+    const onKeyDown = (event) => { if (event.key === 'Escape') setMoreOpen(false); };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [moreOpen]);
+
   useEffect(() => {
     let cancelled = false;
     getJson(`/api/skills/${skill.id}`)
@@ -773,7 +786,14 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
                     {(description || skill.tags?.length > 0 || frontmatterPairs.length > 0) && (
                       <section className="skill-summary" aria-label="技能摘要">
                         {description && <p>{description}</p>}
-                        {skill.tags?.length > 0 && <div>{skill.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+                        {skill.tags?.length > 0 && (
+                        <div>
+                          {/* 标签可点直接筛选：原来只能记住名字再去侧栏下拉里找（4~5 步） */}
+                          {skill.tags.map((tag) => (
+                            <button key={tag} type="button" onClick={() => onSelectTag?.(tag)} title={`筛选标签 ${tag}`}>{tag}</button>
+                          ))}
+                        </div>
+                      )}
                         {frontmatterPairs.length > 0 && (
                           <details className="frontmatter frontmatter-table">
                             <summary>属性</summary>

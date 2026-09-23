@@ -62,6 +62,11 @@ export default function SkillList({
   onNewSkill,
   onBatchMove,
   onBatchTrash,
+  onBatchStar,
+  onBatchAddToBundle,
+  onBatchRestore,
+  onBatchDelete,
+  multiSelectMode,
   folders,
   onClearSelection,
   loading,
@@ -152,19 +157,37 @@ export default function SkillList({
       {multiCount > 0 && (
         <div className="batch-bar" role="toolbar" aria-label={`已选 ${multiCount} 个技能`}>
           <span>已选 {multiCount} 项</span>
-          {!isTrash && (
-            <FolderPicker
-              folders={folders}
-              value=""
-              onChange={(path) => path && onBatchMove(path)}
-              placeholder="移动到…"
-              compact
-            />
+          {isTrash ? (
+            // 废纸篓里「移入废纸篓」毫无意义：换成恢复 / 永久删除
+            <>
+              <button type="button" className="batch-action" onClick={onBatchRestore} title="恢复所选技能" aria-label="恢复所选技能">
+                <RotateCcw size={13} />恢复
+              </button>
+              <button type="button" className="danger-text-button" onClick={onBatchDelete} title="永久删除所选技能" aria-label="永久删除所选技能">
+                <Trash2 size={13} />永久删除
+              </button>
+            </>
+          ) : (
+            <>
+              <FolderPicker
+                folders={folders}
+                value=""
+                onChange={(path) => path && onBatchMove(path)}
+                placeholder="移动到…"
+                compact
+              />
+              <button type="button" className="batch-action" onClick={onBatchStar} title="收藏所选技能" aria-label="收藏所选技能">
+                <Star size={13} />收藏
+              </button>
+              <button type="button" className="batch-action" onClick={onBatchAddToBundle} title="把所选技能加入组合" aria-label="把所选技能加入组合">
+                <Package size={13} />组合
+              </button>
+              <button type="button" className="danger-text-button" onClick={onBatchTrash} title="移入废纸篓" aria-label="将所选技能移入废纸篓">
+                <Trash2 size={13} />废纸篓
+              </button>
+            </>
           )}
-          <button type="button" className="danger-text-button" onClick={onBatchTrash} title="移入废纸篓" aria-label="将所选技能移入废纸篓">
-            <Trash2 size={13} />废纸篓
-          </button>
-          <button type="button" className="icon-button" onClick={onClearSelection} aria-label="清除选择">
+          <button type="button" className="icon-button" onClick={onClearSelection} aria-label="清除选择" title="清除选择（Esc）">
             <X size={14} />
           </button>
         </div>
@@ -196,6 +219,7 @@ export default function SkillList({
             {skills.map((skill) => {
               const isSelected = selectedSkillId === skill.id;
               const isChecked = selectedIds.has(skill.id) && multiCount > 0;
+              // roving tabindex：Tab 一次跨过整个列表，列表内用 ↑↓ / j k 移动
               return (
                 <li
                   key={skill.id}

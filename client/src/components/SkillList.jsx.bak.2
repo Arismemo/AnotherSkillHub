@@ -59,6 +59,7 @@ export default function SkillList({
   onToggleStar,
   onTrashSkill,
   onAddToBundle,
+  onCopySkill,
   onRestoreSkill,
   onPermanentDelete,
   onNewSkill,
@@ -266,6 +267,7 @@ export default function SkillList({
                   ref={isSelected ? selectedRowRef : undefined}
                   className={`skill-row${isSelected ? ' is-selected' : ''}${isChecked ? ' is-checked' : ''}`}
                   onClick={(event) => onSelectSkill(skill.id, event)}
+                  onContextMenu={(event) => openContextMenu(event, skill)}
                   onKeyDown={(event) => selectFromKeyboard(event, skill.id)}
                   draggable
                   onDragStart={(event) => dragStart(event, skill)}
@@ -326,6 +328,15 @@ export default function SkillList({
           </ul>
         )}
       </div>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextItems(contextMenu.skill)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

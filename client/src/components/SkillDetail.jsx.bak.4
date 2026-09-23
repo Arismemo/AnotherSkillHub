@@ -507,10 +507,11 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
   const agentPrompt = `请加载并使用技能：${origin}/s/${skill.slug}`;
   const cliCommand = `curl -fsSL ${origin}/s/${skill.slug}/install.sh | bash`;
 
-  const copyToClipboard = async (text, type) => {
+  const copyToClipboard = async (text, type, toastLabel) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(type);
+      if (toastLabel) showToast(`已复制${toastLabel}：${text}`);
       window.setTimeout(() => setCopied(''), 1800);
     } catch {
       setDetailError('复制失败，请检查浏览器的剪贴板权限。');
@@ -617,11 +618,14 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
             {moreOpen && (
               <div className="folder-menu" role="menu">
                 <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); onCopySkill?.(skill.id); }}>复制为新技能</button>
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(skill.slug, 'slug'); }}>复制 slug</button>
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(`${skill.folder_path}/${skill.slug}`, 'path'); }}>复制仓库路径</button>
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(`[${skill.name}](${origin}/s/${skill.slug})`, 'link'); }}>复制 Markdown 链接</button>
+                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(skill.slug, 'slug', 'slug'); }}>复制 slug</button>
+                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(`${skill.folder_path}/${skill.slug}`, 'path', '仓库路径'); }}>复制仓库路径</button>
+                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(`[${skill.name}](${origin}/s/${skill.slug})`, 'link', 'Markdown 链接'); }}>复制 Markdown 链接</button>
                 {selectedFile !== 'SKILL.md' && (
-                  <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(auxFileContent, 'file'); }}>复制当前文件内容</button>
+                  <>
+                    <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(auxFileContent, 'file'); showToast(`已复制 ${selectedFile} 的内容`); }}>复制当前文件内容</button>
+                    <a role="menuitem" href={`/api/skills/${skill.id}/file?path=${encodeURIComponent(selectedFile)}`} download={selectedFile.split('/').pop()} onClick={() => setMoreOpen(false)}>下载当前文件</a>
+                  </>
                 )}
               </div>
             )}

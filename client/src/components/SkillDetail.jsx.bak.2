@@ -555,6 +555,18 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
     if (live?.mode === 'edit' && live.dirty) live.save();
   }, []);
 
+  // 附属文件单独下载：/api/skills/:id/file 返回 JSON 包装，直接做成本地 Blob 更省事
+  const downloadCurrentFile = () => {
+    const url = URL.createObjectURL(new Blob([auxFileContent], { type: 'text/plain;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = selectedFile.split('/').pop();
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
   const openFile = (path) => {
     setFileError('');
     setAuxFileContent('');
@@ -624,7 +636,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
                 {selectedFile !== 'SKILL.md' && (
                   <>
                     <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(auxFileContent, 'file'); showToast(`已复制 ${selectedFile} 的内容`); }}>复制当前文件内容</button>
-                    <a role="menuitem" href={`/api/skills/${skill.id}/file?path=${encodeURIComponent(selectedFile)}`} download={selectedFile.split('/').pop()} onClick={() => setMoreOpen(false)}>下载当前文件</a>
+                    <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); downloadCurrentFile(); }}>下载当前文件</button>
                   </>
                 )}
               </div>

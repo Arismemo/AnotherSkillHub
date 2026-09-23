@@ -304,6 +304,10 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .skill-row .chip { height: 1.1rem; padding: 0 .34rem; font-size: var(--fs-2xs); }
 .row-version { font-variant-numeric: tabular-nums; }
 .row-tag::before { content: '#'; color: var(--text-subtle); }
+button.row-tag { cursor: pointer; }
+button.row-tag:hover { border-color: var(--accent-border); color: var(--text); }
+.tag-clear { display: inline-flex; align-items: center; justify-content: center; width: 1.1rem; height: 1.1rem; margin-left: .3rem; border: 0; border-radius: 999px; background: transparent; color: var(--text-subtle); vertical-align: middle; }
+.tag-clear:hover { background: var(--surface-hover); color: var(--text); }
 .row-source { border-style: dashed; }
 .skill-row:hover .skill-location, .skill-row:hover .skill-updated, .skill-row:focus-within .skill-location, .skill-row:focus-within .skill-updated { opacity: .35; }
 .skill-location { flex: 0 0 auto; max-width: 8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -420,7 +424,9 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .skill-summary { margin-bottom: 1.25rem; padding: .85rem 1rem; border: 1px solid var(--border-muted); border-left: 3px solid var(--accent); border-radius: var(--r-md); background: var(--surface); }
 .skill-summary p { margin: 0; color: var(--text-body); font-size: var(--fs-sm); line-height: 1.65; text-wrap: pretty; }
 .skill-summary div { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: .58rem; }
-.skill-summary span::before { content: '#'; color: var(--text-subtle); }
+.skill-summary :is(span, button)::before { content: '#'; color: var(--text-subtle); }
+.skill-summary button { cursor: pointer; transition: color var(--dur) ease, border-color var(--dur) ease; }
+.skill-summary button:hover { border-color: var(--accent-border); color: var(--text); }
 /* 工程文档节奏：SKILL.md 是「短小节 + 命令块 + check list」，不是散文，行高/段距都比博客正文紧 */
 .markdown-document { color: var(--text-body); font-size: var(--fs-md); line-height: 1.62; }
 .markdown-document > div { max-width: 100%; }
@@ -531,7 +537,7 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .palette-item-title { flex: 1; min-width: 0; overflow: hidden; font-size: var(--fs-sm); text-overflow: ellipsis; white-space: nowrap; }
 .palette-item-sub { flex: 0 0 auto; max-width: 40%; overflow: hidden; color: var(--text-subtle); font-size: var(--fs-2xs); text-overflow: ellipsis; white-space: nowrap; }
 /* 统一标签（chip）：编辑态标签 / 摘要 #tag / 面板徽标 / 版本标签 */
-.chip, .editable-tags button, .skill-summary span, .palette-badge, .version-label-tag { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .25rem; height: 1.25rem; padding: 0 .45rem; border: 1px solid var(--border-muted); border-radius: 999px; background: var(--surface-raised); color: var(--text-muted); font-size: var(--fs-2xs); font-style: normal; font-weight: 500; line-height: 1; white-space: nowrap; }
+.chip, .editable-tags button, .skill-summary :is(span, button), .palette-badge, .version-label-tag { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .25rem; height: 1.25rem; padding: 0 .45rem; border: 1px solid var(--border-muted); border-radius: 999px; background: var(--surface-raised); color: var(--text-muted); font-size: var(--fs-2xs); font-style: normal; font-weight: 500; line-height: 1; white-space: nowrap; }
 .editable-tags button { cursor: pointer; }
 .editable-tags button:hover { color: var(--danger-text); border-color: var(--danger-border); }
 .palette-badge.is-cmd, .chip-accent { color: var(--accent); border-color: var(--accent-border); background: var(--accent-muted); }

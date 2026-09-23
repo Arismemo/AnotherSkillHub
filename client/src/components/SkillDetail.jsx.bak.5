@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
 import hljs from 'highlight.js/lib/common';
 import { VersionHistoryModal } from './Modals';
+import { showToast } from './toastBus';
 import useResizableWidth from '../hooks/useResizableWidth';
 import {
   Check,
@@ -506,10 +507,11 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
   const agentPrompt = `请加载并使用技能：${origin}/s/${skill.slug}`;
   const cliCommand = `curl -fsSL ${origin}/s/${skill.slug}/install.sh | bash`;
 
-  const copyToClipboard = async (text, type) => {
+  const copyToClipboard = async (text, type, toastLabel) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(type);
+      if (toastLabel) showToast(`已复制${toastLabel}：${text}`);
       window.setTimeout(() => setCopied(''), 1800);
     } catch {
       setDetailError('复制失败，请检查浏览器的剪贴板权限。');

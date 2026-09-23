@@ -195,6 +195,12 @@ export default function App() {
     setCurrentTag(null);
   };
 
+  // 标签筛选是全库的：站在某个目录里点标签，只看到该目录内的同标签技能没有意义
+  const handleSelectTag = (tag) => {
+    setCurrentTag(tag || null);
+    if (tag) setCurrentFolder('all');
+  };
+
   const handleCreateFolder = (path) => runMutation('/api/folders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -227,6 +233,12 @@ export default function App() {
       await requestJson(`/api/skills/${skillId}/star`, { method: 'POST' });
       // 只刷新左栏计数，不重载列表
       fetchFoldersAndStats();
+      if (currentFolder === 'starred' && wasStarred) {
+        showToast('已取消收藏', {
+          actionLabel: '撤销',
+          onAction: () => runMutation(`/api/skills/${skillId}/star`, { method: 'POST' }),
+        });
+      }
     } catch (error) {
       setSkills(prev); // 失败回滚
       showToast(error.message);
@@ -595,7 +607,7 @@ export default function App() {
             stats={stats}
             tags={tags}
             currentTag={currentTag}
-            onSelectTag={setCurrentTag}
+            onSelectTag={handleSelectTag}
             onCreateFolder={handleCreateFolder}
             onRenameFolder={handleRenameFolder}
             onDeleteFolder={handleDeleteFolder}
@@ -678,6 +690,7 @@ export default function App() {
             skill={selectedSkill}
             onSave={handleSaveSkill}
             onSelectFolder={handleSelectFolder}
+            onSelectTag={handleSelectTag}
             onCopySkill={handleCopySkill}
             apiRef={detailApiRef}
           />
