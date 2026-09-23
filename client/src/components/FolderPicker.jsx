@@ -129,6 +129,9 @@ export default function FolderPicker({
         className="folder-picker-trigger"
         ref={triggerRef}
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={(event) => {
+          if (open && event.key === 'Escape') { event.preventDefault(); closePicker(); }
+        }}
         aria-expanded={open}
         aria-haspopup="listbox"
         title={title || (iconOnly ? undefined : current.label)}
