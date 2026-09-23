@@ -556,13 +556,17 @@ button.row-tag:hover { border-color: var(--accent-border); color: var(--text); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* C4: 批量操作条 */
-.batch-bar { display: flex; flex-wrap: nowrap; align-items: center; gap: .45rem; padding: .45rem .6rem; border-bottom: 1px solid var(--accent-border); background: var(--accent-muted); font-size: var(--fs-xs); white-space: nowrap; }
+.batch-bar { display: flex; flex-wrap: nowrap; align-items: center; gap: .25rem; padding: .45rem .5rem; border-bottom: 1px solid var(--accent-border); background: var(--accent-muted); font-size: var(--fs-xs); white-space: nowrap; }
 .batch-bar > span { flex: 0 0 auto; color: var(--text); font-weight: 600; }
-.batch-bar .folder-picker-trigger { max-width: 6.5rem; }
+.batch-bar > span { margin-right: .2rem; }
+.batch-bar .folder-picker-trigger { max-width: 5.6rem; }
 .batch-bar .danger-text-button { flex: 0 0 auto; }
 .batch-bar .folder-picker-trigger { min-width: 0; }
-.batch-action { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .3rem; border: 0; background: none; color: var(--text-muted); font-size: var(--fs-xs); }
-.batch-action:hover { color: var(--text); }
+/* 批量动作是图标按钮：列表栏最窄到 220px，带文字的一行放不下（靠 title/aria-label 说明） */
+.batch-action { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; border: 0; border-radius: var(--r-xs); background: none; color: var(--text-muted); }
+.batch-action:hover { color: var(--text); background: var(--surface-hover); }
+.batch-action.is-danger { color: var(--danger-text); }
+.batch-action.is-danger:hover { color: var(--danger-text); filter: brightness(1.15); }
 .batch-bar .icon-button { flex: 0 0 auto; margin-left: auto; }
 .danger-text-button { display: inline-flex; align-items: center; gap: .3rem; border: 0; background: none; color: var(--danger-text); font-size: var(--fs-xs); }
 .danger-text-button:hover { color: var(--danger-text); filter: brightness(1.15); }

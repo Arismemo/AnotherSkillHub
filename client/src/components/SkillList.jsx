@@ -209,10 +209,10 @@ export default function SkillList({
             // 废纸篓里「移入废纸篓」毫无意义：换成恢复 / 永久删除
             <>
               <button type="button" className="batch-action" onClick={onBatchRestore} title="恢复所选技能" aria-label="恢复所选技能">
-                <RotateCcw size={13} />恢复
+                <RotateCcw size={14} />
               </button>
-              <button type="button" className="danger-text-button" onClick={onBatchDelete} title="永久删除所选技能" aria-label="永久删除所选技能">
-                <Trash2 size={13} />永久删除
+              <button type="button" className="batch-action is-danger" onClick={onBatchDelete} title="永久删除所选技能" aria-label="永久删除所选技能">
+                <Trash2 size={14} />
               </button>
             </>
           ) : (
@@ -225,13 +225,13 @@ export default function SkillList({
                 compact
               />
               <button type="button" className="batch-action" onClick={onBatchStar} title="收藏所选技能" aria-label="收藏所选技能">
-                <Star size={13} />收藏
+                <Star size={14} />
               </button>
               <button type="button" className="batch-action" onClick={onBatchAddToBundle} title="把所选技能加入组合" aria-label="把所选技能加入组合">
-                <Package size={13} />组合
+                <Package size={14} />
               </button>
-              <button type="button" className="danger-text-button" onClick={onBatchTrash} title="移入废纸篓" aria-label="将所选技能移入废纸篓">
-                <Trash2 size={13} />废纸篓
+              <button type="button" className="batch-action is-danger" onClick={onBatchTrash} title="移入废纸篓" aria-label="将所选技能移入废纸篓">
+                <Trash2 size={14} />
               </button>
             </>
           )}
