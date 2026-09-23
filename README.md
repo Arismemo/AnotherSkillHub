@@ -89,6 +89,10 @@ version: 1.0.0
 ---
 ```
 
+## Deployment
+
+Self-host with Docker — full runbook (build gate, DB backup, image roll-out, rollback, smoke tests) in [docs/deploy.md](docs/deploy.md).
+
 ## Configuration
 
 | Env | Default | Purpose |
