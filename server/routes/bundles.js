@@ -5,32 +5,51 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 
+const { findBundle, bundleMembers } = require('../bundleLookup');
+const { getBaseUrl } = require('../shell');
+
 function bundleWithItems(bundleId) {
   const bundle = db.prepare('SELECT * FROM bundles WHERE id = ?').get(bundleId);
   if (!bundle) return null;
-  const items = db.prepare(`
-    SELECT s.id, s.slug, s.name, s.description, bi.added_at
-    FROM bundle_items bi JOIN skills s ON s.id = bi.skill_id
-    WHERE bi.bundle_id = ? AND s.is_deleted = 0
-    ORDER BY bi.added_at DESC
-  `).all(bundleId);
+  const items = bundleMembers(bundleId);
   return { ...bundle, items, count: items.length };
 }
 
-// 列表
+// 列表（format=text 给 Agent：ash bundles）
 router.get('/', (req, res) => {
   const rows = db.prepare(`
     SELECT b.*, (SELECT COUNT(*) FROM bundle_items bi JOIN skills s ON s.id = bi.skill_id
                  WHERE bi.bundle_id = b.id AND s.is_deleted = 0) AS count
     FROM bundles b ORDER BY b.created_at DESC
   `).all();
+  if (req.query.format === 'text') {
+    if (!rows.length) return res.type('text/plain').send('还没有技能组合\n');
+    const lines = rows.map((b) => `${b.slug}  ·  ${b.name}  ·  ${b.count} 个技能${b.description ? `  ·  ${b.description}` : ''}`);
+    return res.type('text/plain').send(`${[`共 ${rows.length} 个组合（ash bundle <标识或名称> 查看成员，ash pull bundle:<标识或名称> 安装）`, ...lines].join('\n')}\n`);
+  }
   res.json(rows);
 });
 
-// 详情
+// 详情：:id 可以是数字 id、slug 或组合名称
 router.get('/:id', (req, res) => {
-  const bundle = bundleWithItems(req.params.id);
-  if (!bundle) return res.status(404).json({ error: 'Bundle not found' });
+  const { bundle: found, error } = findBundle(req.params.id);
+  if (!found) {
+    return req.query.format === 'text'
+      ? res.status(404).type('text/plain').send(`错误: ${error}\n`)
+      : res.status(404).json({ error: error || 'Bundle not found' });
+  }
+  const bundle = bundleWithItems(found.id);
+  if (req.query.format === 'text') {
+    const ready = bundle.items.filter((s) => s.status !== 'pending');
+    const out = [
+      `${bundle.name} (${bundle.slug}) · ${bundle.count} 个技能`,
+      ...(bundle.description ? [`描述: ${bundle.description}`] : []),
+      ...bundle.items.map((s) => `  ${s.slug}  ·  ${s.name}${s.status === 'pending' ? '  [待审核，安装时跳过]' : ''}${s.description ? `  ·  ${s.description}` : ''}`),
+      `安装: ash pull bundle:${bundle.slug}    (curl -fsSL ${getBaseUrl(req)}/s/bundle/${bundle.slug}/install.sh | bash)`,
+    ];
+    if (!ready.length) out.push('注意: 组合内没有已发布的技能');
+    return res.type('text/plain').send(`${out.join('\n')}\n`);
+  }
   res.json(bundle);
 });
 

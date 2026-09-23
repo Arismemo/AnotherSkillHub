@@ -1,14 +1,19 @@
+// Agent 接口分两组挂载：
+//   router → /s          只读：Markdown、信息、附属文件、历史版本、安装脚本、归档
+//   api    → /api/agent  推送与跟进：push、revisions（已装技能比对）、mine（我的推送）、withdraw（撤回待审）
 const express = require('express');
 const router = express.Router();
+const api = express.Router();
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const multer = require('multer');
 const db = require('../db');
-const { replaceSkillOnDisk, skillDirExists, createSkillArchive, createSkillTarGzArchive, getSkillFileTree, getSkillFileContent } = require('../storage');
-const { normalizeSkillMeta } = require('../skillMeta');
+const { baseStorageDir, replaceSkillOnDisk, skillDirExists, createSkillArchive, createSkillTarGzArchive, getSkillFileTree, getSkillFileContent } = require('../storage');
+const { normalizeSkillMeta, dependenciesOf } = require('../skillMeta');
+const { findBundle, bundleMembers } = require('../bundleLookup');
 const { scanSkill, hasHighRisk } = require('../security');
-const { reviewRequired, parseJson, snapshotSkillVersion, isVisibleToAgents } = require('../review');
+const { reviewRequired, parseJson, snapshotSkillVersion, isVisibleToAgents, skillRevision } = require('../review');
 const { shQuote, getBaseUrl } = require('../shell');
 const { render } = require('../templates');
 
@@ -37,14 +42,11 @@ function agentLookup(req) {
   return { skill };
 }
 
-// 技能组合一键安装：/s/bundle/:slug/install.sh —— 依次安装组合内全部已发布技能
+// 技能组合一键安装：/s/bundle/:ref/install.sh —— ref 可为标识或名称（URL 编码），依次安装全部已发布技能
 router.get('/bundle/:slug/install.sh', (req, res) => {
-  const bundle = db.prepare('SELECT * FROM bundles WHERE slug = ?').get(req.params.slug);
-  if (!bundle) return scriptError(res, 404, `技能组合 ${req.params.slug} 不存在`);
-  const items = db.prepare(`
-    SELECT s.slug, s.name, s.status FROM bundle_items bi JOIN skills s ON s.id = bi.skill_id
-    WHERE bi.bundle_id = ? AND s.is_deleted = 0 ORDER BY bi.added_at DESC
-  `).all(bundle.id);
+  const { bundle, error } = findBundle(req.params.slug);
+  if (!bundle) return scriptError(res, 404, error);
+  const items = bundleMembers(bundle.id);
   const ready = items.filter((it) => it.status !== 'pending');
   const skipped = items.filter((it) => it.status === 'pending');
   if (!ready.length) return scriptError(res, 400, `技能组合 ${bundle.name} 中没有可安装的技能`);
@@ -52,6 +54,8 @@ router.get('/bundle/:slug/install.sh', (req, res) => {
   const sub = new URLSearchParams();
   if (INSTALL_AGENTS.includes(req.query.agent)) sub.set('agent', req.query.agent);
   if (typeof req.query.dir === 'string' && req.query.dir) sub.set('dir', req.query.dir);
+  if (truthy(req.query.force)) sub.set('force', '1');
+  if (truthy(req.query.nodeps)) sub.set('nodeps', '1');
   const query = sub.toString() ? `?${sub}` : '';
   const lines = [
     '#!/usr/bin/env bash',
@@ -77,18 +81,38 @@ router.get('/:slug/info', (req, res) => {
   const tags = parseJson(skill.tags, []);
   const files = getSkillFileTree(skill.folder_path, skill.slug).map((f) => f.path).sort();
   const warnings = parseJson(skill.security_warnings, []);
+  const deps = dependenciesOf(skill.content);
+  const missing = deps.filter((d) => !isVisibleToAgents(findSkill(d)));
   const out = [
     `${skill.name} (${skill.slug})`,
     skill.description ? `描述: ${skill.description}` : '描述: （无）',
     `状态: ${skill.status === 'pending' ? '待审核' : '已发布'}${skill.pending_content ? '（有待审核的更新）' : ''} · 版本 ${skill.version} · 更新于 ${skill.updated_at}`,
-    `目录: ${skill.folder_path}${tags.length ? ` · 标签: ${tags.join(', ')}` : ''}`,
+    `目录: ${skill.folder_path}${tags.length ? ` · 标签: ${tags.join(', ')}` : ''} · 修订 ${skillRevision(skill)}`,
+    ...(deps.length ? [`依赖: ${deps.join(', ')}${missing.length ? `（库中缺失或未发布: ${missing.join(', ')}）` : ''}  —— ash pull 会一并安装`] : []),
     `文件 (${files.length}):`,
     ...files.map((f) => `  ${f}`),
     ...warnings.map((w) => `⚠️  ${w.msg}`),
     `阅读: ash show ${skill.slug}    (${base}/s/${skill.slug}.md)`,
     `安装: ash pull ${skill.slug}    (curl -fsSL ${base}/s/${skill.slug}/install.sh | bash)`,
+    `历史: ash versions ${skill.slug}`,
   ];
   res.type('text/plain').send(`${out.join('\n')}\n`);
+});
+
+// 历史版本（纯文本）：ash versions <slug>；内容用 /s/<slug>.md?version=<id> 读取
+router.get('/:slug/versions', (req, res) => {
+  const { skill, error } = agentLookup(req);
+  if (error) return res.status(error[0]).type('text/plain').send(`错误: ${error[1]}\n`);
+  const rows = db.prepare(`
+    SELECT id, source, label, created_at, LENGTH(content) AS size FROM skill_versions
+    WHERE skill_id = ? ORDER BY created_at DESC, id DESC
+  `).all(skill.id);
+  const sourceLabel = { web: '网页编辑前', agent: 'Agent 更新前', 'restore-backup': '恢复前备份' };
+  const lines = rows.map((v) => `${v.id}  ·  ${v.created_at} UTC  ·  ${sourceLabel[v.source] || v.source}  ·  ${Math.max(1, Math.round(v.size / 1024))} KB${v.label ? `  ·  ${v.label}` : ''}`);
+  const header = rows.length
+    ? `${skill.slug} 共 ${rows.length} 个历史版本（快照是被替换掉的旧内容；ash show ${skill.slug} --version <id> 查看）`
+    : `${skill.slug} 还没有历史版本`;
+  res.type('text/plain').send(`${[header, ...lines].join('\n')}\n`);
 });
 
 // 单个附属文件：/s/:slug/files/<相对路径>
@@ -154,12 +178,19 @@ router.get('/:slug/install.sh', (req, res) => {
     if (error) return scriptError(res, error[0], error[1]);
     const agent = INSTALL_AGENTS.includes(req.query.agent) ? req.query.agent : 'auto';
     const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
+    // 依赖只收合法 slug；不存在/未发布的依赖由脚本安装时提示
+    const deps = dependenciesOf(skill.content).filter((d) => /^[A-Za-z0-9_.-]+$/.test(d) && d !== skill.slug);
     const script = render('install.sh', {
       SLUG: shQuote(skill.slug),
       BASE_URL: shQuote(getBaseUrl(req)),
       AGENT: shQuote(agent),
       DIR: shQuote(dir),
       PENDING: truthy(req.query.pending) ? '1' : '0',
+      FORCE: truthy(req.query.force) ? '1' : '0',
+      NODEPS: truthy(req.query.nodeps) ? '1' : '0',
+      REVISION: shQuote(skillRevision(skill)),
+      VERSION: shQuote(skill.version || ''),
+      DEPS: deps.map(shQuote).join(' '),
     });
     res.type('text/plain').send(script);
   } catch (err) {
@@ -268,7 +299,7 @@ function extractSkillArchive(buffer) {
     const skippedType = [];
     (function walk(dir, rel) {
       for (const item of fs.readdirSync(dir).sort()) {
-        if (item === '.git' || item === 'node_modules' || item === '__pycache__' || item === '.DS_Store' || item.startsWith('._')) continue;
+        if (item === '.git' || item === 'node_modules' || item === '__pycache__' || item === '.DS_Store' || item === '.ash' || item.startsWith('._')) continue;
         const full = path.join(dir, item);
         const relP = rel ? `${rel}/${item}` : item;
         const stat = fs.lstatSync(full);
@@ -324,7 +355,7 @@ function pushSummaryText(r) {
 
 // Agent 一键 Push 上传端点（支持 JSON、单文件 FormData、归档 tar.gz 上传）
 // 同名 slug 已存在时必须显式 update=1；推送结果默认需要人工审核后才对其他 Agent 可见
-router.post('/push', upload.single('file'), (req, res) => {
+api.post('/push', upload.single('file'), (req, res) => {
   const asText = wantsText(req);
   const fail = (status, message, extra = {}) => (asText
     ? res.status(status).type('text/plain').send(`错误: ${message}\n`)
@@ -428,4 +459,72 @@ router.post('/push', upload.single('file'), (req, res) => {
   }
 });
 
-module.exports = router;
+// 已装技能比对：GET /api/agent/revisions?slug=a&slug=b → 每行 slug<TAB>状态<TAB>修订<TAB>版本
+// 状态: published | pending | trashed | missing
+api.get('/revisions', (req, res) => {
+  const slugs = [].concat(req.query.slug || []).map(String).filter(Boolean).slice(0, 500);
+  const lines = slugs.map((slug) => {
+    const skill = findSkill(slug);
+    if (!skill) return `${slug}\tmissing\t-\t-`;
+    if (skill.is_deleted) return `${slug}\ttrashed\t-\t-`;
+    return `${slug}\t${skill.status === 'pending' ? 'pending' : 'published'}\t${skillRevision(skill)}\t${skill.version || '-'}`;
+  });
+  res.type('text/plain').send(lines.length ? `${lines.join('\n')}\n` : '');
+});
+
+const REVIEW_TEXT = {
+  approved: { new: '已通过', update: '更新已采纳' },
+  rejected: { new: '已拒绝（在废纸篓）', update: '更新被拒绝' },
+};
+
+// 我的推送：按推送时记录的来源终端（hostname）列出状态，ash mine
+api.get('/mine', (req, res) => {
+  const terminal = String(req.query.terminal || '').trim();
+  if (!terminal) return res.status(400).type('text/plain').send('错误: 缺少 terminal 参数\n');
+  const rows = db.prepare(`
+    SELECT slug, name, status, is_deleted, pending_content IS NOT NULL AS has_pending, pending_at, last_review, updated_at, terminal_source, pending_meta
+    FROM skills
+    WHERE terminal_source = ? OR json_extract(pending_meta, '$.terminal_source') = ? OR json_extract(last_review, '$.source') = ?
+    ORDER BY COALESCE(pending_at, updated_at) DESC
+  `).all(terminal, terminal, terminal);
+  if (!rows.length) return res.type('text/plain').send(`没有来自 ${terminal} 的推送记录\n`);
+  const lines = rows.map((r) => {
+    const review = parseJson(r.last_review, null);
+    let state;
+    if (r.is_deleted) state = review?.action === 'rejected' ? '已拒绝（在废纸篓）' : '已删除';
+    else if (r.status === 'pending') state = '新技能待审核（可 ash withdraw 撤回）';
+    else if (r.has_pending) state = `更新待审核，提交于 ${r.pending_at} UTC（可 ash withdraw 撤回）`;
+    else if (review) state = `${REVIEW_TEXT[review.action]?.[review.kind] || review.action}（${review.at.slice(0, 16).replace('T', ' ')} UTC）`;
+    else state = '已发布';
+    return `${r.slug}  ·  ${r.name}  ·  ${state}`;
+  });
+  res.type('text/plain').send(`${[`来自 ${terminal} 的推送（${rows.length} 个）`, ...lines].join('\n')}\n`);
+});
+
+// 撤回自己的待审推送：新技能直接删除（从未发布过），待审更新丢弃。只认推送时记录的来源终端
+api.post('/withdraw', (req, res) => {
+  const slug = String(req.body?.slug || '').trim();
+  const terminal = String(req.body?.terminal || '').trim();
+  const fail = (status, message) => res.status(status).type('text/plain').send(`错误: ${message}\n`);
+  const skill = findSkill(slug);
+  if (!skill || skill.is_deleted) return fail(404, `技能 ${slug} 不存在`);
+  if (skill.status === 'pending') {
+    if (skill.terminal_source !== terminal) return fail(403, `${slug} 不是由 ${terminal} 推送的，不能撤回`);
+    db.transaction(() => {
+      db.prepare('DELETE FROM bundle_items WHERE skill_id = ?').run(skill.id);
+      db.prepare('DELETE FROM skill_versions WHERE skill_id = ?').run(skill.id);
+      db.prepare('DELETE FROM skills WHERE id = ?').run(skill.id);
+    })();
+    fs.rmSync(path.join(baseStorageDir, skill.folder_path || 'inbox', skill.slug), { recursive: true, force: true });
+    return res.type('text/plain').send(`✅ 已撤回待审核的新技能 ${slug}\n`);
+  }
+  if (skill.pending_content != null) {
+    const meta = parseJson(skill.pending_meta, {});
+    if (meta.terminal_source !== terminal) return fail(403, `${slug} 的待审更新不是由 ${terminal} 提交的，不能撤回`);
+    db.prepare('UPDATE skills SET pending_content = NULL, pending_files = NULL, pending_meta = NULL, pending_at = NULL WHERE id = ?').run(skill.id);
+    return res.type('text/plain').send(`✅ 已撤回 ${slug} 的待审更新，当前发布版本不变\n`);
+  }
+  return fail(400, `${slug} 没有待审核的内容，已发布的技能不能撤回`);
+});
+
+module.exports = { publicRouter: router, apiRouter: api };

@@ -142,8 +142,8 @@ app.use('/api/skills', skillsRoutes);
 app.use('/api/session', require('./routes/session'));
 app.use('/api/bundles', require('./routes/bundles'));
 app.use('/api/folders', foldersRoutes);
-app.use('/s', agentRoutes);
-app.use('/api/agent', agentRoutes);
+app.use('/s', agentRoutes.publicRouter);
+app.use('/api/agent', agentRoutes.apiRouter);
 
 // CLI 安装/本体（/setup.sh 与 /cli.sh 是同一个脚本：管道执行时安装，安装后作为 ash 本体）
 app.get(['/setup.sh', '/cli.sh'], (req, res) => {

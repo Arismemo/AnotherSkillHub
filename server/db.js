@@ -109,6 +109,8 @@ try {
   add('pending_files', 'pending_files TEXT DEFAULT NULL');
   add('pending_meta', 'pending_meta TEXT DEFAULT NULL');
   add('pending_at', 'pending_at DATETIME DEFAULT NULL');
+  // 最近一次审核结果 {action: approved|rejected, kind: new|update, at, source}：供 Agent 用 ash mine 跟进
+  add('last_review', 'last_review TEXT DEFAULT NULL');
   db.exec('CREATE INDEX IF NOT EXISTS idx_skills_status ON skills(status)');
 } catch (e) { console.error('migration:', e.message); }
 

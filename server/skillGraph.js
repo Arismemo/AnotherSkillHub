@@ -1,4 +1,5 @@
 const matter = require('gray-matter');
+const { declaredDependencies } = require('./skillMeta');
 
 function list(value) {
   return Array.isArray(value) ? value.filter((item) => typeof item === 'string') : typeof value === 'string' ? [value] : [];
@@ -27,9 +28,7 @@ function buildSkillGraph(skills) {
       if (!target) { if (kind === 'dependency') unresolved.push({ source: skill.id, target: slug }); return; }
       if (target.meta) edges.push({ source: skill.id, target: target.skill.id, kind });
     };
-    for (const value of [data.depends_on, data.dependencies, data.requires, data.metadata?.depends_on]) {
-      list(value).forEach((slug) => add(slug, 'dependency'));
-    }
+    declaredDependencies(data).forEach((slug) => add(slug, 'dependency'));
     // Local links such as ../verification-discipline/SKILL.md. Ignore fenced examples and remote URLs.
     const prose = body.replace(/^(`{3,}|~{3,}).*\n[\s\S]*?^\1[^\n]*$/gm, '');
     for (const match of prose.matchAll(/\[[^\]]*\]\(<?([^\s)>]+)(?:>?(?:\s+"[^"]*")?)\)/g)) {
