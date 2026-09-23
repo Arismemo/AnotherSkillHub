@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import FolderPicker from './FolderPicker';
 import ContextMenu from './ContextMenu';
 import { showToast } from './toastBus';
+import { folderLabels } from '../utils/systemFolders';
+import { formatShortDate } from '../utils/date';
 import {
   ArrowDownAZ,
   Check,
@@ -22,27 +24,12 @@ import {
   X,
 } from 'lucide-react';
 
-const folderLabels = {
-  all: '全部技能',
-  inbox: '收件箱',
-  starred: '收藏',
-  trash: '废纸篓',
-  recent: '最近浏览',
-};
-
 // 列表密度三档：舒适（标题两行 + 两行描述）/ 标准（默认，单行描述）/ 紧凑（只留标题 + 日期）
 const densities = [
   { id: 'comfortable', label: '舒适', icon: Rows2 },
   { id: 'standard', label: '标准', icon: Rows3 },
   { id: 'compact', label: '紧凑', icon: Rows4 },
 ];
-
-const dateFormatter = new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric' });
-
-function formatDate(value) {
-  if (!value) return '';
-  return dateFormatter.format(new Date(value));
-}
 
 export default function SkillList({
   skills,
@@ -327,7 +314,7 @@ export default function SkillList({
                         {skill.terminal_source && <span className="chip row-source" title={`来自终端 ${skill.terminal_source}`}>{skill.terminal_source}</span>}
                         <span className="skill-location">{skill.folder_path}</span>
                       </span>
-                      <span className="skill-updated">{formatDate(skill.updated_at)}</span>
+                      <span className="skill-updated">{formatShortDate(skill.updated_at)}</span>
                       {showActions && <span className="row-actions">
                         {!isTrash ? (
                           <>

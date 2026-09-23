@@ -5,6 +5,7 @@ import usePersistedState from './hooks/usePersistedState';
 import useDebouncedValue from './hooks/useDebouncedValue';
 import useHotkeys, { isTypingTarget } from './hooks/useHotkeys';
 import { requestJson } from './utils/requestJson';
+import { targetFolderForView } from './utils/systemFolders';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
 import CommandPalette from './components/CommandPalette';
@@ -479,7 +480,7 @@ export default function App() {
   };
 
   // 新建/导入默认落在当前目录；系统视图不是真目录，退回 inbox
-  const defaultTargetFolder = ['all', 'starred', 'trash', 'recent'].includes(currentFolder) ? 'inbox' : currentFolder;
+  const defaultTargetFolder = targetFolderForView(currentFolder);
 
   const overlayOpen = showPalette || showShortcuts || showNewModal || showPasteModal
     || showSetupModal || showBundleModal || Boolean(activeBundle) || Boolean(addToBundleTarget);

@@ -23,6 +23,7 @@ import { VersionHistoryModal } from './Modals';
 import { showToast } from './toastBus';
 import useResizableWidth from '../hooks/useResizableWidth';
 import { requestJson } from '../utils/requestJson';
+import { relativeTime } from '../utils/date';
 import {
   Check,
   ChevronDown,
@@ -52,19 +53,6 @@ Object.entries({ bash, c, cpp, css, diff, go, ini, java, javascript, json, markd
 const OUTLINE_MIN_VIEWPORT = '(min-width: 1280px)';
 
 const HEADING_SELECTOR = '.markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4';
-
-function relativeTime(value) {
-  const stamp = new Date(value).getTime();
-  if (!Number.isFinite(stamp)) return '';
-  const minutes = Math.round((Date.now() - stamp) / 60000);
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  const days = Math.round(hours / 24);
-  if (days < 30) return `${days} 天前`;
-  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' }).format(stamp);
-}
 
 function splitFrontmatter(text) {
   if (!text) return { frontmatter: '', body: '' };

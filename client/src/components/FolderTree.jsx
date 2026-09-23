@@ -18,13 +18,14 @@ import {
 import FolderPicker from './FolderPicker';
 import ContextMenu from './ContextMenu';
 import ThemeToggle from './ThemeToggle';
+import { folderLabels } from '../utils/systemFolders';
 
 // droppable：拖技能过来有明确语义（归档 / 加星 / 删除）；「全部技能」不是归属地，不接收拖放
 const navItems = [
-  { id: 'inbox', label: '收件箱', icon: Inbox, droppable: true },
-  { id: 'starred', label: '收藏', icon: Star, droppable: true },
-  { id: 'all', label: '全部技能', icon: Archive },
-  { id: 'trash', label: '废纸篓', icon: Trash2, droppable: true },
+  { id: 'inbox', label: folderLabels.inbox, icon: Inbox, droppable: true },
+  { id: 'starred', label: folderLabels.starred, icon: Star, droppable: true },
+  { id: 'all', label: folderLabels.all, icon: Archive },
+  { id: 'trash', label: folderLabels.trash, icon: Trash2, droppable: true },
 ];
 
 function findNode(nodes, path) {
@@ -240,7 +241,7 @@ export default function FolderTree({
   if (collapsed) {
     const railItems = [
       ...navItems.map((item) => ({ ...item, count: stats[item.id] || 0 })),
-      { id: 'recent', label: '最近浏览', icon: Clock3, count: recentSkills.length },
+      { id: 'recent', label: folderLabels.recent, icon: Clock3, count: recentSkills.length },
     ];
     return (
       <div className="sidebar-content sidebar-rail">

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Folder, Inbox, Search } from 'lucide-react';
+import { folderLabels } from '../utils/systemFolders';
 
 // 可搜索的选择器（文件夹/标签通用）：输入过滤、键盘导航
 // folders 模式: folders=[{path,...}], onChange(path)
@@ -28,7 +29,7 @@ export default function FolderPicker({
       list = options.map((o) => ({ value: o.value, label: o.label }));
     } else {
       const paths = [...new Set(['inbox', ...folders.map((f) => f.path)])].sort((a, b) => a.localeCompare(b, 'zh'));
-      list = paths.map((p) => ({ value: p, label: p === 'inbox' ? '收件箱' : p }));
+      list = paths.map((p) => ({ value: p, label: p === 'inbox' ? folderLabels.inbox : p }));
     }
     const q = query.trim().toLowerCase();
     return q ? list.filter((o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q)) : list;
