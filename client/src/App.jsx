@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, FileText, Terminal } from 'lucide-react';
 import useResizableWidth from './hooks/useResizableWidth';
+import usePersistedState from './hooks/usePersistedState';
+import useDebouncedValue from './hooks/useDebouncedValue';
 import useHotkeys, { isTypingTarget } from './hooks/useHotkeys';
 import { requestJson } from './utils/requestJson';
 import FolderTree from './components/FolderTree';
@@ -12,36 +14,6 @@ import { AgentSetupModal, NewSkillModal, PasteSkillModal, ShortcutsModal } from 
 import { BundleDetail, NewBundleModal, AddToBundleModal } from './components/Bundles';
 
 const SkillDetail = lazy(() => import('./components/SkillDetail'));
-
-// D1: 状态记忆（localStorage 持久化）
-function usePersistedState(key, initial, isValid = () => true) {
-  const [value, setValue] = useState(() => {
-    try {
-      const saved = window.localStorage.getItem(`ash:${key}`);
-      if (saved === null) return initial;
-      const parsed = JSON.parse(saved);
-      return isValid(parsed) ? parsed : initial;
-    } catch {
-      return initial;
-    }
-  });
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(`ash:${key}`, JSON.stringify(value));
-    } catch { /* 存储不可用则静默降级为内存态 */ }
-  }, [key, value]);
-  return [value, setValue];
-}
-
-// 搜索防抖：每个按键直接打一次全量查询，列表会随输入整块重建；150ms 内的连续输入合并成一次
-function useDebouncedValue(value, delay) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delay);
-    return () => window.clearTimeout(timer);
-  }, [value, delay]);
-  return debounced;
-}
 
 export default function App() {
   const [currentFolder, setCurrentFolder] = usePersistedState('current-folder', 'inbox', (value) => typeof value === 'string');
