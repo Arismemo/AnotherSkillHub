@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 
 // 轻量 Toast + 撤销（Linear/Raycast 式）：操作后右下角浮条，可带撤销按钮
 let toastCounter = 0;
@@ -47,7 +48,7 @@ export default function ToastContainer() {
               {toast.actionLabel}
             </button>
           )}
-          <button type="button" className="toast-close" aria-label="关闭提示" onClick={() => dismiss(toast.id)}>×</button>
+          <button type="button" className="toast-close" aria-label="关闭提示" onClick={() => dismiss(toast.id)}><X size={14} aria-hidden="true" /></button>
         </div>
       ))}
     </div>

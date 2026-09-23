@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Search } from 'lucide-react';
+import { Check, ChevronDown, Folder, Inbox, Search } from 'lucide-react';
 
 // 可搜索的选择器（文件夹/标签通用）：深色主题、输入过滤、键盘导航
 // folders 模式: folders=[{path,...}], onChange(path)
@@ -178,7 +178,7 @@ export default function FolderPicker({
                 onClick={() => pick(option.value)}
               >
                 <span className="folder-picker-option-name">
-                  {!options && (option.value === 'inbox' ? '📥 ' : '📁 ')}
+                  {!options && (option.value === 'inbox' ? <Inbox size={13} aria-hidden="true" /> : <Folder size={13} aria-hidden="true" />)}
                   {option.label}
                 </span>
                 {option.value === value && <Check size={13} aria-hidden="true" />}

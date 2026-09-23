@@ -563,17 +563,17 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
             {skill.folder_path.split('/').map((segment, i, arr) => (
               <span key={`${segment}-${i}`} className="crumb-segment">
                 <button type="button" className="crumb-link" onClick={() => onMoveFolder(skill.id, skill.folder_path)} title="在目录中查看">{segment}</button>
-                {i < arr.length - 1 && <i aria-hidden="true">/</i>}
+                {i < arr.length - 1 && <ChevronRight size={11} className="crumb-sep" aria-hidden="true" />}
               </span>
             ))}
-            <i aria-hidden="true">/</i>
+            <ChevronRight size={11} className="crumb-sep" aria-hidden="true" />
             <span className="crumb-current">{skill.slug}</span>
           </nav>
           <h2>{skill.name}</h2>
         </div>
 
         <div className="detail-actions">
-          <button type="button" className="primary-button" onClick={() => copyToClipboard(agentPrompt, 'agent')}>
+          <button type="button" className="secondary-button" onClick={() => copyToClipboard(agentPrompt, 'agent')}>
             {copied === 'agent' ? <Check size={14} /> : <Copy size={14} />}
             {copied === 'agent' ? '已复制' : '复制 Agent 指令'}
           </button>

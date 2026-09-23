@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, Plus, X } from 'lucide-react';
+import { Check, Copy, Plus, Tag, X } from 'lucide-react';
+import FolderPicker from './FolderPicker';
 
 const defaultContent = `---
 name: my-new-skill
@@ -59,20 +60,9 @@ export function DialogShell({ title, description, onClose, children, size = 'med
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label={`关闭${title}`}><X size={17} /></button>
         </header>
-        {children}
+        <div className="dialog-body">{children}</div>
       </section>
     </div>
-  );
-}
-
-function FolderOptions({ folders }) {
-  return (
-    <>
-      <option value="inbox">收件箱</option>
-      {folders.filter((folder) => folder.path !== 'inbox').map((folder) => (
-        <option key={folder.path} value={folder.path}>{folder.path}</option>
-      ))}
-    </>
   );
 }
 
@@ -124,17 +114,17 @@ export function NewSkillModal({ isOpen, onClose, onCreate, folders }) {
 
   return (
     <DialogShell title="新建技能" description="创建后可继续编辑正文和关联文件。" onClose={onClose} size="large">
-      <form className="dialog-body form-stack" onSubmit={handleSubmit}>
+      <form className="form-stack" onSubmit={handleSubmit}>
         {error && <div className="inline-error" role="alert">{error}</div>}
         <div className="form-grid">
           <label>技能名称<input value={name} onChange={(event) => handleNameChange(event.target.value)} placeholder="例如：Worldsim 仿真调试" required /></label>
           <label>英文标识符<input value={slug} onChange={(event) => setSlug(event.target.value)} placeholder="worldsim-debug" required pattern="[a-z0-9_-]+" /></label>
         </div>
         <div className="form-grid">
-          <label>文件夹<select value={folderPath} onChange={(event) => setFolderPath(event.target.value)}><FolderOptions folders={folders} /></select></label>
+          <label>文件夹<FolderPicker folders={folders} value={folderPath} onChange={setFolderPath} /></label>
           <label>标签<div className="input-action"><input value={tagInput} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTag(); } }} placeholder="输入后按 Enter" /><button type="button" onClick={addTag}>添加</button></div></label>
         </div>
-        {tags.length > 0 && <div className="editable-tags" aria-label="已添加标签">{tags.map((tag) => <button type="button" key={tag} onClick={() => setTags(tags.filter((item) => item !== tag))} aria-label={`移除标签 ${tag}`}>{tag}<span aria-hidden="true">×</span></button>)}</div>}
+        {tags.length > 0 && <div className="editable-tags" aria-label="已添加标签">{tags.map((tag) => <button type="button" key={tag} onClick={() => setTags(tags.filter((item) => item !== tag))} aria-label={`移除标签 ${tag}`}>{tag}<X size={11} aria-hidden="true" /></button>)}</div>}
         <label>SKILL.md<textarea rows={10} value={content} onChange={(event) => setContent(event.target.value)} spellCheck="false" required /></label>
         <footer className="dialog-footer"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button type="submit" className="primary-button" disabled={submitting}><Plus size={14} />{submitting ? '创建中…' : '创建技能'}</button></footer>
       </form>
@@ -194,11 +184,11 @@ export function PasteSkillModal({ isOpen, onClose, onImport, folders }) {
 
   return (
     <DialogShell title="粘贴导入" description="粘贴完整 SKILL.md，名称、描述和标签会自动识别。" onClose={onClose} size="large">
-      <form className="dialog-body form-stack" onSubmit={handleSubmit}>
+      <form className="form-stack" onSubmit={handleSubmit}>
         {error && <div className="inline-error" role="alert">{error}</div>}
         {parsedInfo && <div className="parse-preview"><div><strong>{parsedInfo.name}</strong><code>/{parsedInfo.slug}</code></div><span>已识别</span></div>}
         <label>SKILL.md<textarea rows={16} value={rawText} onChange={(event) => updateText(event.target.value)} placeholder={'---\nname: my-skill\ndescription: 技能说明\n---\n\n# 标题'} spellCheck="false" required /></label>
-        <label className="compact-field">归档到<select value={folderPath} onChange={(event) => setFolderPath(event.target.value)}><FolderOptions folders={folders} /></select></label>
+        <label className="compact-field">归档到<FolderPicker folders={folders} value={folderPath} onChange={setFolderPath} /></label>
         <footer className="dialog-footer"><button type="button" className="secondary-button" onClick={onClose}>取消</button><button type="submit" className="primary-button" disabled={submitting}>{submitting ? '导入中…' : '导入技能'}</button></footer>
       </form>
     </DialogShell>
@@ -227,7 +217,7 @@ export function AgentSetupModal({ isOpen, onClose }) {
 
   return (
     <DialogShell title="终端接入" description="两步完成接入：先安装命令，再把引导指令发给 Agent。" onClose={onClose} size="medium">
-      <div className="dialog-body setup-content">
+      <div className="setup-content">
         {error && <div className="inline-error" role="alert">{error}</div>}
         <section>
           <div><h3><span className="step-badge" aria-hidden="true">1</span>安装命令</h3><button type="button" onClick={() => copyText(setupCommand, 'command')}>{copied === 'command' ? <Check size={14} /> : <Copy size={14} />}{copied === 'command' ? '已复制' : '复制'}</button></div>
@@ -302,7 +292,7 @@ export function VersionHistoryModal({ isOpen, onClose, skillId, onRestored }) {
               <span className="version-source">{sourceLabel[v.source] || v.source}</span>
               <time>{new Date(v.created_at + 'Z').toLocaleString('zh-CN', { hour12: false })}</time>
               <span className="version-size">{Math.round((v.content_size || 0) / 1024)} KB</span>
-              {v.label && <span className="version-label-tag">🏷 {v.label}</span>}
+              {v.label && <span className="version-label-tag"><Tag size={11} aria-hidden="true" />{v.label}</span>}
             </div>
             <div className="version-row-actions">
               <input

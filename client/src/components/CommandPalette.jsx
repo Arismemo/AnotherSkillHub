@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Search } from 'lucide-react';
 
 // ⌘K 命令面板：模糊搜索技能 + 执行命令，键盘全程操作（Linear/Raycast 式）
 // 模糊匹配：连续命中加分、前缀命中加分、精确匹配最高
@@ -131,7 +132,7 @@ export default function CommandPalette({
     <div className="palette-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="palette-panel" role="dialog" aria-modal="true" aria-label="命令面板">
         <div className="palette-input-row">
-          <span className="palette-icon" aria-hidden="true">⌘</span>
+          <span className="palette-icon" aria-hidden="true"><Search size={15} /></span>
           <input
             ref={inputRef}
             value={query}

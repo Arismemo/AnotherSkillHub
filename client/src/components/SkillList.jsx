@@ -1,6 +1,7 @@
 import FolderPicker from './FolderPicker';
 import {
   ArrowDownAZ,
+  Check,
   Clock3,
   FolderInput,
   Download,
@@ -159,7 +160,7 @@ export default function SkillList({
                 >
                   <article>
                     <div className="skill-row-title">
-                      {multiCount > 0 && <span className={`row-check${isChecked ? ' is-on' : ''}`} aria-hidden="true">{isChecked ? '✓' : ''}</span>}
+                      {multiCount > 0 && <span className={`row-check${isChecked ? ' is-on' : ''}`} aria-hidden="true">{isChecked && <Check size={11} strokeWidth={3} />}</span>}
                       <h3>{skill.name}</h3>
                       <button
                         type="button"
