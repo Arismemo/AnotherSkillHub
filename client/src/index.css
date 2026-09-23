@@ -514,6 +514,8 @@ button.row-tag:hover { border-color: var(--accent-border); color: var(--text); }
 .markdown-document pre[data-lang]::before, .file-viewer pre[data-lang]::before { content: attr(data-lang); position: absolute; top: .4rem; right: .6rem; color: var(--text-subtle); font-size: var(--fs-2xs); font-family: inherit; text-transform: lowercase; pointer-events: none; }
 .file-viewer pre[data-lang] code, .markdown-document pre code { background: transparent; padding: 0; border: 0; }
 .markdown-document table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: var(--fs-sm); }
+/* 表格与段落同一 measure 体系：同起点居中，任何容器宽度下对齐 */
+.markdown-document > div > table { max-width: var(--measure); margin-inline: auto; transition: margin var(--dur-fast) var(--ease-out); }
 .markdown-document th, .markdown-document td { padding: .45rem .65rem; border: 1px solid var(--border); }
 .markdown-document th { background: var(--surface-raised); color: var(--text); text-align: left; }
 .frontmatter { margin: .75rem -1rem -.85rem; border-top: 1px solid var(--border-muted); color: var(--text-muted); font-size: var(--fs-xs); }
