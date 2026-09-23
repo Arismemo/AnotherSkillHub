@@ -312,7 +312,7 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .folder-more { width: 1.7rem; height: 1.7rem; opacity: 0; }
 .folder-row:hover .folder-more, .folder-more:focus-visible, .folder-more[aria-expanded="true"] { opacity: 1; }
 .folder-menu-wrap { position: relative; }
-.folder-menu { position: absolute; top: 1.7rem; right: 0; z-index: 20; width: 8rem; padding: .28rem; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); transform-origin: top right; animation: pop-in var(--dur-fast) ease-out; }
+.folder-menu { position: absolute; top: 1.7rem; right: 0; z-index: 40; width: 8rem; padding: .28rem; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); transform-origin: top right; animation: pop-in var(--dur-fast) ease-out; }
 .folder-menu button { display: block; width: 100%; padding: .45rem .55rem; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text); font-size: var(--fs-xs); text-align: left; }
 .folder-menu button:hover { background: var(--surface-hover); }
 .folder-menu .danger-item { color: var(--danger-text); }
@@ -491,6 +491,8 @@ button.row-tag:hover { border-color: var(--accent-border); color: var(--text); }
 .markdown-document h3 { margin: 1.05rem 0 .4rem; font-size: var(--fs-lg); font-weight: 600; letter-spacing: 0; }
 .markdown-document p, .markdown-document ul, .markdown-document ol, .markdown-document blockquote { margin: .65rem 0; }
 .markdown-document ul, .markdown-document ol { padding-left: 1.45rem; }
+/* 列表项内的代码块：负 margin 抵消 ul padding，与列表文字起点对齐 + 左侧竖线归属感 */
+.markdown-document li > pre { margin-left: -1.45rem; border-left: 2px solid var(--border-muted); }
 /* Tailwind preflight 清掉了 list-style，这里恢复；任务列表（checkbox）不出圆点 */
 .markdown-document ul { list-style: disc; }
 .markdown-document ol { list-style: decimal; }
