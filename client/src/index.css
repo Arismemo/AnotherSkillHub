@@ -71,6 +71,9 @@ code.hljs { padding: 3px 5px; }
   --fs-lg: 1rem;
   --fs-xl: 1.25rem;
   --fs-2xl: 1.625rem;
+  /* 正文版式：measure = 文字可读行宽；content-max = 代码/表格的破框上限 */
+  --measure: 48rem;
+  --content-max: 76rem;
   /* 圆角 4 档 */
   --r-xs: 4px;
   --r-sm: 6px;
@@ -306,8 +309,8 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .detail-scroll { position: relative; flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
 /* 悬浮大纲占 right:1.1rem + 15rem 宽 —— 正文在其下时右侧留出通道，避免文字被盖住 */
 .detail-scroll.has-outline { --outline-channel: 17.2rem; }
-.detail-content { width: min(100% - 2.5rem, 40rem); margin: 0 auto; padding: 1.4rem 0 3rem; }
-.detail-scroll.has-outline .detail-content { width: min(100% - 2.5rem, 40rem); margin-right: auto; margin-left: auto; }
+/* 软上限：随容器伸缩（82%），下限 44rem、上限 --content-max，不再被 40rem 死锁 */
+.detail-content { width: min(100% - 3rem, max(44rem, 82%)); max-width: var(--content-max); margin: 0 auto; padding: 1.4rem 0 3rem; }
 .detail-toolbar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.25rem; padding: .65rem 1.25rem; border-bottom: 1px solid var(--border-muted); background: var(--bg); }
 /* 唯一的「签名」元素：toolbar 底部一道由强调色渐出的细线 */
 .detail-toolbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: linear-gradient(90deg, var(--accent), transparent 55%); pointer-events: none; }
@@ -327,10 +330,11 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .mode-switch button { display: flex; align-items: center; gap: .28rem; height: 100%; padding: 0 .48rem; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); transition: color var(--dur) ease, background-color var(--dur) ease; }
 .mode-switch button:hover { color: var(--text); }
 .mode-switch button.is-active { background: var(--surface-hover); color: var(--text); }
-/* 40rem = 640px，对齐 Anthropic 文章正文列（实测 640px @ 20px ≈ 64 CPL；我们 14.4px 下中英混排约 55-65 CPL） */
+/* 正文段落收在 --measure 内保证可读行宽；pre/table 不设上限，吃满 .detail-content（破框） */
+.markdown-document > div > :is(p, ul, ol, blockquote, h1, h2, h3, h4, hr), .skill-summary { max-width: var(--measure); margin-inline: auto; }
 .inline-error { padding: .65rem .75rem; border: 1px solid var(--danger-border); border-radius: var(--r-sm); background: var(--danger-muted); color: var(--danger-text); font-size: var(--fs-xs); line-height: 1.45; }
 /* 非 md 文件查看（脚本/json）：宽版式，与文件树/编辑器习惯一致 */
-.detail-content.is-wide-file { width: min(100% - 2.5rem, 78rem); }
+.detail-content.is-wide-file { width: min(100% - 3rem, 78rem); max-width: none; }
 .detail-content.is-wide-file .file-viewer pre { font-size: var(--fs-sm); }
 
 .detail-content > .inline-error { margin-bottom: 1rem; }

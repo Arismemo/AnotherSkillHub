@@ -48,6 +48,7 @@ test('three-pane shell and readable Markdown styles remain present', async () =>
   const css = await source('src/index.css');
   assert.match(css, /grid-template-columns:\s*clamp\(11\.5rem, 14vw, 13\.5rem\)\s*clamp\(15\.5rem, 19vw, 18rem\)\s*minmax\(0, 1fr\)/);
   assert.match(css, /\.markdown-document\s*\{[^}]*line-height:\s*1\.7/s);
-  assert.match(css, /\.detail-content\s*\{[^}]*min\(100% - 2\.5rem,\s*40rem\)/s);
+  assert.match(css, /\.detail-content\s*\{[^}]*max\(44rem,\s*82%\)/s, 'body column must stay a soft cap, not a hard 40rem lock');
+  assert.match(css, /--measure:\s*48rem/, 'readable measure token must exist for markdown text blocks');
   assert.ok(css.includes(':focus-visible'));
 });
