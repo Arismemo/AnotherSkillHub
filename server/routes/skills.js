@@ -12,6 +12,7 @@ function snapshotSkillVersion(skill, source) {
 }
 const db = require('../db');
 const { saveSkillToDisk, moveSkillOnDisk, parseSkillContent, getSkillFileTree, getSkillFileContent } = require('../storage');
+const { buildSkillGraph } = require('../skillGraph');
 
 // 获取统计数据 (用于左侧栏 badge)
 router.get('/stats', (req, res) => {
@@ -105,7 +106,6 @@ router.get('/', (req, res) => {
 // Compact graph payload; full skill bodies stay on the server.
 router.get('/graph', (req, res) => {
   try {
-    const { buildSkillGraph } = require('../skillGraph');
     const skills = db.prepare('SELECT id, slug, name, description, folder_path, tags, content FROM skills WHERE is_deleted = 0 ORDER BY slug').all();
     res.json(buildSkillGraph(skills));
   } catch (err) {
