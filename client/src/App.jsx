@@ -511,7 +511,7 @@ export default function App() {
     { id: 'trash', group: '当前技能', keys: ['Delete', 'Backspace'], label: '移入废纸篓', run: () => selectedSkill && currentFolder !== 'trash' && handleTrashSkill(selectedSkill.id) },
   ];
 
-  useHotkeys(overlayOpen ? shortcuts.filter((s) => s.alwaysOn) : shortcuts);
+  useHotkeys(shortcuts, overlayOpen);
 
   const handleAddSkillsToBundle = async (bundleId, ids) => {
     for (const id of ids) {

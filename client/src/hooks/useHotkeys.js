@@ -61,10 +61,12 @@ export function formatKeys(keys) {
     .join(IS_MAC ? '' : '+');
 }
 
-export default function useHotkeys(bindings) {
+export default function useHotkeys(bindings, overlayOpen = false) {
   // ref 保存最新绑定，避免每次 render 重新挂/卸监听
   const bindingsRef = useRef(bindings);
   useEffect(() => { bindingsRef.current = bindings; });
+  const overlayOpenRef = useRef(overlayOpen);
+  useEffect(() => { overlayOpenRef.current = overlayOpen; });
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -72,6 +74,7 @@ export default function useHotkeys(bindings) {
       const typing = isTypingTarget(event.target);
       for (const binding of bindingsRef.current) {
         if (!binding || typeof binding.run !== 'function') continue;
+        if (overlayOpenRef.current && !binding.alwaysOn) continue;
         if (typing && !binding.allowInInput) continue;
         if (!matchesBinding(binding, event)) continue;
         // when 为假时让位给浏览器默认行为（例如焦点在按钮上时的 Enter）
