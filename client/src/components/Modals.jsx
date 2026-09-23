@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, Plus, Tag, X } from 'lucide-react';
 import FolderPicker from './FolderPicker';
 import { formatKeys } from '../hooks/useHotkeys';
+import { requestJson } from '../utils/requestJson';
 
 const defaultContent = `---
 name: my-new-skill
@@ -19,6 +20,15 @@ version: 1.0.0
 1. 第一步
 2. 第二步
 `;
+
+async function ensureSkillSlugAvailable(slug) {
+  try {
+    const existing = await requestJson(`/api/skills/${encodeURIComponent(slug)}`);
+    if (existing.slug === slug) throw new Error(`标识符「${slug}」已存在，请更换标识符或编辑已有技能。`);
+  } catch (error) {
+    if (error.status !== 404) throw error;
+  }
+}
 
 export function DialogShell({ title, description, onClose, children, size = 'medium' }) {
   const panelRef = useRef(null);
@@ -151,17 +161,20 @@ export function NewSkillModal({ isOpen, onClose, onCreate, folders, defaultFolde
     }
     setError('');
     setSubmitting(true);
-    const created = await onCreate({
-      name: name.trim() || slug.trim(),
-      slug: slug.trim(),
-      description: '',
-      folder_path: folderPath,
-      tags,
-      content,
-    });
-    setSubmitting(false);
-    if (created) onClose();
-    else setError('创建失败，请检查输入后重试。');
+    try {
+      await ensureSkillSlugAvailable(slug.trim());
+      const created = await onCreate({
+        name: name.trim() || slug.trim(),
+        slug: slug.trim(),
+        description: '',
+        folder_path: folderPath,
+        tags,
+        content,
+      });
+      if (created) onClose();
+      else setError('创建失败，请查看提示后重试。');
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
   };
 
   return (
@@ -227,11 +240,14 @@ export function PasteSkillModal({ isOpen, onClose, onImport, folders, defaultFol
     }
     setSubmitting(true);
     setError('');
-    const info = parsedInfo || parseSkillMarkdown(rawText);
-    const imported = await onImport({ ...info, folder_path: folderPath, content: rawText });
-    setSubmitting(false);
-    if (imported) onClose();
-    else setError('导入失败，请检查内容后重试。');
+    try {
+      const info = parsedInfo || parseSkillMarkdown(rawText);
+      await ensureSkillSlugAvailable(info.slug);
+      const imported = await onImport({ ...info, folder_path: folderPath, content: rawText });
+      if (imported) onClose();
+      else setError('导入失败，请查看提示后重试。');
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
   };
 
   return (
@@ -297,14 +313,14 @@ export function VersionHistoryModal({ isOpen, onClose, skillId, onRestored }) {
   const [versions, setVersions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState(null);
+  const [labelSaving, setLabelSaving] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!isOpen || !skillId) return;
     setLoading(true);
     setError('');
-    fetch(`/api/skills/${skillId}/versions`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('加载失败'))))
+    requestJson(`/api/skills/${skillId}/versions`)
       .then((data) => setVersions(Array.isArray(data) ? data : []))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -316,11 +332,10 @@ export function VersionHistoryModal({ isOpen, onClose, skillId, onRestored }) {
     setRestoring(versionId);
     setError('');
     try {
-      const resp = await fetch(`/api/skills/${skillId}/versions/${versionId}/restore`, { method: 'POST' });
-      if (!resp.ok) throw new Error('恢复失败');
-      const data = await fetch(`/api/skills/${skillId}/versions`).then((r) => r.json());
-      setVersions(Array.isArray(data) ? data : []);
+      await requestJson(`/api/skills/${skillId}/versions/${versionId}/restore`, { method: 'POST' });
       onRestored?.();
+      const data = await requestJson(`/api/skills/${skillId}/versions`);
+      setVersions(Array.isArray(data) ? data : []);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -352,15 +367,22 @@ export function VersionHistoryModal({ isOpen, onClose, skillId, onRestored }) {
                 defaultValue={v.label || ''}
                 placeholder="版本标签…"
                 aria-label={`版本 ${v.id} 标签`}
+                disabled={labelSaving === v.id}
                 onKeyDown={async (e) => {
                   if (e.key !== 'Enter') return;
-                  await fetch(`/api/skills/${skillId}/versions/${v.id}/label`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ label: e.target.value.trim() }),
-                  });
-                  const data = await fetch(`/api/skills/${skillId}/versions`).then((r) => r.json());
-                  setVersions(Array.isArray(data) ? data : []);
+                  e.preventDefault();
+                  const label = e.currentTarget.value.trim();
+                  setLabelSaving(v.id);
+                  setError('');
+                  try {
+                    await requestJson(`/api/skills/${skillId}/versions/${v.id}/label`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ label }),
+                    });
+                    setVersions((previous) => previous.map((version) => version.id === v.id ? { ...version, label } : version));
+                  } catch (error) { setError(error.message); }
+                  finally { setLabelSaving(null); }
                 }}
               />
               <button
