@@ -26,6 +26,19 @@ marked.setOptions({ breaks: true, gfm: true });
 // 悬浮大纲的视口阈值：与 index.css 的 .doc-outline 收窄断点保持一致
 const OUTLINE_MIN_VIEWPORT = '(min-width: 1280px)';
 
+function relativeTime(value) {
+  const stamp = new Date(value).getTime();
+  if (!Number.isFinite(stamp)) return '';
+  const minutes = Math.round((Date.now() - stamp) / 60000);
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.round(hours / 24);
+  if (days < 30) return `${days} 天前`;
+  return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' }).format(stamp);
+}
+
 function splitFrontmatter(text) {
   if (!text) return { frontmatter: '', body: '' };
   const trimmed = text.trim();
@@ -543,7 +556,15 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
             <ChevronRight size={11} className="crumb-sep" aria-hidden="true" />
             <span className="crumb-current">{skill.slug}</span>
           </nav>
-          <h2>{skill.name}</h2>
+          <h2 title={skill.name}>{skill.name}</h2>
+        </div>
+
+        {/* 头部中段原来是一大片空白：放只读身份信息（版本 / 更新时间 / 文件数 / 来源终端） */}
+        <div className="detail-meta" aria-label="技能信息">
+          {skill.version && <span className="chip" title={`版本 ${skill.version}`}>v{skill.version}</span>}
+          {skill.updated_at && <span title={`更新于 ${skill.updated_at}`}>{relativeTime(skill.updated_at)}</span>}
+          {fileTree.length > 1 && <span>{fileTree.length} 个文件</span>}
+          {skill.terminal_source && <span className="chip row-source" title={`来自终端 ${skill.terminal_source}`}>{skill.terminal_source}</span>}
         </div>
 
         <div className="detail-actions">

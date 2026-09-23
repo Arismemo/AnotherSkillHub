@@ -349,13 +349,16 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .detail-scroll.has-outline { --outline-channel: 16.4rem; padding-right: var(--outline-channel); }
 /* 软上限：随容器伸缩（82%），下限 44rem、上限 --content-max，不再被 40rem 死锁 */
 .detail-content { width: min(100% - 3rem, max(44rem, 82%)); max-width: var(--content-max); margin: 0 auto; padding: 1.4rem 0 3rem; }
-.detail-toolbar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.25rem; padding: .65rem 1.25rem; border-bottom: 1px solid var(--border-muted); background: var(--bg); }
+.detail-toolbar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: .9rem; min-height: 3.1rem; padding: .4rem 1.25rem; border-bottom: 1px solid var(--border-muted); background: var(--bg); }
 /* 唯一的「签名」元素：toolbar 底部一道由强调色渐出的细线 */
 .detail-toolbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: linear-gradient(90deg, var(--accent), transparent 55%); pointer-events: none; }
-.detail-identity { min-width: 10rem; flex: 1 1 16rem; }
-.breadcrumb { display: flex; align-items: center; gap: .35rem; overflow: hidden; color: var(--text-subtle); font-size: var(--fs-xs); white-space: nowrap; text-overflow: ellipsis; }
+/* 面包屑与标题同一行，头部从 4.25rem 压到 3.1rem */
+.detail-identity { display: flex; flex: 1 1 20rem; align-items: baseline; gap: .5rem; min-width: 10rem; }
+.detail-meta { display: flex; flex: 0 1 auto; align-items: center; gap: .55rem; overflow: hidden; color: var(--text-subtle); font-size: var(--fs-2xs); white-space: nowrap; }
+.detail-meta .chip { height: 1.15rem; padding: 0 .38rem; }
+.breadcrumb { display: flex; flex: 0 2 auto; align-items: center; gap: .35rem; max-width: 45%; overflow: hidden; color: var(--text-subtle); font-size: var(--fs-xs); white-space: nowrap; text-overflow: ellipsis; }
 .breadcrumb .crumb-current { color: var(--text-muted); font-family: var(--mono); }
-.detail-identity h2 { margin: .18rem 0 0; overflow: hidden; font-size: var(--fs-md); font-weight: 600; letter-spacing: -.01em; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.detail-identity h2 { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; font-size: var(--fs-md); font-weight: 600; letter-spacing: -.01em; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .detail-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .42rem; }
 .primary-button, .secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: .38rem; min-height: 2rem; padding: .35rem .68rem; border-radius: var(--r-sm); font-size: var(--fs-xs); font-weight: 600; transition: var(--dur) ease; }
 .primary-button { border: 1px solid transparent; background: var(--accent); color: var(--accent-fg); }
@@ -394,12 +397,12 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .file-tree-leaf-spacer { flex: 0 0 auto; width: .95rem; }
 
 /* Floating document outline */
-.doc-outline { position: fixed; top: 5.4rem; right: 1.1rem; z-index: 30; width: 15rem; max-height: min(60vh, 30rem); display: flex; flex-direction: column; padding: .6rem .5rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); overflow: hidden; transform-origin: top right; animation: pop-in var(--dur-fast) ease-out; }
+.doc-outline { position: fixed; top: 4.3rem; right: 1.1rem; z-index: 30; width: 15rem; max-height: min(60vh, 30rem); display: flex; flex-direction: column; padding: .6rem .5rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); overflow: hidden; transform-origin: top right; animation: pop-in var(--dur-fast) ease-out; }
 .doc-outline-header { display: flex; align-items: baseline; justify-content: space-between; padding: .15rem .45rem .45rem; border-bottom: 1px solid var(--border-muted); }
 .doc-outline-header span { color: var(--text-subtle); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .doc-outline-toggle { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-subtle); }
 .doc-outline-toggle:hover { color: var(--text); background: var(--surface-hover); }
-.doc-outline-restore { position: fixed; top: 5.4rem; right: 1.1rem; z-index: 30; display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface-overlay); color: var(--text-muted); box-shadow: var(--shadow-pop); }
+.doc-outline-restore { position: fixed; top: 4.3rem; right: 1.1rem; z-index: 30; display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface-overlay); color: var(--text-muted); box-shadow: var(--shadow-pop); }
 .doc-outline-restore:hover { color: var(--text); border-color: var(--border-strong); }
 .doc-outline ul { list-style: none; margin: 0; padding: .3rem 0 0; overflow-y: auto; }
 .doc-outline li { margin: 0; }
@@ -650,7 +653,8 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 /* 注意：这里不要再覆盖 .app-shell 的列宽——clamp 下界已经够窄，
    多写一条会让窗口从 1301px 缩到 1300px 时两栏反而变宽（反向跳变） */
 @media (max-width: 1300px) {
-  .detail-toolbar { align-items: flex-start; flex-direction: column; gap: .55rem; padding: .65rem 1rem; }
+  .detail-toolbar { align-items: flex-start; flex-direction: column; gap: .55rem; padding: .5rem 1rem; }
+  .detail-meta { display: none; }
   .detail-actions { width: 100%; justify-content: flex-start; }
   .compact-action span { display: none; }
   .compact-action { width: 2rem; padding: 0; }
