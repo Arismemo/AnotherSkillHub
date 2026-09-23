@@ -349,7 +349,10 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   const [fileSidebarWidth, , fileSidebarResizer] = useResizableWidth('file-sidebar-width', { min: 160, max: 480, initial: 240, label: '调整技能文件栏宽度' });
   const [showVersions, setShowVersions] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [outlineHidden, setOutlineHidden] = useState(() => window.localStorage.getItem('ash:outline-hidden') === '1');
+  const [outlineHidden, setOutlineHidden] = useState(() => {
+    try { return window.localStorage.getItem('ash:outline-hidden') === '1'; }
+    catch { return false; }
+  });
   // 大纲按「视口宽度」判定，而不是滚动区宽度：滚动区永远是视口减去左两栏，
   // 用它做阈值会让大纲在 1684px 以下的视口里永远不出现。
   const [outlineFits, setOutlineFits] = useState(() => window.matchMedia(OUTLINE_MIN_VIEWPORT).matches);
@@ -381,7 +384,8 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem('ash:outline-hidden', outlineHidden ? '1' : '0');
+    try { window.localStorage.setItem('ash:outline-hidden', outlineHidden ? '1' : '0'); }
+    catch { /* 存储不可用时仍可在当前会话切换大纲 */ }
   }, [outlineHidden]);
 
   // 溢出菜单：点外部或按 Esc 关闭
