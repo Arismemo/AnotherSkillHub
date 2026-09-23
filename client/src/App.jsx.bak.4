@@ -67,6 +67,9 @@ export default function App() {
   const [tags, setTags] = useState([]);
   const [selectedSkillId, setSelectedSkillId] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  // 多选模式：普通点击也会把 selectedIds 设成 1 项，光看 size 分不清「浏览」和「批量操作」。
+  // 只有 Cmd/Shift 点选或 ⌘A 才进入多选模式，批量条据此显示——这样选到只剩 1 项时它也不会消失。
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
   const [lastSelectedIndex, setLastSelectedIndex] = useState(null);
   const [loading, setLoading] = useState(true);
   const [appError, setAppError] = useState('');
@@ -117,6 +120,7 @@ export default function App() {
           return list[0]?.id ?? null;
         });
         setSelectedIds(new Set());
+        setMultiSelectMode(false);
       } else {
         const params = new URLSearchParams({ folder: currentFolder });
         if (currentTag) params.set('tag', currentTag);
@@ -129,6 +133,7 @@ export default function App() {
           return list[0]?.id ?? null;
         });
         setSelectedIds(new Set());
+        setMultiSelectMode(false);
       }
     } catch (error) {
       setSkills([]);
@@ -260,6 +265,7 @@ export default function App() {
       body: JSON.stringify({ target_folder: targetFolder }),
     }).catch(() => null)));
     await refreshAll();
+    setMultiSelectMode(false);
     showToast(`已移动 ${ids.length} 个技能到 ${targetFolder}`, {
       actionLabel: '撤销',
       onAction: () => Promise.all(targets.map((s) => requestJson(`/api/skills/${s.id}/move`, {
@@ -280,6 +286,39 @@ export default function App() {
       onAction: () => Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/restore`, { method: 'POST' }).catch(() => null))).then(() => refreshAll()),
     });
     setSelectedIds(new Set());
+    setMultiSelectMode(false);
+  };
+
+  // 批量收藏：把所选全部置为已收藏（星标 API 是 toggle，所以只对未收藏的发请求）
+  const handleBatchStar = async () => {
+    const targets = [...selectedIds].map((id) => skills.find((s) => s.id === id)).filter(Boolean);
+    const toStar = targets.filter((s) => !s.is_starred);
+    const ids = toStar.length ? toStar.map((s) => s.id) : targets.map((s) => s.id);
+    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/star`, { method: 'POST' }).catch(() => null)));
+    await refreshAll();
+    showToast(toStar.length ? `已收藏 ${ids.length} 个技能` : `已取消收藏 ${ids.length} 个技能`, {
+      actionLabel: '撤销',
+      onAction: () => Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/star`, { method: 'POST' }).catch(() => null))).then(() => refreshAll()),
+    });
+  };
+
+  const handleBatchRestore = async () => {
+    const ids = [...selectedIds];
+    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/restore`, { method: 'POST' }).catch(() => null)));
+    await refreshAll();
+    showToast(`已恢复 ${ids.length} 个技能`);
+    setSelectedIds(new Set());
+    setMultiSelectMode(false);
+  };
+
+  const handleBatchDelete = async () => {
+    const ids = [...selectedIds];
+    if (!window.confirm(`永久删除这 ${ids.length} 个技能？此操作无法撤销。`)) return;
+    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}`, { method: 'DELETE' }).catch(() => null)));
+    await refreshAll();
+    showToast(`已永久删除 ${ids.length} 个技能`);
+    setSelectedIds(new Set());
+    setMultiSelectMode(false);
   };
 
   const handlePermanentDelete = async (skillId) => {
@@ -295,6 +334,21 @@ export default function App() {
     });
     if (created?.id) setSelectedSkillId(Number(created.id));
     return Boolean(created);
+  };
+
+  // 后端早有 POST /api/skills/:id/copy，前端一直没有入口：做变体只能手抄一遍
+  const handleCopySkill = async (skillId) => {
+    const source = skills.find((s) => s.id === skillId) || allSkills.find((s) => s.id === skillId);
+    const created = await runMutation(`/api/skills/${skillId}/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_folder: source?.folder_path }),
+    });
+    if (created?.id) {
+      setSelectedSkillId(Number(created.id));
+      showToast(`已复制「${source?.name ?? '技能'}」为 ${created.slug}`);
+    }
+    return created;
   };
 
   const handleSaveSkill = async (updatedData) => Boolean(await runMutation(`/api/skills/${updatedData.id}`, {
@@ -322,6 +376,7 @@ export default function App() {
       });
       // Cmd 点选也要移动锚点，否则随后的 Shift 会从上一次普通点击起算
       if (currentIdx !== -1) setLastSelectedIndex(currentIdx);
+      setMultiSelectMode(true);
       return;
     }
     if (event && event.shiftKey && lastSelectedIndex != null && currentIdx !== -1) {
@@ -330,12 +385,14 @@ export default function App() {
       // 并入而不是覆盖：Cmd 攒下的选择不该被一次 Shift 清掉
       setSelectedIds((prev) => new Set([...prev, ...range]));
       setLastSelectedIndex(currentIdx);
+      setMultiSelectMode(true);
       return;
     }
     rememberRecent(id);
     setSelectedSkillId(id);
     setSelectedIds(new Set([id]));
     setLastSelectedIndex(currentIdx);
+    setMultiSelectMode(false);
   };
 
   // 跨目录跳转：命令面板现在检索全库，选中的技能可能不在当前结果集里，
@@ -376,11 +433,17 @@ export default function App() {
   };
 
   const focusSearch = () => {
-    setListCollapsed(false);
-    window.requestAnimationFrame(() => {
+    const focusNow = () => {
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
-    });
+    };
+    // 列表已展开时同步聚焦：rAF 在后台标签页里会被挂起，下一个按键就漏进全局快捷键
+    if (!listCollapsed) {
+      focusNow();
+      return;
+    }
+    setListCollapsed(false);
+    window.setTimeout(focusNow, 0);
   };
 
   // Esc 是一层层退出：输入框 → 搜索词 → 多选 → 焦点
@@ -578,6 +641,8 @@ export default function App() {
             skill={selectedSkill}
             onSave={handleSaveSkill}
             onSelectFolder={handleSelectFolder}
+            onCopySkill={handleCopySkill}
+            apiRef={detailApiRef}
           />
         ) : (
           <div className="detail-empty">
@@ -647,6 +712,11 @@ export default function App() {
       <AgentSetupModal
         isOpen={showSetupModal}
         onClose={() => setShowSetupModal(false)}
+      />
+      <ShortcutsModal
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+        shortcuts={shortcuts}
       />
       <ToastContainer />
     </div>

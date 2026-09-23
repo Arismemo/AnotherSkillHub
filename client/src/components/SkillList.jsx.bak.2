@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import FolderPicker from './FolderPicker';
 import {
   ArrowDownAZ,
@@ -195,12 +196,12 @@ export default function SkillList({
             {skills.map((skill) => {
               const isSelected = selectedSkillId === skill.id;
               const isChecked = selectedIds.has(skill.id) && multiCount > 0;
+              // roving tabindex：Tab 一次跨过整个列表，列表内用 ↑↓ / j k 移动
               return (
                 <li
                   key={skill.id}
                   role="option"
                   aria-selected={isSelected}
-                  // roving tabindex：Tab 一次跨过整个列表，列表内用 ↑↓ / j k 移动
                   tabIndex={isSelected ? 0 : -1}
                   ref={isSelected ? selectedRowRef : undefined}
                   className={`skill-row${isSelected ? ' is-selected' : ''}${isChecked ? ' is-checked' : ''}`}

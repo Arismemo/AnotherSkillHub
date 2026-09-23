@@ -635,6 +635,16 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .version-empty, .version-error { color: var(--text-subtle); font-size: var(--fs-sm); text-align: center; padding: 1.2rem 0; }
 .version-error { color: var(--danger-text); }
 
+/* 组合内联重命名 */
+.bundle-rename { display: flex; gap: .4rem; }
+.bundle-rename input { flex: 1; min-width: 0; height: 2rem; padding: 0 .55rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font-size: var(--fs-sm); }
+.bundle-rename button { flex: 0 0 auto; }
+.bundle-rename button:disabled { opacity: .45; cursor: default; }
+
+/* 详情工具栏的溢出菜单锚点（菜单本体复用 .folder-menu） */
+.detail-more { position: relative; }
+.detail-more .folder-menu { right: 0; left: auto; min-width: 10.5rem; }
+
 /* 快捷键速查面板（内容由 App 的快捷键注册表生成） */
 .shortcut-groups { display: grid; gap: 1rem; max-height: 26rem; overflow-y: auto; }
 .shortcut-groups section { display: grid; gap: .3rem; }

@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react';
 import FolderPicker from './FolderPicker';
 import {
   ArrowDownAZ,
@@ -47,7 +46,6 @@ export default function SkillList({
   onSelectSkill,
   searchQuery,
   onSearchChange,
-  searchInputRef,
   currentFolder,
   currentTag,
   sortBy,
@@ -77,12 +75,6 @@ export default function SkillList({
   const nextDensity = densities[(densityIndex + 1) % densities.length];
   const DensityIcon = currentDensity.icon;
 
-  // 键盘移动选中项时把它滚进视口（j/k 走到屏幕外就看不见了）
-  const selectedRowRef = useRef(null);
-  useEffect(() => {
-    selectedRowRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [selectedSkillId]);
-
   const selectFromKeyboard = (event, skillId) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -104,9 +96,8 @@ export default function SkillList({
         <div className="search-field">
           <Search size={14} aria-hidden="true" />
           <input
-            ref={searchInputRef}
             type="search"
-            placeholder="搜索技能（按 / 聚焦）"
+            placeholder="搜索技能"
             value={searchQuery}
             onChange={(event) => onSearchChange(event.target.value)}
             aria-label="搜索技能"
@@ -201,8 +192,7 @@ export default function SkillList({
                   key={skill.id}
                   role="option"
                   aria-selected={isSelected}
-                  tabIndex={isSelected ? 0 : -1}
-                  ref={isSelected ? selectedRowRef : undefined}
+                  tabIndex={0}
                   className={`skill-row${isSelected ? ' is-selected' : ''}${isChecked ? ' is-checked' : ''}`}
                   onClick={(event) => onSelectSkill(skill.id, event)}
                   onKeyDown={(event) => selectFromKeyboard(event, skill.id)}

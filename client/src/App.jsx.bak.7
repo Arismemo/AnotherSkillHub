@@ -67,6 +67,9 @@ export default function App() {
   const [tags, setTags] = useState([]);
   const [selectedSkillId, setSelectedSkillId] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  // 多选模式：普通点击也会把 selectedIds 设成 1 项，光看 size 分不清「浏览」和「批量操作」。
+  // 只有 Cmd/Shift 点选或 ⌘A 才进入多选模式，批量条据此显示——这样选到只剩 1 项时它也不会消失。
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
   const [lastSelectedIndex, setLastSelectedIndex] = useState(null);
   const [loading, setLoading] = useState(true);
   const [appError, setAppError] = useState('');
@@ -117,6 +120,7 @@ export default function App() {
           return list[0]?.id ?? null;
         });
         setSelectedIds(new Set());
+        setMultiSelectMode(false);
       } else {
         const params = new URLSearchParams({ folder: currentFolder });
         if (currentTag) params.set('tag', currentTag);
@@ -129,6 +133,7 @@ export default function App() {
           return list[0]?.id ?? null;
         });
         setSelectedIds(new Set());
+        setMultiSelectMode(false);
       }
     } catch (error) {
       setSkills([]);
@@ -297,6 +302,21 @@ export default function App() {
     return Boolean(created);
   };
 
+  // 后端早有 POST /api/skills/:id/copy，前端一直没有入口：做变体只能手抄一遍
+  const handleCopySkill = async (skillId) => {
+    const source = skills.find((s) => s.id === skillId) || allSkills.find((s) => s.id === skillId);
+    const created = await runMutation(`/api/skills/${skillId}/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_folder: source?.folder_path }),
+    });
+    if (created?.id) {
+      setSelectedSkillId(Number(created.id));
+      showToast(`已复制「${source?.name ?? '技能'}」为 ${created.slug}`);
+    }
+    return created;
+  };
+
   const handleSaveSkill = async (updatedData) => Boolean(await runMutation(`/api/skills/${updatedData.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -322,6 +342,7 @@ export default function App() {
       });
       // Cmd 点选也要移动锚点，否则随后的 Shift 会从上一次普通点击起算
       if (currentIdx !== -1) setLastSelectedIndex(currentIdx);
+      setMultiSelectMode(true);
       return;
     }
     if (event && event.shiftKey && lastSelectedIndex != null && currentIdx !== -1) {
@@ -376,11 +397,17 @@ export default function App() {
   };
 
   const focusSearch = () => {
-    setListCollapsed(false);
-    window.requestAnimationFrame(() => {
+    const focusNow = () => {
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
-    });
+    };
+    // 列表已展开时同步聚焦：rAF 在后台标签页里会被挂起，下一个按键就漏进全局快捷键
+    if (!listCollapsed) {
+      focusNow();
+      return;
+    }
+    setListCollapsed(false);
+    window.setTimeout(focusNow, 0);
   };
 
   // Esc 是一层层退出：输入框 → 搜索词 → 多选 → 焦点
@@ -405,8 +432,9 @@ export default function App() {
   const overlayOpen = showPalette || showShortcuts || showNewModal || showPasteModal
     || showSetupModal || showBundleModal || Boolean(activeBundle) || Boolean(addToBundleTarget);
 
-  // 唯一的快捷键注册表：速查面板（?）由它生成，键位不再散落在各组件的 keydown 里
-  const shortcuts = useMemo(() => [
+  // 唯一的快捷键注册表：速查面板（?）由它生成，键位不再散落在各组件的 keydown 里。
+  // 每次渲染重建（useHotkeys 只把它存进 ref），这样处理函数永远闭包到最新状态。
+  const shortcuts = [
     { id: 'palette', group: '全局', keys: 'mod+k', label: '命令面板（全库检索）', allowInInput: true, alwaysOn: true, run: () => setShowPalette((v) => !v) },
     { id: 'help', group: '全局', keys: '?', label: '快捷键速查', run: () => setShowShortcuts(true) },
     { id: 'search', group: '全局', keys: '/', label: '聚焦搜索框', run: focusSearch },
@@ -428,8 +456,7 @@ export default function App() {
     { id: 'edit', group: '当前技能', keys: 'e', label: '编辑 / 预览切换', run: () => detailApiRef.current?.toggleMode() },
     { id: 'save', group: '当前技能', keys: 'mod+s', label: '保存编辑', allowInInput: true, run: () => detailApiRef.current?.save() },
     { id: 'trash', group: '当前技能', keys: ['Delete', 'Backspace'], label: '移入废纸篓', run: () => selectedSkill && currentFolder !== 'trash' && handleTrashSkill(selectedSkill.id) },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [sortedSkills, selectedSkill, selectedSkillId, selectedIds, searchQuery, currentFolder]);
+  ];
 
   useHotkeys(overlayOpen ? shortcuts.filter((s) => s.alwaysOn) : shortcuts);
 
@@ -538,6 +565,7 @@ export default function App() {
           onSelectSkill={handleSelectSkill}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
+          searchInputRef={searchInputRef}
           currentFolder={currentFolder}
           currentTag={currentTag}
           sortBy={sortBy}
@@ -577,6 +605,8 @@ export default function App() {
             skill={selectedSkill}
             onSave={handleSaveSkill}
             onSelectFolder={handleSelectFolder}
+            onCopySkill={handleCopySkill}
+            apiRef={detailApiRef}
           />
         ) : (
           <div className="detail-empty">
@@ -646,6 +676,11 @@ export default function App() {
       <AgentSetupModal
         isOpen={showSetupModal}
         onClose={() => setShowSetupModal(false)}
+      />
+      <ShortcutsModal
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+        shortcuts={shortcuts}
       />
       <ToastContainer />
     </div>
