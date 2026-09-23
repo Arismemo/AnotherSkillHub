@@ -48,6 +48,18 @@ export default function App() {
   const [selectedSkillId, setSelectedSkillId] = usePersistedState('selected-skill-id', null, (value) => value === null || Number.isInteger(value));
   // ?skill=<slug> 直达定位中：此期间列表加载不得回退选中，避免 URL 目标被持久化状态覆盖
   const urlTargetingRef = useRef(false);
+  // 设备标识：跨浏览器/设备恢复「上次看到哪」的服务端会话键
+  const deviceKeyRef = useRef(null);
+  const getDeviceKey = () => {
+    if (deviceKeyRef.current) return deviceKeyRef.current;
+    let k = window.localStorage.getItem('ash:device-key');
+    if (!k) {
+      k = 'dev-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      window.localStorage.setItem('ash:device-key', k);
+    }
+    deviceKeyRef.current = k;
+    return k;
+  };
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   // 多选模式：普通点击也会把 selectedIds 设成 1 项，光看 size 分不清「浏览」和「批量操作」。
   // 只有 Cmd/Shift 点选或 ⌘A 才进入多选模式，批量条据此显示——这样选到只剩 1 项时它也不会消失。
@@ -147,7 +159,28 @@ export default function App() {
 
   useEffect(() => {
     const targetSlug = new URLSearchParams(window.location.search).get('skill');
-    if (!targetSlug) return;
+    if (!targetSlug) {
+      // 无 URL 指定且本机没有选中记忆 → 尝试服务端会话（跨浏览器首开落到上次位置）
+      const stored = window.localStorage.getItem('ash:selected-skill-id');
+      if (stored === null || stored === 'null') {
+        requestJson(`/api/session/${getDeviceKey()}`)
+          .then((state) => {
+            if (state?.selected_slug) {
+              return requestJson(`/api/skills/${encodeURIComponent(state.selected_slug)}`).then((skill) => {
+                if (skill?.id) {
+                  urlTargetingRef.current = true;
+                  setCurrentFolder(state.folder || skill.folder_path || 'all');
+                  setSelectedSkillId(skill.id);
+                  window.setTimeout(() => { urlTargetingRef.current = false; }, 600);
+                }
+              });
+            }
+            return null;
+          })
+          .catch(() => null);
+      }
+      return undefined;
+    }
 
     let cancelled = false;
     urlTargetingRef.current = true; // URL 定位期间列表不得回退选中
@@ -446,6 +479,50 @@ export default function App() {
   );
 
   const selectedSkill = skills.find((skill) => skill.id === selectedSkillId) || null;
+
+  // ——— 服务端会话同步（跨设备恢复）———
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      requestJson(`/api/session/${getDeviceKey()}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selected_slug: selectedSkill?.slug || null,
+          folder: currentFolder,
+          tag: currentTag,
+        }),
+      }).catch(() => null);
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [selectedSkill?.slug, currentFolder, currentTag]);
+
+  // ——— URL & 标签页标题同步 ———
+  // 选中变化 → pushState ?skill=<slug>（后退键可在笔记间移动）；标题随笔记名
+  useEffect(() => {
+    if (!selectedSkill) { document.title = 'AnotherSkillHub'; return undefined; }
+    document.title = selectedSkill.name;
+    const target = `/?skill=${encodeURIComponent(selectedSkill.slug)}`;
+    if (window.location.search !== target) {
+      window.history.pushState({ skillId: selectedSkill.id }, '', target);
+    }
+    return undefined;
+  }, [selectedSkill?.id, selectedSkill?.slug, selectedSkill?.name]);
+
+  // 后退/前进：URL 的 ?skill= 变化 → 同步选中
+  useEffect(() => {
+    const onPopState = () => {
+      const slug = new URLSearchParams(window.location.search).get('skill');
+      if (!slug) return;
+      urlTargetingRef.current = true;
+      requestJson(`/api/skills/${encodeURIComponent(slug)}`)
+        .then((skill) => {
+          if (skill?.id) { setSelectedSkillId(skill.id); setCurrentFolder(skill.folder_path || 'all'); }
+        })
+        .finally(() => { window.setTimeout(() => { urlTargetingRef.current = false; }, 300); });
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   // ——— 键盘流 ———
   // 列表内上下移动（选中即预览，Linear 式）

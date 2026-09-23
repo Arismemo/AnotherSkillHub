@@ -73,6 +73,14 @@ db.exec(`
 
 
 
+  CREATE TABLE IF NOT EXISTS session_state (
+    device_key TEXT PRIMARY KEY,
+    selected_slug TEXT,
+    folder TEXT DEFAULT 'inbox',
+    tag TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS idx_skills_folder ON skills(folder_path);
   CREATE INDEX IF NOT EXISTS idx_skills_deleted ON skills(is_deleted);
   CREATE INDEX IF NOT EXISTS idx_skills_starred ON skills(is_starred);

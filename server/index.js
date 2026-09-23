@@ -179,6 +179,7 @@ initSeedData();
 
 // 挂载 API
 app.use('/api/skills', skillsRoutes);
+app.use('/api/session', require('./routes/session'));
 app.use('/api/bundles', require('./routes/bundles'));
 app.use('/api/folders', foldersRoutes);
 app.use('/s', agentRoutes);
