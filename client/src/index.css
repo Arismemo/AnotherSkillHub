@@ -308,7 +308,7 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .file-sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: .55rem .45rem 1rem; }
 .detail-scroll { position: relative; flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
 /* 悬浮大纲占 right:1.1rem + 15rem 宽 —— 正文在其下时右侧留出通道，避免文字被盖住 */
-.detail-scroll.has-outline { --outline-channel: 17.2rem; }
+.detail-scroll.has-outline { --outline-channel: 16.4rem; padding-right: var(--outline-channel); }
 /* 软上限：随容器伸缩（82%），下限 44rem、上限 --content-max，不再被 40rem 死锁 */
 .detail-content { width: min(100% - 3rem, max(44rem, 82%)); max-width: var(--content-max); margin: 0 auto; padding: 1.4rem 0 3rem; }
 .detail-toolbar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.25rem; padding: .65rem 1.25rem; border-bottom: 1px solid var(--border-muted); background: var(--bg); }
@@ -338,15 +338,9 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .detail-content.is-wide-file .file-viewer pre { font-size: var(--fs-sm); }
 
 .detail-content > .inline-error { margin-bottom: 1rem; }
-.attachment-strip { margin-bottom: 1.1rem; padding: .65rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface); }
 .attachment-heading { display: flex; align-items: baseline; gap: .4rem; padding: 0 .2rem .5rem; }
 .attachment-heading h3 { margin: 0; font-size: var(--fs-xs); font-weight: 600; }
 .attachment-heading span { color: var(--text-subtle); font-size: var(--fs-2xs); }
-.attachment-list { display: flex; gap: .35rem; overflow-x: auto; padding-bottom: .1rem; }
-.attachment-list button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .34rem; padding: .34rem .5rem; border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--text-muted); font-family: var(--mono); font-size: var(--fs-xs); }
-.attachment-list button:hover { color: var(--text); background: var(--surface-hover); }
-.attachment-list button.is-active { color: var(--text); border-color: var(--border-strong); background: var(--surface-hover); }
-.attachment-list small { color: var(--text-subtle); font-size: var(--fs-2xs); }
 
 /* File tree (attachments as directory tree) */
 .file-tree, .file-tree ul { list-style: none; margin: 0; padding: 0; }
@@ -549,15 +543,7 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .file-filter input { width: 100%; height: 1.75rem; padding: 0 .5rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface-sunken); color: var(--text); font-size: var(--fs-xs); }
 .file-filter-empty { margin: .6rem .4rem; color: var(--text-subtle); font-size: var(--fs-xs); }
 
-/* C2: 编辑分栏 */
-.editor-toolbar { display: flex; align-items: center; justify-content: space-between; }
-.live-preview-toggle { display: inline-flex; align-items: center; gap: .4rem; color: var(--text-muted); font-size: var(--fs-xs); }
-.live-preview-toggle input { accent-color: var(--accent); }
 .editor-hint { color: var(--text-subtle); font-size: var(--fs-2xs); }
-.editor-split { display: grid; gap: .8rem; }
-.skill-editor.with-preview .editor-split { grid-template-columns: 1fr 1fr; }
-.editor-source { display: grid; gap: .38rem; min-width: 0; }
-.editor-preview { min-width: 0; max-height: 40rem; padding: .8rem 1rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface-code); overflow-y: auto; }
 
 /* D3: 空状态行动按钮 */
 .empty-actions { display: flex; gap: .6rem; margin-top: 1rem; }
@@ -622,20 +608,20 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .step-note { margin: .4rem 0 0; color: var(--text-subtle); font-size: var(--fs-xs); }
 .step-note code { color: var(--text-muted); }
 
+/* 注意：这里不要再覆盖 .app-shell 的列宽——clamp 下界已经够窄，
+   多写一条会让窗口从 1301px 缩到 1300px 时两栏反而变宽（反向跳变） */
 @media (max-width: 1300px) {
-  .app-shell { grid-template-columns: 12.5rem 18rem minmax(0, 1fr); }
   .detail-toolbar { align-items: flex-start; flex-direction: column; gap: .55rem; padding: .65rem 1rem; }
   .detail-actions { width: 100%; justify-content: flex-start; }
   .compact-action span { display: none; }
   .compact-action { width: 2rem; padding: 0; }
-  .doc-outline { display: none; }
-  .detail-scroll.has-outline .detail-content { width: min(100% - 2.5rem, 40rem); margin-right: auto; margin-left: auto; }
   .file-sidebar { width: 12rem; }
 }
 
-@media (min-width: 1101px) and (max-width: 1400px) {
+/* 大纲显隐由 JS 的视口阈值（--outline-min-vw）决定，这里只负责在中等视口收窄它 */
+@media (min-width: 1280px) and (max-width: 1439px) {
   .doc-outline { width: 12.5rem; }
-  .detail-scroll.has-outline { --outline-channel: 14.7rem; }
+  .detail-scroll.has-outline { --outline-channel: 13.9rem; }
 }
 
 @media (max-width: 760px) {

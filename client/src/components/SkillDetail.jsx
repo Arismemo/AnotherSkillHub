@@ -22,6 +22,9 @@ import {
 
 marked.setOptions({ breaks: true, gfm: true });
 
+// 悬浮大纲的视口阈值：与 index.css 的 .doc-outline 收窄断点保持一致
+const OUTLINE_MIN_VIEWPORT = '(min-width: 1280px)';
+
 function splitFrontmatter(text) {
   if (!text) return { frontmatter: '', body: '' };
   const trimmed = text.trim();
@@ -251,8 +254,9 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
   });
   const [showVersions, setShowVersions] = useState(false);
   const [outlineHidden, setOutlineHidden] = useState(() => window.localStorage.getItem('ash:outline-hidden') === '1');
-  // 大纲只在滚动区足够宽（≥1000px）时悬浮显示，避免挤占小视口正文
-  const [outlineFits, setOutlineFits] = useState(true);
+  // 大纲按「视口宽度」判定，而不是滚动区宽度：滚动区永远是视口减去左两栏，
+  // 用它做阈值会让大纲在 1684px 以下的视口里永远不出现。
+  const [outlineFits, setOutlineFits] = useState(() => window.matchMedia(OUTLINE_MIN_VIEWPORT).matches);
   // 文件栏在滚动区 <640px 时自动收成细条（点击恢复），正文优先
   const [fileBarCollapsed, setFileBarCollapsed] = useState(false);
   const fileBarManualRef = useRef(false); // 用户手动展开过则不再自动收起
@@ -264,12 +268,18 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
   const resizingRef = useRef(null);
 
   useEffect(() => {
+    const query = window.matchMedia(OUTLINE_MIN_VIEWPORT);
+    const sync = () => setOutlineFits(query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
+
+  useEffect(() => {
     const el = scrollRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(() => {
-      const w = el.getBoundingClientRect().width;
-      setOutlineFits(w >= 1180);
-      if (w < 760 && !fileBarManualRef.current) setFileBarCollapsed(true);
+      if (el.getBoundingClientRect().width < 760 && !fileBarManualRef.current) setFileBarCollapsed(true);
     });
     observer.observe(el);
     return () => observer.disconnect();
