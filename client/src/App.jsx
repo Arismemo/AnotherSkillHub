@@ -42,6 +42,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('updated');
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState('sidebar-collapsed', false);
+  const [listDensity, setListDensity] = usePersistedState('list-density', 'standard');
   const [recentSkillIds, setRecentSkillIds] = usePersistedState('recent-skills', []);
   const userPickedRef = useRef(false); // 只有用户主动点选才计入最近浏览
   const recentIdsRef = useRef([]);
@@ -427,6 +428,8 @@ export default function App() {
           currentTag={currentTag}
           sortBy={sortBy}
           onSortChange={setSortBy}
+          density={listDensity}
+          onDensityChange={setListDensity}
           onToggleStar={handleToggleStar}
           onTrashSkill={handleTrashSkill}
           onAddToBundle={(skillId) => setAddToBundleTarget(skills.find((x) => x.id === skillId))}

@@ -261,22 +261,23 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .list-heading-row > div > span { margin-left: .4rem; color: var(--text-subtle); font-size: var(--fs-2xs); }
 .sort-button { display: inline-flex; align-items: center; gap: .3rem; padding: .28rem .38rem; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-muted); font-size: var(--fs-2xs); }
 .sort-button:hover { color: var(--text); background: var(--surface-hover); }
+.list-heading-actions { display: flex; flex: 0 0 auto; align-items: center; gap: .15rem; }
 .skill-list-scroll { flex: 1; overflow-y: auto; padding: .45rem; }
-.skill-row { position: relative; padding: .42rem .6rem .38rem; border: 1px solid transparent; border-radius: var(--r-md); cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 4.2rem; transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease; }
+.skill-row { position: relative; padding: .32rem .6rem .28rem; border: 1px solid transparent; border-radius: var(--r-md); cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 3.6rem; transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease; }
 .skill-row + .skill-row { margin-top: .06rem; }
 .skill-row:hover { background: var(--row-hover); }
 .skill-row.is-selected { border-color: var(--accent-border); background: var(--accent-muted); }
 .skill-row.is-selected:hover { background: var(--accent-muted); }
 .skill-row-title { display: flex; align-items: start; gap: .5rem; }
 .skill-row-title h3 { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: var(--text); font-size: var(--fs-md); font-weight: 650; letter-spacing: -.008em; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
-.star-button { width: 1.65rem; height: 1.65rem; margin-top: -.18rem; }
+.star-button { width: 1.45rem; height: 1.45rem; margin-top: -.1rem; }
 .star-button.is-starred { color: var(--accent); }
 .star-button.is-starred svg { fill: currentColor; } /* 已收藏实心星 */
 /* 未收藏时隐藏，悬浮/选中/键盘聚焦才出现；已收藏常驻 */
 .skill-row:not(:hover):not(:focus-within) .star-button:not(.is-starred) { opacity: 0; }
 .star-button { transition: opacity var(--dur-fast) ease; }
-.skill-row article > p { display: -webkit-box; margin: .12rem 1.55rem .28rem 0; overflow: hidden; color: var(--text-subtle); font-size: var(--fs-xs); font-weight: 400; line-height: 1.55; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.skill-row article > footer { display: flex; align-items: center; height: 1.6rem; gap: .4rem; color: var(--text-subtle); font-size: var(--fs-2xs); }
+.skill-row article > p { display: -webkit-box; margin: .12rem 1.55rem .2rem 0; overflow: hidden; color: var(--text-subtle); font-size: var(--fs-xs); font-weight: 400; line-height: 1.5; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+.skill-row article > footer { display: flex; align-items: center; height: 1.35rem; gap: .4rem; color: var(--text-subtle); font-size: var(--fs-2xs); }
 /* 卡片元数据：version / 标签 / 来源终端 / 目录——列表接口本来就返回这些字段，0 额外请求。
    窄列放不下时从右侧渐隐裁掉（列宽可拖，拖宽即还原），日期始终贴右不被挤走 */
 .row-meta { display: flex; flex: 1; align-items: center; gap: .3rem; min-width: 0; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 1.1rem), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 1.1rem), transparent); }
@@ -299,6 +300,20 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .list-skeleton > div { display: grid; gap: .5rem; height: 6.5rem; padding: .6rem .6rem .5rem; border-radius: var(--r-md); }
 .list-skeleton i, .content-skeleton i { display: block; height: .55rem; border-radius: var(--r-xs); background: linear-gradient(90deg, var(--border-muted) 25%, var(--surface-hover) 50%, var(--border-muted) 75%); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
 .list-skeleton i:nth-child(1) { width: 60%; height: .8rem; }.list-skeleton i:nth-child(2) { width: 95%; }.list-skeleton i:nth-child(3) { width: 70%; }.list-skeleton i:nth-child(4) { width: 30%; height: .5rem; }
+
+/* 密度三档（.skill-list-panel[data-density]）。基础规则 = 标准档；
+   contain-intrinsic-size 必须跟着档位走，否则 content-visibility 的占位高度算错、滚动条会跳 */
+.skill-list-panel[data-density="comfortable"] .skill-row { padding: .46rem .6rem .42rem; contain-intrinsic-size: auto 5.6rem; }
+/* 舒适档把标题放开到两行——技能名是最需要一眼认出的字段，单行截断反而更贵 */
+.skill-list-panel[data-density="comfortable"] .skill-row-title h3 { display: -webkit-box; overflow: hidden; white-space: normal; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.skill-list-panel[data-density="comfortable"] .skill-row article > p { -webkit-line-clamp: 2; }
+.skill-list-panel[data-density="compact"] .skill-row { padding: .14rem .5rem; contain-intrinsic-size: auto 1.9rem; }
+.skill-list-panel[data-density="compact"] .skill-row article { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .5rem; }
+.skill-list-panel[data-density="compact"] .skill-row article > p, .skill-list-panel[data-density="compact"] .row-meta { display: none; }
+.skill-list-panel[data-density="compact"] .skill-row article > footer { height: auto; }
+.skill-list-panel[data-density="compact"] .star-button { width: 1.2rem; height: 1.2rem; margin-top: 0; }
+.skill-list-panel[data-density="compact"] .row-actions { top: 50%; bottom: auto; transform: translateY(-50%); }
+.skill-list-panel[data-density="compact"] .list-skeleton > div { height: 1.9rem; }
 
 /* Detail */
 .detail-panel { display: flex; flex-direction: column; min-height: 0; flex: 1; }

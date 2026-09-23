@@ -9,6 +9,9 @@ import {
   Package,
   Plus,
   RotateCcw,
+  Rows2,
+  Rows3,
+  Rows4,
   Search,
   Star,
   Trash2,
@@ -22,6 +25,13 @@ const folderLabels = {
   trash: '废纸篓',
   recent: '最近浏览',
 };
+
+// 列表密度三档：舒适（标题两行 + 两行描述）/ 标准（默认，单行描述）/ 紧凑（只留标题 + 日期）
+const densities = [
+  { id: 'comfortable', label: '舒适', icon: Rows2 },
+  { id: 'standard', label: '标准', icon: Rows3 },
+  { id: 'compact', label: '紧凑', icon: Rows4 },
+];
 
 function formatDate(value) {
   if (!value) return '';
@@ -39,6 +49,8 @@ export default function SkillList({
   currentTag,
   sortBy,
   onSortChange,
+  density,
+  onDensityChange,
   onToggleStar,
   onTrashSkill,
   onAddToBundle,
@@ -56,6 +68,10 @@ export default function SkillList({
   const isTrash = currentFolder === 'trash';
   const listTitle = currentTag ? `标签：${currentTag}` : folderLabels[currentFolder] || currentFolder;
   const multiCount = selectedIds.size > 1 ? selectedIds.size : 0;
+  const densityIndex = Math.max(0, densities.findIndex((d) => d.id === density));
+  const currentDensity = densities[densityIndex];
+  const nextDensity = densities[(densityIndex + 1) % densities.length];
+  const DensityIcon = currentDensity.icon;
 
   const selectFromKeyboard = (event, skillId) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -73,7 +89,7 @@ export default function SkillList({
   };
 
   return (
-    <div className="skill-list-panel">
+    <div className="skill-list-panel" data-density={currentDensity.id}>
       <div className="list-toolbar">
         <div className="search-field">
           <Search size={14} aria-hidden="true" />
@@ -90,15 +106,26 @@ export default function SkillList({
             <h2>{listTitle}</h2>
             <span>{skills.length} 个</span>
           </div>
-          <button
-            type="button"
-            className="sort-button"
-            onClick={() => onSortChange(sortBy === 'updated' ? 'name' : 'updated')}
-            aria-label={sortBy === 'updated' ? '当前按更新时间排序，点击切换为名称' : '当前按名称排序，点击切换为更新时间'}
-          >
-            {sortBy === 'updated' ? <Clock3 size={13} /> : <ArrowDownAZ size={13} />}
-            {sortBy === 'updated' ? '最近更新' : '名称'}
-          </button>
+          <div className="list-heading-actions">
+            <button
+              type="button"
+              className="sort-button"
+              onClick={() => onSortChange(sortBy === 'updated' ? 'name' : 'updated')}
+              aria-label={sortBy === 'updated' ? '当前按更新时间排序，点击切换为名称' : '当前按名称排序，点击切换为更新时间'}
+            >
+              {sortBy === 'updated' ? <Clock3 size={13} /> : <ArrowDownAZ size={13} />}
+              {sortBy === 'updated' ? '最近更新' : '名称'}
+            </button>
+            <button
+              type="button"
+              className="sort-button"
+              onClick={() => onDensityChange(nextDensity.id)}
+              title={`列表密度：${currentDensity.label}（点击切换为${nextDensity.label}）`}
+              aria-label={`列表密度：${currentDensity.label}，点击切换为${nextDensity.label}`}
+            >
+              <DensityIcon size={13} />
+            </button>
+          </div>
         </div>
       </div>
 
