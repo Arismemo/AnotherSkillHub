@@ -169,6 +169,7 @@ router.post('/', (req, res) => {
     }
     // 格式化 slug 为合法的 url 字符
     slug = slug.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    if (!slug) return res.status(400).json({ error: '请输入有效的英文标识符' });
     if (!name) name = slug;
 
     // 默认放入 inbox
@@ -179,19 +180,10 @@ router.post('/', (req, res) => {
     version = version || '1.0.0';
 
     // 检查是否存在同名 slug
-    const existing = db.prepare(`SELECT id, folder_path FROM skills WHERE slug = ?`).get(slug);
+    const existing = db.prepare(`SELECT id FROM skills WHERE slug = ?`).get(slug);
 
     if (existing) {
-      // 覆盖更新现有 skill
-      const stmt = db.prepare(`
-        UPDATE skills 
-        SET name = ?, description = ?, tags = ?, content = ?, files = ?, terminal_source = ?, version = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `);
-      stmt.run(name, description || '', JSON.stringify(tags), content, JSON.stringify(files), terminal_source, version, existing.id);
-
-      saveSkillToDisk(existing.folder_path, slug, content, files);
-      return res.json({ message: 'Skill updated', slug, id: existing.id, folder_path: existing.folder_path });
+      return res.status(409).json({ error: `标识符「${slug}」已存在，请更换标识符或编辑已有技能` });
     }
 
     const stmt = db.prepare(`
@@ -210,6 +202,9 @@ router.post('/', (req, res) => {
       folder_path
     });
   } catch (err) {
+    if (err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ error: '标识符已存在，请更换后重试' });
+    }
     res.status(500).json({ error: err.message });
   }
 });
