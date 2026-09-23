@@ -37,9 +37,11 @@ const densities = [
   { id: 'compact', label: '紧凑', icon: Rows4 },
 ];
 
+const dateFormatter = new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric' });
+
 function formatDate(value) {
   if (!value) return '';
-  return new Intl.DateTimeFormat('zh-CN', { month: 'short', day: 'numeric' }).format(new Date(value));
+  return dateFormatter.format(new Date(value));
 }
 
 export default function SkillList({
@@ -89,6 +91,8 @@ export default function SkillList({
   const DensityIcon = currentDensity.icon;
 
   const [contextMenu, setContextMenu] = useState(null);
+  const [hoveredRowId, setHoveredRowId] = useState(null);
+  const [focusedRowId, setFocusedRowId] = useState(null);
 
   // 右键菜单：把 hover 才出现的行内图标变成可发现的入口，并带上对应快捷键提示
   const openContextMenu = (event, skill) => {
@@ -269,6 +273,8 @@ export default function SkillList({
             {skills.map((skill) => {
               const isSelected = selectedSkillId === skill.id;
               const isChecked = selectedIds.has(skill.id) && multiCount > 0;
+              // 行操作区包含 FolderPicker；只给正在操作的行挂载，避免列表长度线性增加 picker 实例。
+              const showActions = isSelected || hoveredRowId === skill.id || focusedRowId === skill.id;
               // roving tabindex：Tab 一次跨过整个列表，列表内用 ↑↓ / j k 移动
               return (
                 <li
@@ -283,6 +289,11 @@ export default function SkillList({
                   onKeyDown={(event) => selectFromKeyboard(event, skill.id)}
                   draggable
                   onDragStart={(event) => dragStart(event, skill)}
+                  onMouseEnter={() => setHoveredRowId(skill.id)}
+                  onFocusCapture={() => setFocusedRowId(skill.id)}
+                  onBlurCapture={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) setFocusedRowId((id) => id === skill.id ? null : id);
+                  }}
                 >
                   <article>
                     <div className="skill-row-title">
@@ -317,7 +328,7 @@ export default function SkillList({
                         <span className="skill-location">{skill.folder_path}</span>
                       </span>
                       <span className="skill-updated">{formatDate(skill.updated_at)}</span>
-                      <span className="row-actions">
+                      {showActions && <span className="row-actions">
                         {!isTrash ? (
                           <>
                             <FolderPicker
@@ -339,7 +350,7 @@ export default function SkillList({
                             <button type="button" className="icon-button danger-button" onClick={(event) => { event.stopPropagation(); onPermanentDelete(skill.id); }} aria-label={`永久删除 ${skill.name}`} title="永久删除"><Trash2 size={14} /></button>
                           </>
                         )}
-                      </span>
+                      </span>}
                     </footer>
                   </article>
                 </li>
