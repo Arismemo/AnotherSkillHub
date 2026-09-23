@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, FileText, Terminal } from 'lucide-react';
 import useResizableWidth from './hooks/useResizableWidth';
 import useHotkeys, { isTypingTarget } from './hooks/useHotkeys';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
-import SkillDetail from './components/SkillDetail';
 import CommandPalette from './components/CommandPalette';
 import ToastContainer from './components/Toast';
 import { showToast } from './components/toastBus';
 import { AgentSetupModal, NewSkillModal, PasteSkillModal, ShortcutsModal } from './components/Modals';
 import { BundleDetail, NewBundleModal, AddToBundleModal } from './components/Bundles';
+
+const SkillDetail = lazy(() => import('./components/SkillDetail'));
 
 async function requestJson(url, options) {
   const response = await fetch(url, options);
@@ -704,22 +705,24 @@ export default function App() {
       </section>
 
       <main id="skill-detail" className="app-detail" tabIndex="-1">
-        {appError && selectedSkill && (
+        {appError && (
           <div className="app-error" role="alert">
             <span>{appError}</span>
             <button type="button" onClick={refreshAll}>重试</button>
           </div>
         )}
         {selectedSkill ? (
-          <SkillDetail
-            key={selectedSkill.id}
-            skill={selectedSkill}
-            onSave={handleSaveSkill}
-            onSelectFolder={handleSelectFolder}
-            onSelectTag={handleSelectTag}
-            onCopySkill={handleCopySkill}
-            apiRef={detailApiRef}
-          />
+          <Suspense fallback={<div className="detail-empty" role="status">正在载入技能详情…</div>}>
+            <SkillDetail
+              key={selectedSkill.id}
+              skill={selectedSkill}
+              onSave={handleSaveSkill}
+              onSelectFolder={handleSelectFolder}
+              onSelectTag={handleSelectTag}
+              onCopySkill={handleCopySkill}
+              apiRef={detailApiRef}
+            />
+          </Suspense>
         ) : (
           <div className="detail-empty">
             <div className="empty-card">

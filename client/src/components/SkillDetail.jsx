@@ -1,6 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
-import hljs from 'highlight.js/lib/common';
+import hljs from 'highlight.js/lib/core';
+import bash from 'highlight.js/lib/languages/bash';
+import c from 'highlight.js/lib/languages/c';
+import cpp from 'highlight.js/lib/languages/cpp';
+import css from 'highlight.js/lib/languages/css';
+import diff from 'highlight.js/lib/languages/diff';
+import go from 'highlight.js/lib/languages/go';
+import ini from 'highlight.js/lib/languages/ini';
+import java from 'highlight.js/lib/languages/java';
+import javascript from 'highlight.js/lib/languages/javascript';
+import json from 'highlight.js/lib/languages/json';
+import markdown from 'highlight.js/lib/languages/markdown';
+import python from 'highlight.js/lib/languages/python';
+import rust from 'highlight.js/lib/languages/rust';
+import scss from 'highlight.js/lib/languages/scss';
+import sql from 'highlight.js/lib/languages/sql';
+import typescript from 'highlight.js/lib/languages/typescript';
+import xml from 'highlight.js/lib/languages/xml';
+import yaml from 'highlight.js/lib/languages/yaml';
 import { VersionHistoryModal } from './Modals';
 import { showToast } from './toastBus';
 import useResizableWidth from '../hooks/useResizableWidth';
@@ -24,6 +42,10 @@ import {
 } from 'lucide-react';
 
 marked.setOptions({ breaks: true, gfm: true });
+
+// 只注册文件查看器与代码块实际支持的语言。未知语言会安全地显示为纯文本。
+Object.entries({ bash, c, cpp, css, diff, go, ini, java, javascript, json, markdown, python, rust, scss, sql, typescript, xml, yaml })
+  .forEach(([name, grammar]) => hljs.registerLanguage(name, grammar));
 
 // 悬浮大纲的视口阈值：与 index.css 的 .doc-outline 收窄断点保持一致
 const OUTLINE_MIN_VIEWPORT = '(min-width: 1280px)';
