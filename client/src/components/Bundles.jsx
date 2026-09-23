@@ -149,7 +149,8 @@ export function NewBundleModal({ isOpen, onClose, onCreated }) {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   if (!isOpen) return null;
-  const submit = async () => {
+  const submit = async (event) => {
+    event?.preventDefault();
     if (!name.trim()) { setError('请输入组合名称'); return; }
     const r = await fetch('/api/bundles', {
       method: 'POST',
@@ -162,13 +163,14 @@ export function NewBundleModal({ isOpen, onClose, onCreated }) {
   };
   return (
     <DialogShell title="新建技能组合" description="组合内放技能的快捷方式；之后可在组合详情里添加技能、复制一键安装指令。" onClose={onClose} size="small">
-      <div className="bundle-new">
+      {/* 原来不是 form：输完名字按 Enter 无反应，必须回鼠标点「创建」 */}
+      <form className="bundle-new" onSubmit={submit}>
         <label>组合名称<input value={name} onChange={(e) => setName(e.target.value)} placeholder="如：感知台架工具箱" /></label>
         {error && <div className="inline-error" role="alert">{error}</div>}
         <div className="dialog-footer">
-          <button type="button" className="primary-button" onClick={submit}>创建</button>
+          <button type="submit" className="primary-button">创建</button>
         </div>
-      </div>
+      </form>
     </DialogShell>
   );
 }

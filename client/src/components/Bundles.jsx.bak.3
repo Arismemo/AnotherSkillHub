@@ -10,15 +10,12 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
   const [adding, setAdding] = useState(false);
   const [allSkills, setAllSkills] = useState([]);
   const [copied, setCopied] = useState(false);
-  const [nameDraft, setNameDraft] = useState(bundle?.name || '');
 
   const load = async () => {
     try {
       const r = await fetch(`/api/bundles/${bundle.id}`);
       if (!r.ok) throw new Error('加载失败');
-      const data = await r.json();
-      setDetail(data);
-      setNameDraft(data.name || '');
+      setDetail(await r.json());
     } catch (e) { setError(e.message); }
   };
 

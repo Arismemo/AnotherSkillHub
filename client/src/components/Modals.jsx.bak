@@ -30,6 +30,15 @@ export function DialogShell({ title, description, onClose, children, size = 'med
 
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') onClose();
+      // ⌘/Ctrl+Enter 提交：粘贴导入的动线是「⌘V → 提交」，不该为最后一步回到鼠标
+      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        const form = panelRef.current?.querySelector('form');
+        if (form) {
+          event.preventDefault();
+          form.requestSubmit();
+        }
+        return;
+      }
       if (event.key !== 'Tab' || !panelRef.current) return;
       const focusable = [...panelRef.current.querySelectorAll('input, textarea, select, button, a[href]')]
         .filter((element) => !element.disabled && element.offsetParent !== null);
@@ -67,10 +76,52 @@ export function DialogShell({ title, description, onClose, children, size = 'med
   );
 }
 
-export function NewSkillModal({ isOpen, onClose, onCreate, folders }) {
+// ? 速查面板：直接由 App 的快捷键注册表生成，说明与实现不会脱节
+export function ShortcutsModal({ isOpen, onClose, shortcuts }) {
+  if (!isOpen) return null;
+  const groups = [];
+  shortcuts.forEach((item) => {
+    if (!item.label) return;
+    let group = groups.find((g) => g.name === item.group);
+    if (!group) {
+      group = { name: item.group || '其他', items: [] };
+      groups.push(group);
+    }
+    group.items.push(item);
+  });
+  return (
+    <DialogShell title="键盘快捷键" description="单键快捷键在输入框内不触发；⌘S / Esc 例外。" onClose={onClose} size="medium">
+      <div className="shortcut-groups">
+        {groups.map((group) => (
+          <section key={group.name}>
+            <h3>{group.name}</h3>
+            <dl>
+              {group.items.map((item) => (
+                <div key={item.id}>
+                  <dt>{item.label}</dt>
+                  <dd>
+                    {(Array.isArray(item.keys) ? item.keys : [item.keys]).map((spec, index) => (
+                      <span key={spec}>
+                        {index > 0 && <i className="shortcut-or">或</i>}
+                        <kbd>{formatKeys(spec)}</kbd>
+                      </span>
+                    ))}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
+      </div>
+    </DialogShell>
+  );
+}
+
+export function NewSkillModal({ isOpen, onClose, onCreate, folders, defaultFolder = 'inbox' }) {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
-  const [folderPath, setFolderPath] = useState('inbox');
+  // 在 tools/playwright 里点「新建」却默认落 inbox，之后还得再移动一次
+  const [folderPath, setFolderPath] = useState(defaultFolder);
   const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState([]);
   const [content, setContent] = useState(defaultContent);

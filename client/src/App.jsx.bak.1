@@ -277,8 +277,8 @@ export default function App() {
     setSelectedIds(new Set());
   };
 
-  const handleBatchTrash = async () => {
-    const ids = [...selectedIds];
+  const handleBatchTrash = async (explicitIds) => {
+    const ids = explicitIds && explicitIds.length ? explicitIds : [...selectedIds];
     await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/trash`, { method: 'POST' }).catch(() => null)));
     await refreshAll();
     showToast(`已将 ${ids.length} 个技能移入废纸篓`, {
@@ -467,6 +467,9 @@ export default function App() {
     if (searchQuery) setSearchQuery('');
   };
 
+  // 新建/导入默认落在当前目录；系统视图不是真目录，退回 inbox
+  const defaultTargetFolder = ['all', 'starred', 'trash', 'recent'].includes(currentFolder) ? 'inbox' : currentFolder;
+
   const overlayOpen = showPalette || showShortcuts || showNewModal || showPasteModal
     || showSetupModal || showBundleModal || Boolean(activeBundle) || Boolean(addToBundleTarget);
 
@@ -498,22 +501,40 @@ export default function App() {
 
   useHotkeys(overlayOpen ? shortcuts.filter((s) => s.alwaysOn) : shortcuts);
 
-  // C3: 拖拽技能到目录
-  const handleDropOnFolder = (event, folderPath) => {
-    event.preventDefault();
-    const rawId = event.dataTransfer.getData('text/skill-id');
-    if (rawId) {
-      handleMoveSkill(Number(rawId), folderPath);
-      return;
-    }
-    const rawIds = event.dataTransfer.getData('text/skill-ids');
-    if (rawIds) {
-      JSON.parse(rawIds).forEach((id) => runMutation(`/api/skills/${id}/move`, {
+  const handleAddSkillsToBundle = async (bundleId, ids) => {
+    for (const id of ids) {
+      // 顺序发送：后端是 INSERT OR IGNORE，并发没有收益
+      await requestJson(`/api/bundles/${bundleId}/skills`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_folder: folderPath }),
-      }));
+        body: JSON.stringify({ skill_id: id }),
+      }).catch(() => null);
     }
+    await fetchFoldersAndStats();
+    showToast(`已加入组合（${ids.length} 个技能）`);
+  };
+
+  // C3: 拖拽技能到目录——目标扩展到收藏 / 废纸篓 / 组合，都是零学习成本的直觉操作
+  const handleDropOnFolder = (event, target) => {
+    event.preventDefault();
+    let ids = [];
+    const rawIds = event.dataTransfer.getData('text/skill-ids');
+    if (rawIds) {
+      try { ids = JSON.parse(rawIds); } catch { ids = []; }
+    }
+    if (!ids.length) {
+      const rawId = event.dataTransfer.getData('text/skill-id');
+      if (rawId) ids = [Number(rawId)];
+    }
+    if (!ids.length) return;
+    if (target === 'starred') { handleBatchStar(ids); return; }
+    if (target === 'trash') { handleBatchTrash(ids); return; }
+    if (typeof target === 'string' && target.startsWith('bundle:')) {
+      handleAddSkillsToBundle(Number(target.slice('bundle:'.length)), ids);
+      return;
+    }
+    if (ids.length === 1) { handleMoveSkill(ids[0], target); return; }
+    handleBatchMove(target, ids);
   };
 
   return (
@@ -686,18 +707,25 @@ export default function App() {
         onToggleSort={() => setSortBy((v) => (v === 'updated' ? 'name' : 'updated'))}
       />
 
-      <NewSkillModal
-        isOpen={showNewModal}
-        folders={folders}
-        onClose={() => setShowNewModal(false)}
-        onCreate={handleCreateSkill}
-      />
-      <PasteSkillModal
-        isOpen={showPasteModal}
-        folders={folders}
-        onClose={() => setShowPasteModal(false)}
-        onImport={handleCreateSkill}
-      />
+      {/* 条件渲染：关闭时整体卸载，下次打开的默认目录才会重新取当前目录 */}
+      {showNewModal && (
+        <NewSkillModal
+          isOpen
+          folders={folders}
+          defaultFolder={defaultTargetFolder}
+          onClose={() => setShowNewModal(false)}
+          onCreate={handleCreateSkill}
+        />
+      )}
+      {showPasteModal && (
+        <PasteSkillModal
+          isOpen
+          folders={folders}
+          defaultFolder={defaultTargetFolder}
+          onClose={() => setShowPasteModal(false)}
+          onImport={handleCreateSkill}
+        />
+      )}
       <BundleDetail
         bundle={activeBundle}
         onClose={() => setActiveBundle(null)}
