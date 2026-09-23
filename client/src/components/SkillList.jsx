@@ -5,6 +5,7 @@ import {
   Clock3,
   FolderInput,
   Download,
+  Inbox,
   Package,
   Plus,
   RotateCcw,
@@ -126,17 +127,19 @@ export default function SkillList({
         {loading ? (
           <div className="list-skeleton" role="status" aria-label="正在载入技能列表">
             {[0, 1, 2].map((i) => (
-              <div key={i}><i /><i /><i /></div>
+              <div key={i}><i /><i /><i /><i /></div>
             ))}
           </div>
         ) : error && skills.length === 0 ? (
           <div className="list-state" role="alert">
+            <div className="empty-icon" aria-hidden="true"><RotateCcw size={20} /></div>
             <strong>载入失败</strong>
             <span>{error}</span>
             <button type="button" onClick={onRetry}>重试</button>
           </div>
         ) : skills.length === 0 ? (
           <div className="list-state">
+            <div className="empty-icon" aria-hidden="true">{searchQuery ? <Search size={20} /> : isTrash ? <Trash2 size={20} /> : <Inbox size={20} />}</div>
             <strong>{searchQuery ? '没有匹配的技能' : isTrash ? '废纸篓为空' : '这里还没有技能'}</strong>
             <span>{searchQuery ? '尝试缩短关键词或清除筛选。' : isTrash ? '移入废纸篓的技能会显示在这里。' : '创建技能后即可开始整理。'}</span>
             {!isTrash && !searchQuery && <button type="button" onClick={onNewSkill}><Plus size={14} />新建技能</button>}

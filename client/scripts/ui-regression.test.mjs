@@ -47,7 +47,7 @@ test('dialog hooks are unconditional and dialogs support focus, Escape, and acce
 test('three-pane shell and readable Markdown styles remain present', async () => {
   const css = await source('src/index.css');
   assert.match(css, /grid-template-columns:\s*clamp\(11\.5rem, 14vw, 13\.5rem\)\s*clamp\(15\.5rem, 19vw, 18rem\)\s*minmax\(0, 1fr\)/);
-  assert.match(css, /\.markdown-document\s*\{[^}]*line-height:\s*1\.8/s);
+  assert.match(css, /\.markdown-document\s*\{[^}]*line-height:\s*1\.7/s);
   assert.match(css, /\.detail-content\s*\{[^}]*min\(100% - 2\.5rem,\s*40rem\)/s);
   assert.ok(css.includes(':focus-visible'));
 });

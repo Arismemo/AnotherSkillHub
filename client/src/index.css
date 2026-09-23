@@ -180,7 +180,9 @@ body.is-resizing .detail-scroll { pointer-events: none; }
   font-size: var(--fs-sm);
 }
 .app-error button, .list-state button { border: 0; background: none; color: var(--accent); font-weight: 600; }
-.detail-empty { display: grid; place-content: center; height: 100%; text-align: center; color: var(--text-muted); }
+.detail-empty { display: grid; place-content: center; justify-items: center; height: 100%; text-align: center; color: var(--text-muted); }
+/* 空状态图形：圆形浅底 + 淡色 lucide 图标 */
+.empty-icon { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; margin-bottom: .8rem; border-radius: 999px; background: var(--surface-raised); color: var(--text-subtle); opacity: .75; }
 .detail-empty p { margin: 0 0 .35rem; color: var(--text); font-size: var(--fs-md); font-weight: 600; }
 .detail-empty span { font-size: var(--fs-sm); }
 
@@ -204,7 +206,7 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 
 /* Sidebar */
 .sidebar-content { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.brand-mark { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; flex: 0 0 auto; border-radius: var(--r-sm); background: var(--text); color: var(--bg); }
+.brand-mark { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; flex: 0 0 auto; border-radius: var(--r-sm); background: var(--accent); color: var(--accent-fg); }
 .sidebar-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; padding: .65rem .75rem; border-bottom: 1px solid var(--border-muted); }
 .sidebar-actions button { display: inline-flex; align-items: center; justify-content: center; gap: .32rem; min-height: 2rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); font-weight: 500; transition: var(--dur) ease; }
 .sidebar-actions button:first-child { color: var(--text); background: var(--surface-raised); border-color: var(--border); }
@@ -236,7 +238,7 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .folder-more { width: 1.7rem; height: 1.7rem; opacity: 0; }
 .folder-row:hover .folder-more, .folder-more:focus-visible, .folder-more[aria-expanded="true"] { opacity: 1; }
 .folder-menu-wrap { position: relative; }
-.folder-menu { position: absolute; top: 1.7rem; right: 0; z-index: 20; width: 8rem; padding: .28rem; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); }
+.folder-menu { position: absolute; top: 1.7rem; right: 0; z-index: 20; width: 8rem; padding: .28rem; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); transform-origin: top right; animation: pop-in var(--dur-fast) ease-out; }
 .folder-menu button { display: block; width: 100%; padding: .45rem .55rem; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text); font-size: var(--fs-xs); text-align: left; }
 .folder-menu button:hover { background: var(--surface-hover); }
 .folder-menu .danger-item { color: var(--danger-text); }
@@ -258,7 +260,8 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .skill-row { position: relative; padding: .42rem .6rem .38rem; border: 1px solid transparent; border-radius: var(--r-md); cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 4.2rem; transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease; }
 .skill-row + .skill-row { margin-top: .06rem; }
 .skill-row:hover { background: var(--row-hover); }
-.skill-row.is-selected { border-color: var(--border-strong); background: var(--row-selected); }
+.skill-row.is-selected { border-color: var(--accent-border); background: var(--accent-muted); }
+.skill-row.is-selected:hover { background: var(--accent-muted); }
 .skill-row-title { display: flex; align-items: start; gap: .5rem; }
 .skill-row-title h3 { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: var(--text); font-size: var(--fs-md); font-weight: 650; letter-spacing: -.008em; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .star-button { width: 1.65rem; height: 1.65rem; margin-top: -.18rem; }
@@ -279,10 +282,11 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .list-state strong { color: var(--text); font-size: var(--fs-sm); }
 .list-state span { max-width: 14rem; margin-top: .35rem; color: var(--text-subtle); font-size: var(--fs-xs); line-height: 1.55; }
 .list-state button { display: inline-flex; align-items: center; gap: .3rem; margin-top: .7rem; font-size: var(--fs-xs); }
-.list-skeleton { display: grid; gap: .35rem; padding: .2rem; }
-.list-skeleton > div { display: grid; gap: .55rem; padding: .85rem .75rem; border-radius: var(--r-md); background: rgba(255, 255, 255, .015); }
-.list-skeleton i, .content-skeleton i { display: block; height: .55rem; border-radius: var(--r-xs); background: var(--border-muted); animation: pulse 1.5s ease-in-out infinite; }
-.list-skeleton i:nth-child(1) { width: 62%; }.list-skeleton i:nth-child(2) { width: 92%; }.list-skeleton i:nth-child(3) { width: 36%; }
+/* 骨架屏与 .skill-row 同结构（标题 / 两行描述 / footer），避免切换时跳动 */
+.list-skeleton { display: grid; gap: .06rem; }
+.list-skeleton > div { display: grid; gap: .5rem; height: 6.5rem; padding: .6rem .6rem .5rem; border-radius: var(--r-md); }
+.list-skeleton i, .content-skeleton i { display: block; height: .55rem; border-radius: var(--r-xs); background: linear-gradient(90deg, var(--border-muted) 25%, var(--surface-hover) 50%, var(--border-muted) 75%); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
+.list-skeleton i:nth-child(1) { width: 60%; height: .8rem; }.list-skeleton i:nth-child(2) { width: 95%; }.list-skeleton i:nth-child(3) { width: 70%; }.list-skeleton i:nth-child(4) { width: 30%; height: .5rem; }
 
 /* Detail */
 .detail-panel { display: flex; flex-direction: column; min-height: 0; flex: 1; }
@@ -302,7 +306,9 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .detail-scroll.has-outline { --outline-channel: 17.2rem; }
 .detail-content { width: min(100% - 2.5rem, 40rem); margin: 0 auto; padding: 1.4rem 0 3rem; }
 .detail-scroll.has-outline .detail-content { width: min(100% - 2.5rem, 40rem); margin-right: auto; margin-left: auto; }
-.detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.25rem; padding: .65rem 1.25rem; border-bottom: 1px solid var(--border-muted); background: var(--bg); }
+.detail-toolbar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.25rem; padding: .65rem 1.25rem; border-bottom: 1px solid var(--border-muted); background: var(--bg); }
+/* 唯一的「签名」元素：toolbar 底部一道由强调色渐出的细线 */
+.detail-toolbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: linear-gradient(90deg, var(--accent), transparent 55%); pointer-events: none; }
 .detail-identity { min-width: 10rem; flex: 1 1 16rem; }
 .breadcrumb { display: flex; align-items: center; gap: .35rem; overflow: hidden; color: var(--text-subtle); font-size: var(--fs-xs); white-space: nowrap; text-overflow: ellipsis; }
 .breadcrumb .crumb-current { color: var(--text-muted); font-family: var(--mono); }
@@ -350,7 +356,7 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .file-tree-leaf-spacer { flex: 0 0 auto; width: .95rem; }
 
 /* Floating document outline */
-.doc-outline { position: fixed; top: 5.4rem; right: 1.1rem; z-index: 30; width: 15rem; max-height: min(60vh, 30rem); display: flex; flex-direction: column; padding: .6rem .5rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); backdrop-filter: blur(4px); overflow: hidden; }
+.doc-outline { position: fixed; top: 5.4rem; right: 1.1rem; z-index: 30; width: 15rem; max-height: min(60vh, 30rem); display: flex; flex-direction: column; padding: .6rem .5rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); overflow: hidden; transform-origin: top right; animation: pop-in var(--dur-fast) ease-out; }
 .doc-outline-header { display: flex; align-items: baseline; justify-content: space-between; padding: .15rem .45rem .45rem; border-bottom: 1px solid var(--border-muted); }
 .doc-outline-header span { color: var(--text-subtle); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .doc-outline-toggle { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-subtle); }
@@ -361,17 +367,18 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .doc-outline li { margin: 0; }
 .doc-outline li button { display: block; width: 100%; padding: .3rem .45rem; padding-left: calc(.45rem + var(--outline-level, 0) * .7rem); border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.45; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .doc-outline li button:hover { color: var(--text); background: var(--surface-hover); }
-.skill-summary { margin-bottom: 1.1rem; padding: .85rem 1rem; border-left: 2px solid var(--border-strong); background: var(--surface-raised); }
+/* 元信息卡：描述 + 标签 + 折叠属性表同框，左侧强调色边 */
+.skill-summary { margin-bottom: 1.25rem; padding: .85rem 1rem; border: 1px solid var(--border-muted); border-left: 3px solid var(--accent); border-radius: var(--r-md); background: var(--surface); }
 .skill-summary p { margin: 0; color: var(--text-body); font-size: var(--fs-sm); line-height: 1.65; text-wrap: pretty; }
 .skill-summary div { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: .58rem; }
 .skill-summary span::before { content: '#'; color: var(--text-subtle); }
-.markdown-document { color: var(--text-body); font-size: var(--fs-md); line-height: 1.8; }
+.markdown-document { color: var(--text-body); font-size: var(--fs-md); line-height: 1.7; }
 .markdown-document > div { max-width: 100%; }
 .markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4 { color: var(--text); font-weight: 650; line-height: 1.35; letter-spacing: -.018em; text-wrap: balance; }
-.markdown-document h1 { margin: .3rem 0 1.15rem; padding-bottom: .55rem; border-bottom: 1px solid var(--border-muted); font-size: var(--fs-2xl); }
-.markdown-document h2 { margin: 2rem 0 .75rem; padding-bottom: .35rem; border-bottom: 1px solid var(--border-muted); font-size: var(--fs-xl); }
-.markdown-document h3 { margin: 1.55rem 0 .55rem; font-size: var(--fs-lg); }
-.markdown-document p, .markdown-document ul, .markdown-document ol, .markdown-document blockquote { margin: .72rem 0; }
+.markdown-document h1 { margin: .3rem 0 1.5rem; font-size: var(--fs-2xl); }
+.markdown-document h2 { margin: 2rem 0 .75rem; padding-bottom: .3rem; border-bottom: 1px solid var(--border-muted); font-size: var(--fs-xl); }
+.markdown-document h3 { margin: 1.55rem 0 .55rem; font-size: var(--fs-lg); font-weight: 600; letter-spacing: 0; }
+.markdown-document p, .markdown-document ul, .markdown-document ol, .markdown-document blockquote { margin: .9rem 0; }
 .markdown-document ul, .markdown-document ol { padding-left: 1.45rem; }
 /* Tailwind preflight 清掉了 list-style，这里恢复；任务列表（checkbox）不出圆点 */
 .markdown-document ul { list-style: disc; }
@@ -391,8 +398,12 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .markdown-document table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: var(--fs-sm); }
 .markdown-document th, .markdown-document td { padding: .45rem .65rem; border: 1px solid var(--border); }
 .markdown-document th { background: var(--surface-raised); color: var(--text); text-align: left; }
-.frontmatter { margin-bottom: 1.25rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-raised); color: var(--text-muted); font-size: var(--fs-xs); }
-.frontmatter summary { padding: .55rem .75rem; cursor: pointer; }
+.frontmatter { margin: .75rem -1rem -.85rem; border-top: 1px solid var(--border-muted); color: var(--text-muted); font-size: var(--fs-xs); }
+.frontmatter summary { display: flex; align-items: center; gap: .35rem; padding: .5rem 1rem; list-style: none; cursor: pointer; user-select: none; }
+.frontmatter summary::-webkit-details-marker { display: none; }
+.frontmatter summary::before { content: ""; width: .8rem; height: .8rem; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E") center / contain no-repeat; transition: transform var(--dur-fast) ease; }
+.frontmatter[open] summary::before { transform: rotate(90deg); }
+.frontmatter summary:hover { color: var(--text); }
 .frontmatter pre { margin: 0 .7rem .7rem; padding: .7rem; border-radius: var(--r-sm); background: var(--surface-code); line-height: 1.55; }
 .file-viewer { border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
 .file-viewer > header { display: flex; align-items: center; justify-content: space-between; padding: .65rem .8rem; border-bottom: 1px solid var(--border); background: var(--surface); }
@@ -420,8 +431,8 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .skill-editor input:focus, .skill-editor textarea:focus, .dialog-panel input:focus, .dialog-panel textarea:focus, .file-filter input:focus, .version-label-input:focus { border-color: var(--focus); outline: none; box-shadow: 0 0 0 3px var(--accent-muted); }
 
 /* Dialogs */
-.dialog-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 1.25rem; background: var(--backdrop); backdrop-filter: blur(3px); }
-.dialog-panel { display: flex; flex-direction: column; max-height: min(90dvh, 48rem); border: 1px solid var(--border-strong); border-radius: var(--r-lg); background: var(--surface-raised); box-shadow: var(--shadow-modal); overflow: hidden; }
+.dialog-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 1.25rem; background: var(--backdrop); backdrop-filter: blur(3px); animation: fade-in var(--dur) ease-out; }
+.dialog-panel { display: flex; flex-direction: column; max-height: min(90dvh, 48rem); border: 1px solid var(--border-strong); border-radius: var(--r-lg); background: var(--surface-raised); box-shadow: var(--shadow-modal); overflow: hidden; animation: modal-in var(--dur) var(--ease-out); }
 .dialog-small { width: min(100%, 25rem); }.dialog-medium { width: min(100%, 36rem); }.dialog-large { width: min(100%, 46rem); }
 .dialog-header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; padding: .95rem 1rem; border-bottom: 1px solid var(--border); }
 .dialog-header h2 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
@@ -445,10 +456,14 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .setup-content pre { margin: 0; padding: .75rem; overflow-x: auto; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-code); color: var(--text-body); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.6; white-space: pre-wrap; }
 
 @keyframes pulse { 0%, 100% { opacity: .48; } 50% { opacity: 1; } }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes pop-in { from { opacity: 0; transform: scale(.98) translateY(-4px); } }
+@keyframes modal-in { from { opacity: 0; transform: scale(.97); } }
 
 /* A1: 命令面板 */
-.palette-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: start center; padding-top: 12vh; background: var(--backdrop); backdrop-filter: blur(2px); }
-.palette-panel { display: flex; flex-direction: column; width: min(92vw, 34rem); max-height: 70vh; border: 1px solid var(--border-strong); border-radius: var(--r-lg); background: var(--surface-raised); box-shadow: var(--shadow-modal); overflow: hidden; }
+.palette-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: start center; padding-top: 12vh; background: var(--backdrop); backdrop-filter: blur(2px); animation: fade-in var(--dur) ease-out; }
+.palette-panel { display: flex; flex-direction: column; width: min(92vw, 34rem); max-height: 70vh; border: 1px solid var(--border-strong); border-radius: var(--r-lg); background: var(--surface-raised); box-shadow: var(--shadow-modal); overflow: hidden; animation: modal-in var(--dur) var(--ease-out); }
 .palette-input-row { display: flex; align-items: center; gap: .6rem; padding: .8rem .9rem; border-bottom: 1px solid var(--border); }
 .palette-icon { display: inline-flex; color: var(--text-subtle); }
 .palette-input-row input { flex: 1; border: 0; background: transparent; color: var(--text); font-size: var(--fs-md); outline: none; }
@@ -472,7 +487,7 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 
 /* C1: Toast */
 .toast-stack { position: fixed; right: 1.2rem; bottom: 1.2rem; z-index: 70; display: flex; flex-direction: column; gap: .5rem; }
-.toast-item { display: flex; align-items: center; gap: .8rem; max-width: 24rem; padding: .7rem .9rem; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); color: var(--text); font-size: var(--fs-sm); animation: toast-in .18s ease; }
+.toast-item { display: flex; align-items: center; gap: .8rem; max-width: 24rem; padding: .7rem .9rem; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); color: var(--text); font-size: var(--fs-sm); animation: toast-in var(--dur) var(--ease-out); }
 .toast-item > span { flex: 1; }
 .toast-item button { border: 0; background: none; color: var(--accent); font-weight: 600; font-size: var(--fs-xs); }
 .toast-close { display: inline-flex; padding: .15rem; border-radius: var(--r-xs); color: var(--text-subtle) !important; }
@@ -514,7 +529,7 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .doc-outline li.is-active > button { color: var(--text); font-weight: 600; border-left: 2px solid var(--accent); background: var(--accent-muted); }
 
 /* B5: frontmatter 属性表格 */
-.frontmatter-table table { display: table; width: auto; max-width: 100%; margin: .3rem .7rem .7rem; border-collapse: collapse; font-size: var(--fs-xs); }
+.frontmatter-table table { display: table; width: auto; max-width: 100%; margin: 0 1rem .85rem; border-collapse: collapse; font-size: var(--fs-xs); }
 .frontmatter-table th { width: auto; padding: .3rem .55rem; border: 1px solid var(--border-muted); color: var(--text-subtle); font-weight: 500; text-align: left; white-space: nowrap; }
 .frontmatter-table td { padding: .3rem .55rem; border: 1px solid var(--border-muted); color: var(--text); word-break: break-all; }
 
@@ -579,7 +594,7 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 .folder-picker-trigger:hover { color: var(--text); border-color: var(--border-strong); background: var(--surface-hover); }
 .folder-picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 浮层默认右对齐锚定触发器；窄容器（sidebar/iconOnly）改向右展开，并 clamp 不出视口 */
-.folder-picker-popover { position: absolute; top: calc(100% + .3rem); right: 0; z-index: 300; width: 16rem; max-width: calc(100vw - 1rem); border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); overflow: hidden; }
+.folder-picker-popover { position: absolute; top: calc(100% + .3rem); right: 0; z-index: 300; width: 16rem; max-width: calc(100vw - 1rem); border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); overflow: hidden; transform-origin: top left; animation: pop-in var(--dur-fast) ease-out; }
 .folder-picker-search { display: flex; align-items: center; gap: .4rem; padding: .5rem .6rem; border-bottom: 1px solid var(--border-muted); color: var(--text-subtle); }
 .folder-picker-search input { flex: 1; border: 0; background: transparent; color: var(--text); font-size: var(--fs-xs); outline: none; }
 .folder-picker-popover ul { list-style: none; margin: 0; padding: .3rem; max-height: min(16rem, var(--pop-max-list, 16rem)); overflow-y: auto; }

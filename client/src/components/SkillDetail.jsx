@@ -727,17 +727,10 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
                   </section>
                 ) : (
                   <>
-                    {(description || skill.tags?.length > 0) && (
+                    {(description || skill.tags?.length > 0 || frontmatterPairs.length > 0) && (
                       <section className="skill-summary" aria-label="技能摘要">
                         {description && <p>{description}</p>}
                         {skill.tags?.length > 0 && <div>{skill.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
-                      </section>
-                    )}
-
-                    {loadingDetail && !content ? (
-                      <div className="content-skeleton" role="status"><span>正在载入技能详情…</span><i /><i /><i /><i /></div>
-                    ) : content ? (
-                      <article className="markdown-document">
                         {frontmatterPairs.length > 0 && (
                           <details className="frontmatter frontmatter-table">
                             <summary>属性</summary>
@@ -753,6 +746,13 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
                             </table>
                           </details>
                         )}
+                      </section>
+                    )}
+
+                    {loadingDetail && !content ? (
+                      <div className="content-skeleton" role="status"><span>正在载入技能详情…</span><i /><i /><i /><i /></div>
+                    ) : content ? (
+                      <article className="markdown-document">
                         <div dangerouslySetInnerHTML={{ __html: renderedMarkdown }} />
                       </article>
                     ) : (

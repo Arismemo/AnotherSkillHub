@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Terminal } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileText, Terminal } from 'lucide-react';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
 import SkillDetail from './components/SkillDetail';
@@ -459,6 +459,7 @@ export default function App() {
           />
         ) : (
           <div className="detail-empty">
+            <div className="empty-icon" aria-hidden="true"><FileText size={22} /></div>
             <p>{loading ? '正在载入技能…' : '选择一个技能查看详情'}</p>
             {!loading && <span>技能内容、关联文件和操作会显示在这里。</span>}
             {!loading && (
