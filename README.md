@@ -24,8 +24,11 @@ Agents multiply: you have one on your laptop, one on a rack server, one on a GPU
 - ⌘K command palette, batch operations, toast + undo, starred skills, tag filter, full-text search
 
 **Agent CLI** (installed via one command)
-- `ash search <kw>` / `ash list` / `ash info <slug>` / `ash show <slug>` — compact text output built for agents (`--json` for raw)
-- `ash pull <slug>` — install a complete skill package into the local agent's skills dir
+- `ash search <kw>` / `ash list` (`--tag`, `--folder`) / `ash info <slug>` / `ash show <slug>` / `ash versions <slug>` — compact text output built for agents (`--json` for raw)
+- `ash pull <slug>` — install a complete skill package plus its `depends_on` skills into the local agent's skills dir
+- `ash installed` / `ash outdated` / `ash pull --all` / `ash remove` — manage what's installed locally; locally modified skills are never overwritten silently (backed up to `~/.ash/backups`)
+- `ash bundles` / `ash bundle <slug or name>` / `ash pull bundle:<slug or name>` — discover and install skill bundles
+- `ash mine` / `ash withdraw <slug>` — follow the review status of your own pushes, retract pending ones
 - `ash push <dir> [--update]` — push a local skill; overwriting an existing slug requires `--update`
 - `ash guide` — the agent usage guide served by the hub (`/agent.md`); onboarding prompts just point here
 - Install target auto-detection: `$ASH_SKILLS_DIR` → single `~/.hermes/profiles/*/skills` → `~/.hermes/skills` → `~/.agents/skills` → `~/.claude/skills` → `~/.dsh/skills`
@@ -112,7 +115,7 @@ Self-host with Docker — full runbook (build gate, DB backup, image roll-out, r
 | `ASH_SEED` | `1` | `0` skips the example skills on first start |
 | `ASH_ALLOWED_EXTS` | text types | Comma-separated extension whitelist for attached files |
 
-Client-side (`ash`): `ASH_SERVER_URL` overrides the hub address, `ASH_SKILLS_DIR` sets the default install directory, `ASH_BIN_DIR` sets where `ash` itself is installed (otherwise a writable bin dir, passwordless `sudo -n`, or `~/.local/bin` — it never blocks on a password prompt). The npm wrapper needs `ash config <url>` once.
+Client-side (`ash`): `ASH_SERVER_URL` overrides the hub address, `ASH_SKILLS_DIR` sets the default install directory, `ASH_TERMINAL` names this machine in pushes (default: hostname; used by `ash mine` / `ash withdraw`), `ASH_BIN_DIR` sets where `ash` itself is installed (otherwise a writable bin dir, passwordless `sudo -n`, or `~/.local/bin` — it never blocks on a password prompt). The npm wrapper needs `ash config <url>` once.
 
 ## CLI & API examples
 
@@ -126,7 +129,14 @@ ash pull systematic-debugging              # 安装技能（自动探测目录�
 ash pull systematic-debugging --agent claude   # 指定安装到 ~/.claude/skills
 ash pull systematic-debugging --dir ~/my-skills # 自定义安装目录
 ash pull my-new-skill --pending            # 安装自己刚推送、尚在审核中的技能
-ash pull bundle:<组合标识>                  # 一次安装整个技能组合
+ash pull systematic-debugging --no-deps    # 不安装 depends_on 依赖
+ash installed                              # 本机已装技能：最新 / 有更新 / 本地有修改 / 远端已删除
+ash pull --all                             # 更新全部过期技能（本地改过的跳过）
+ash remove systematic-debugging            # 卸载（本地改过的先备份到 ~/.ash/backups）
+ash bundles                                # 列出技能组合
+ash pull bundle:感知工具箱                 # 按标识或名称安装整个组合
+ash mine                                   # 我推送的技能及审核结果
+ash withdraw my-new-skill                  # 撤回尚在待审核的推送
 ash push ./my-skill/                       # 推送整个技能目录（含 references/scripts），进入待审核
 ash push ./my-skill/ --update              # 更新已有技能（不加 --update 时同名会被拒绝）
 ash guide                                  # Agent 使用指南

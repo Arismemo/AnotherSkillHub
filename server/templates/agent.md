@@ -7,10 +7,20 @@
 ## 什么时候查找技能
 
 - 接到任务时，尤其是**项目特定或不熟悉的流程**（部署、仿真、内部工具、排障手册），先运行 `ash search <关键词>`。一次没搜到就换同义词，中英文都试一下。
-- 搜到相关技能后，先用 `ash info <slug>` 看描述和文件清单，判断是否适用。
+- 可以按标签或目录缩小范围：`ash search <关键词> --tag ops`、`ash list --folder DevOps`。
+- 搜到相关技能后，先用 `ash info <slug>` 看描述、依赖和文件清单，判断是否适用。
 - 只需要阅读说明：`ash show <slug>`。
-- 需要执行技能里的脚本：`ash pull <slug>` 安装，然后阅读安装目录下的 `SKILL.md` 并按步骤执行。`SKILL.md` 里的相对路径（例如 `scripts/run.sh`）都相对于该目录。
+- 需要执行技能里的脚本：`ash pull <slug>` 安装（会一并安装 `depends_on` 声明的依赖），然后阅读安装目录下的 `SKILL.md` 并按步骤执行。`SKILL.md` 里的相对路径（例如 `scripts/run.sh`）都相对于该目录。
+- 一类任务要用到一组技能时，看看有没有现成的组合：`ash bundles`、`ash bundle <标识或名称>`，然后 `ash pull bundle:<标识或名称>`。
 - 没搜到合适的技能就按常规方式完成任务，不要硬套不相关的技能。
+
+## 管理本机已装的技能
+
+- `ash installed` 列出本机通过 ash 安装的技能及状态：最新、有更新、本地有修改、远端已删除。`ash outdated` 只列出需要处理的。
+- 开始一项较长的任务前，可以先运行 `ash outdated`；有更新时运行 `ash pull --all`。本地改过的技能会被跳过，不会被覆盖。
+- 单独 `ash pull <slug>` 会覆盖本地修改，但会先把旧目录备份到 `~/.ash/backups/`。如果本地修改值得保留，应当推送回库里，而不是只留在本机。
+- 不再需要的技能用 `ash remove <slug>` 卸载；不是 ash 安装的目录不会被删除。
+- 每个已装技能目录里的 `.ash` 文件记录了来源和版本，不要编辑或删除它。推送时会自动排除这个文件。
 
 ## 什么时候推送技能
 
@@ -22,6 +32,9 @@
 2. 不加 `--update` 时，如果同名 slug 已存在，推送会被拒绝（409），不会覆盖别人的版本。
 3. 新技能和对已有技能的更新都会进入「待审核」，人工采纳后其他 Agent 才能拉到。你自己需要立刻使用新技能时，可以运行 `ash pull <slug> --pending`。
 4. 推送后把服务端返回的结果（是否待审核、有无警告）如实告诉用户。
+5. 之后用 `ash mine` 查看你（本机）推送的技能的审核结果。推送有误时，用 `ash withdraw <slug>` 撤回仍在待审的推送；已发布的内容不能撤回，只能再推送一次更新。
+
+需要查看或对比旧版本时：`ash versions <slug>` 列出历史版本，`ash show <slug> --version <id>` 查看其中一个。回滚由人在网页上操作。
 
 ## SKILL.md 规范
 
@@ -54,13 +67,19 @@ depends_on: [other-skill]   # 可选，依赖的其他技能 slug
 ## 命令速查
 
 ```
-ash search <关键词> [--json]
-ash list [--json]
+ash search <关键词…> [--tag T] [--folder F] [--json]
+ash list [--tag T] [--folder F] [--json]
 ash info <slug>
-ash show <slug> [--pending]
-ash pull <slug> [--agent claude|codex|hermes|dsh] [--dir PATH] [--pending]
-ash pull bundle:<组合标识>
+ash show <slug> [--version ID] [--pending]
+ash versions <slug>
+ash bundles | ash bundle <标识或名称>
+ash pull <slug> [--agent claude|codex|hermes|dsh] [--dir PATH] [--pending] [--force] [--no-deps]
+ash pull bundle:<标识或名称>
+ash pull --all [--dir PATH] [--force]
+ash installed | ash outdated [--dir PATH]
+ash remove <slug> [--dir PATH] [--force]
 ash push <技能目录|SKILL.md> [--update] [--folder PATH] [--json]
+ash mine | ash withdraw <slug>
 ash guide
 ```
 
@@ -69,10 +88,17 @@ ash guide
 ## 没有 ash 时的 HTTP 接口
 
 ```
-GET  __BASE_URL__/api/skills?search=<关键词>&format=text     搜索（纯文本，每行一个技能）
-GET  __BASE_URL__/s/<slug>/info                             技能信息与文件清单
-GET  __BASE_URL__/s/<slug>.md                               SKILL.md（多文件技能末尾附文件清单）
+GET  __BASE_URL__/api/skills?search=<关键词>&tag=&folder=&format=text   搜索（纯文本，每行一个技能）
+GET  __BASE_URL__/s/<slug>/info                             技能信息、依赖与文件清单
+GET  __BASE_URL__/s/<slug>.md                               SKILL.md（多文件技能末尾附文件清单；?version=<id> 取历史版本）
 GET  __BASE_URL__/s/<slug>/files/<相对路径>                  单个附属文件
-GET  __BASE_URL__/s/<slug>/install.sh                       安装脚本：curl -fsSL … | bash
-POST __BASE_URL__/api/agent/push                            multipart：file=<tar.gz 或 SKILL.md>，update=1 表示更新，format=text 返回文本
+GET  __BASE_URL__/s/<slug>/versions                         历史版本列表
+GET  __BASE_URL__/s/<slug>/install.sh                       安装脚本：curl -fsSL … | bash（?nodeps=1 不装依赖，?force=1 不备份）
+GET  __BASE_URL__/api/bundles?format=text                   技能组合列表
+GET  __BASE_URL__/api/bundles/<标识或名称>?format=text       组合成员
+GET  __BASE_URL__/s/bundle/<标识或名称>/install.sh           安装整个组合
+POST __BASE_URL__/api/agent/push                            multipart：file=<tar.gz 或 SKILL.md>，update=1 表示更新，terminal=<来源>，format=text
+GET  __BASE_URL__/api/agent/mine?terminal=<来源>              我的推送及审核状态
+POST __BASE_URL__/api/agent/withdraw                        撤回待审推送：slug=<slug>&terminal=<来源>
+GET  __BASE_URL__/api/agent/revisions?slug=a&slug=b         已装技能比对：每行 slug、状态、修订号、版本
 ```

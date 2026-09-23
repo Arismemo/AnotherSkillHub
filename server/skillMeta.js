@@ -28,6 +28,21 @@ function text(value) {
   return value === undefined || value === null ? '' : String(value).trim();
 }
 
+function stringList(value) {
+  if (Array.isArray(value)) return value.filter((item) => typeof item === 'string');
+  return typeof value === 'string' ? [value] : [];
+}
+
+// frontmatter 声明的依赖（依赖图与 ash pull 的依赖安装共用）
+function declaredDependencies(data = {}) {
+  const deps = [data.depends_on, data.dependencies, data.requires, data.metadata?.depends_on].flatMap(stringList);
+  return [...new Set(deps.map((d) => d.trim()).filter(Boolean))];
+}
+
+function dependenciesOf(content) {
+  return declaredDependencies(parseFrontmatter(content || '').data);
+}
+
 function normalizeSkillMeta(content, explicit = {}, { fileName = '' } = {}) {
   const { data, error: frontmatterError } = parseFrontmatter(content || '');
   const body = String(content || '').replace(/^---[\s\S]*?\n---\s*\n?/, '');
@@ -57,4 +72,4 @@ function normalizeSkillMeta(content, explicit = {}, { fileName = '' } = {}) {
   return { slug, name, description, tags, version, frontmatter: data, errors, warnings };
 }
 
-module.exports = { slugify, normalizeSkillMeta, normalizeTags };
+module.exports = { slugify, normalizeSkillMeta, normalizeTags, declaredDependencies, dependenciesOf };
