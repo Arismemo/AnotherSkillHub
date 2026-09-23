@@ -607,7 +607,7 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
           </button>
         )}
         {fileTree.length > 1 && !fileBarCollapsed && (
-          <aside className="file-sidebar" aria-label="技能文件" style={{ width: fileSidebarWidth }}>
+          <aside className="file-sidebar" aria-label="技能文件" style={{ '--file-sidebar-w': `${fileSidebarWidth}px` }}>
             <div className="attachment-heading">
               <h3 id="attachments-heading">技能文件</h3>
               <span>{fileTree.length} 个</span>

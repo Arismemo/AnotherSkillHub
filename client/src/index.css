@@ -98,6 +98,9 @@ html, body, #root {
   background: var(--bg);
   color: var(--text);
 }
+/* .app-shell 有 min-width: 56rem：窄于 896px（半屏分栏）时祖先的 overflow:hidden
+   会把右侧详情永久裁掉且不给滚动条，这里放开横向滚动兜底 */
+#root { overflow-x: auto; overflow-y: hidden; }
 
 button, input, textarea, select { font: inherit; }
 button { color: inherit; }
@@ -342,7 +345,9 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .file-sidebar-rail:hover { color: var(--text); background: var(--surface-hover); }
 .rail-count { font-size: var(--fs-xs); font-weight: 700; font-variant-numeric: tabular-nums; }
 .rail-label { writing-mode: vertical-rl; font-size: var(--fs-2xs); letter-spacing: .18em; }
-.file-sidebar { position: relative; display: flex; flex-direction: column; flex: 0 0 auto; width: 15rem; min-height: 0; border-right: 1px solid var(--border-muted); background: var(--surface); }
+/* 宽度走 CSS 变量而不是 inline style：inline 的优先级会盖掉下面的窄屏收窄规则，
+   以前那条 @media 里的 width 从来没生效过 */
+.file-sidebar { position: relative; display: flex; flex-direction: column; flex: 0 0 auto; width: min(var(--file-sidebar-w, 15rem), 40%); min-height: 0; border-right: 1px solid var(--border-muted); background: var(--surface); }
 .file-sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: .55rem .45rem 1rem; }
 .detail-scroll { position: relative; flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
 /* 悬浮大纲占 right:1.1rem + 15rem 宽 —— 正文在其下时右侧留出通道，避免文字被盖住 */
@@ -658,7 +663,7 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
   .detail-actions { width: 100%; justify-content: flex-start; }
   .compact-action span { display: none; }
   .compact-action { width: 2rem; padding: 0; }
-  .file-sidebar { width: 12rem; }
+  .file-sidebar { max-width: 12rem; }
 }
 
 /* 大纲显隐由 JS 的视口阈值（--outline-min-vw）决定，这里只负责在中等视口收窄它 */
