@@ -244,7 +244,7 @@ function highlightMarkdownHtml(html) {
   return container.innerHTML;
 }
 
-export default function SkillDetail({ skill, onSave, onMoveFolder }) {
+export default function SkillDetail({ skill, onSave, onSelectFolder }) {
   const [mode, setMode] = useState('preview');
   const [content, setContent] = useState(skill.content || '');
   const [name, setName] = useState(skill.name || '');
@@ -549,7 +549,8 @@ export default function SkillDetail({ skill, onSave, onMoveFolder }) {
           <nav className="breadcrumb" aria-label="技能路径">
             {skill.folder_path.split('/').map((segment, i, arr) => (
               <span key={`${segment}-${i}`} className="crumb-segment">
-                <button type="button" className="crumb-link" onClick={() => onMoveFolder(skill.id, skill.folder_path)} title="在目录中查看">{segment}</button>
+                {/* 面包屑是导航：跳到该层目录，而不是把技能移动到它自己的目录 */}
+                    <button type="button" className="crumb-link" onClick={() => onSelectFolder?.(arr.slice(0, i + 1).join('/'))} title={`在目录中查看：${arr.slice(0, i + 1).join('/')}`}>{segment}</button>
                 {i < arr.length - 1 && <ChevronRight size={11} className="crumb-sep" aria-hidden="true" />}
               </span>
             ))}

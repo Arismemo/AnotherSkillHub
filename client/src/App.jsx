@@ -486,7 +486,7 @@ export default function App() {
             key={selectedSkill.id}
             skill={selectedSkill}
             onSave={handleSaveSkill}
-            onMoveFolder={handleMoveSkill}
+            onSelectFolder={handleSelectFolder}
           />
         ) : (
           <div className="detail-empty">

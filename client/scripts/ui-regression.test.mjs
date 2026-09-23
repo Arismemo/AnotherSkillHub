@@ -13,11 +13,16 @@ test('App wires every interactive component callback to an implementation', asyn
     'onTrashSkill={handleTrashSkill}',
     'onRestoreSkill=',
     'onPermanentDelete={handlePermanentDelete}',
-    'onMoveFolder={handleMoveSkill}',
+    'onSelectFolder={handleSelectFolder}',
   ];
   for (const prop of requiredWiring) assert.ok(app.includes(prop), `missing callback wiring: ${prop}`);
   assert.ok(app.includes("requestJson('/api/skills/stats')"), 'stats must use the existing /api/skills/stats contract');
-  assert.ok(!app.includes('onCopySkill'), 'duplicate-skill copy action was removed from the list per product decision');
+});
+
+test('detail breadcrumb navigates to the folder instead of moving the skill into it', async () => {
+  const detail = await source('src/components/SkillDetail.jsx');
+  assert.ok(!detail.includes('onMoveFolder'), 'breadcrumb must not trigger a move mutation');
+  assert.match(detail, /crumb-link[\s\S]{0,80}?onSelectFolder\?\.\(arr\.slice\(0, i \+ 1\)\.join\('\/'\)\)/, 'each crumb segment navigates to its own path prefix');
 });
 
 test('detail always fetches the full record so file_tree stays available', async () => {
