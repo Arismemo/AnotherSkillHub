@@ -102,6 +102,17 @@ router.get('/', (req, res) => {
   }
 });
 
+// Compact graph payload; full skill bodies stay on the server.
+router.get('/graph', (req, res) => {
+  try {
+    const { buildSkillGraph } = require('../skillGraph');
+    const skills = db.prepare('SELECT id, slug, name, description, folder_path, tags, content FROM skills WHERE is_deleted = 0 ORDER BY slug').all();
+    res.json(buildSkillGraph(skills));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 获取单个技能详情
 router.get('/:id', (req, res) => {
   try {

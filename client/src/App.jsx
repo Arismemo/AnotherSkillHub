@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, FileText, Terminal } from 'lucide-react';
+import { ChevronLeft, FileText, Network, Terminal } from 'lucide-react';
 import useResizableWidth from './hooks/useResizableWidth';
 import usePersistedState from './hooks/usePersistedState';
 import useDebouncedValue from './hooks/useDebouncedValue';
@@ -15,9 +15,19 @@ import { showToast } from './components/toastBus';
 import { AgentSetupModal, NewSkillModal, PasteSkillModal, ShortcutsModal } from './components/Modals';
 import { BundleDetail, NewBundleModal, AddToBundleModal } from './components/Bundles';
 
+const SkillGraph = lazy(() => import('./components/SkillGraph'));
+
 const SkillDetail = lazy(() => import('./components/SkillDetail'));
 
 export default function App() {
+  const [graphOpen, setGraphOpen] = useState(() => new URLSearchParams(window.location.search).get('view') === 'graph');
+  const toggleGraph = (open) => {
+    setGraphOpen(open);
+    const url = new URL(window.location.href);
+    if (open) url.searchParams.set('view', 'graph');
+    else url.searchParams.delete('view');
+    window.history.replaceState(null, '', url);
+  };
   const [currentFolder, setCurrentFolder] = usePersistedState('current-folder', 'inbox', (value) => typeof value === 'string');
   const [currentTag, setCurrentTag] = usePersistedState('current-tag', null, (value) => value === null || typeof value === 'string');
   const [searchQuery, setSearchQuery] = useState('');
@@ -245,12 +255,14 @@ export default function App() {
   };
 
   const handleSelectFolder = (folder) => {
+    toggleGraph(false);
     setCurrentFolder(folder);
     setCurrentTag(null);
   };
 
   // 标签筛选是全库的：站在某个目录里点标签，只看到该目录内的同标签技能没有意义
   const handleSelectTag = (tag) => {
+    toggleGraph(false);
     setCurrentTag(tag || null);
     if (tag) setCurrentFolder('all');
   };
@@ -607,7 +619,7 @@ export default function App() {
     { id: 'trash', group: '当前技能', keys: ['Delete', 'Backspace'], label: '移入废纸篓', run: () => selectedSkill && currentFolder !== 'trash' && handleTrashSkill(selectedSkill.id) },
   ];
 
-  useHotkeys(shortcuts, overlayOpen);
+  useHotkeys(graphOpen ? shortcuts.filter((shortcut) => ['palette', 'help'].includes(shortcut.id)) : shortcuts, overlayOpen);
 
   const handleAddSkillsToBundle = async (bundleId, ids) => {
     const { succeeded, failed } = await settleRequests(ids, (id) => requestJson(`/api/bundles/${bundleId}/skills`, {
@@ -645,13 +657,13 @@ export default function App() {
 
   return (
     <div
-      className="app-shell"
+      className={`app-shell${graphOpen ? ' is-graph-view' : ''}`}
       style={{
         '--w-sidebar': sidebarCollapsed ? '2.6rem' : `${sidebarWidth}px`,
         '--w-list': listCollapsed ? '2.4rem' : `${listWidth}px`,
       }}
     >
-      <a className="skip-link" href="#skill-detail">跳至技能详情</a>
+      <a className="skip-link" href={graphOpen ? '#graph-page' : '#skill-detail'}>跳至主要内容</a>
       <aside className={`app-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`} aria-label="技能分类导航">
         <div className="sidebar-topbar">
           {sidebarCollapsed ? (
@@ -685,9 +697,12 @@ export default function App() {
             </>
           )}
         </div>
+        <button type="button" className={`nav-item graph-nav${graphOpen ? ' is-active' : ''}`} title="技能依赖图" aria-label="技能依赖图" aria-current={graphOpen ? 'page' : undefined} onClick={() => toggleGraph(true)}>
+          <Network size={16} />{!sidebarCollapsed && <span>技能依赖图</span>}
+        </button>
         <FolderTree
             collapsed={sidebarCollapsed}
-            currentFolder={currentFolder}
+            currentFolder={graphOpen ? '__graph__' : currentFolder}
             onSelectFolder={handleSelectFolder}
             folders={folders}
             stats={stats}
@@ -709,7 +724,7 @@ export default function App() {
         {!sidebarCollapsed && <div {...sidebarResizer} />}
       </aside>
 
-      <section className={`app-list${listCollapsed ? ' is-collapsed' : ''}`} aria-label="技能列表">
+      <section style={graphOpen ? { display: 'none' } : undefined} className={`app-list${listCollapsed ? ' is-collapsed' : ''}`} aria-label="技能列表">
         {listCollapsed ? (
           <button
             type="button"
@@ -765,7 +780,7 @@ export default function App() {
         )}
       </section>
 
-      <main id="skill-detail" className="app-detail" tabIndex="-1">
+      <main id="skill-detail" className="app-detail" tabIndex="-1" style={graphOpen ? { display: 'none' } : undefined}>
         {appError && (
           <div className="app-error" role="alert">
             <span>{appError}</span>
@@ -801,6 +816,10 @@ export default function App() {
         )}
       </main>
 
+      {graphOpen && <Suspense fallback={<div className="detail-empty" role="status">正在载入依赖图…</div>}>
+        <SkillGraph dataVersion={allSkills} onClose={() => toggleGraph(false)} onOpenSkill={(skill) => { toggleGraph(false); handleRevealSkill(skill.id); }} />
+      </Suspense>}
+
       <CommandPalette
         isOpen={showPalette}
         onClose={() => setShowPalette(false)}
@@ -813,7 +832,7 @@ export default function App() {
         onCopySkill={handleCopySkill}
         onTrashSkill={handleTrashSkill}
         onMoveSkill={handleMoveSkill}
-        onSelectSkill={handleRevealSkill}
+        onSelectSkill={(id) => { toggleGraph(false); handleRevealSkill(id); }}
         onSelectFolder={handleSelectFolder}
         onSelectBundle={setActiveBundle}
         onNewSkill={() => setShowNewModal(true)}

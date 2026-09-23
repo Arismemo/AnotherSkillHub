@@ -794,3 +794,6 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* The graph navigation entry is also visible before its lazy-loaded page mounts. */
+.graph-nav { margin: 8px; width: calc(100% - 16px); }
