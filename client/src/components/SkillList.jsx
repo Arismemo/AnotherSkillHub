@@ -112,8 +112,8 @@ export default function SkillList({
               compact
             />
           )}
-          <button type="button" className="danger-text-button" onClick={onBatchTrash}>
-            <Trash2 size={13} />移入废纸篓
+          <button type="button" className="danger-text-button" onClick={onBatchTrash} title="移入废纸篓" aria-label="将所选技能移入废纸篓">
+            <Trash2 size={13} />废纸篓
           </button>
           <button type="button" className="icon-button" onClick={onClearSelection} aria-label="清除选择">
             <X size={14} />
