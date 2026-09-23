@@ -358,8 +358,9 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 /* 唯一的「签名」元素：toolbar 底部一道由强调色渐出的细线 */
 .detail-toolbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: linear-gradient(90deg, var(--accent), transparent 55%); pointer-events: none; }
 /* 面包屑与标题同一行，头部从 4.25rem 压到 3.1rem */
-.detail-identity { display: flex; flex: 1 1 20rem; align-items: baseline; gap: .5rem; min-width: 10rem; }
-.detail-meta { display: flex; flex: 0 1 auto; align-items: center; gap: .55rem; overflow: hidden; color: var(--text-subtle); font-size: var(--fs-2xs); white-space: nowrap; }
+.detail-identity { display: flex; flex: 1 1 10rem; align-items: baseline; gap: .5rem; min-width: 8rem; }
+/* 中段信息条优先让位给右侧操作区：可收缩到 0，多出来的从右侧渐隐裁掉，不把按钮挤到第二行 */
+.detail-meta { display: flex; flex: 0 1 auto; align-items: center; gap: .55rem; min-width: 0; overflow: hidden; color: var(--text-subtle); font-size: var(--fs-2xs); white-space: nowrap; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - .9rem), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - .9rem), transparent); }
 .detail-meta .chip { height: 1.15rem; padding: 0 .38rem; }
 .breadcrumb { display: flex; flex: 0 2 auto; align-items: center; gap: .35rem; max-width: 45%; overflow: hidden; color: var(--text-subtle); font-size: var(--fs-xs); white-space: nowrap; text-overflow: ellipsis; }
 .breadcrumb .crumb-current { color: var(--text-muted); font-family: var(--mono); }
