@@ -217,16 +217,78 @@ function languageForPath(path) {
   return EXT_LANGUAGES[ext] || null;
 }
 
+function escapeHtml(text) {
+  return text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+}
+
 function highlightCode(code, language) {
   if (!code) return '';
   try {
     if (language && hljs.getLanguage(language)) {
       return hljs.highlight(code, { language, ignoreIllegals: true }).value;
     }
-    return hljs.highlightAuto(code).value;
-  } catch {
-    return code.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+  } catch { /* 语法包异常时退回纯文本 */ }
+  // 未知语言不再走 highlightAuto：它要拿每种已注册语言各试跑一遍，代价是定向高亮的 8~20 倍
+  return escapeHtml(code);
+}
+
+// 把整段高亮 HTML 按换行切开，跨行的 <span> 在行尾闭合、行首重开——
+// 这样既保住了跨行语法（多行字符串 / 块注释），又能沿用 CSS counter 渲染行号。
+function splitHighlightedLines(html) {
+  const lines = [];
+  const open = [];
+  let buffer = '';
+  let index = 0;
+  while (index < html.length) {
+    if (html[index] === '<') {
+      const end = html.indexOf('>', index);
+      if (end === -1) { buffer += html.slice(index); break; }
+      const tag = html.slice(index, end + 1);
+      if (tag.startsWith('</')) open.pop();
+      else if (!tag.endsWith('/>')) open.push(tag);
+      buffer += tag;
+      index = end + 1;
+      continue;
+    }
+    const next = html.indexOf('<', index);
+    const text = next === -1 ? html.slice(index) : html.slice(index, next);
+    const parts = text.split('\n');
+    parts.forEach((part, i) => {
+      if (i > 0) {
+        buffer += '</span>'.repeat(open.length);
+        lines.push(buffer || '&nbsp;');
+        buffer = open.join('');
+      }
+      buffer += part;
+    });
+    index = next === -1 ? html.length : next;
   }
+  lines.push(buffer || '&nbsp;');
+  return lines;
+}
+
+// 轻量字符串哈希（djb2）：给 marked / hljs 的结果做缓存键
+function hashSource(text) {
+  let hash = 5381;
+  for (let i = 0; i < text.length; i += 1) hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+  return `${hash.toString(36)}:${text.length}`;
+}
+
+// 渲染结果按内容哈希缓存（小 LRU）：来回切技能、预览↔编辑来回切都不必重跑 marked + hljs
+const RENDER_CACHE = new Map();
+const RENDER_CACHE_MAX = 24;
+function cachedRender(kind, source, render) {
+  const key = `${kind}:${hashSource(source)}`;
+  if (RENDER_CACHE.has(key)) {
+    const hit = RENDER_CACHE.get(key);
+    RENDER_CACHE.delete(key);
+    RENDER_CACHE.set(key, hit); // 命中后移到队尾
+    return hit;
+  }
+  const value = render(source);
+  RENDER_CACHE.set(key, value);
+  if (RENDER_CACHE.size > RENDER_CACHE_MAX) RENDER_CACHE.delete(RENDER_CACHE.keys().next().value);
+  return value;
 }
 
 // 代码块高亮 + 语言标签：对 marked 输出的 HTML 做后处理，比覆写 renderer 稳定（marked v18）
@@ -245,6 +307,8 @@ function highlightMarkdownHtml(html) {
   });
   return container.innerHTML;
 }
+
+const renderMarkdown = (source) => highlightMarkdownHtml(marked.parse(source));
 
 export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag, onCopySkill, apiRef }) {
   const [mode, setMode] = useState('preview');
@@ -371,30 +435,31 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     }));
   }, [activeMarkdownBody]);
 
+  // 编辑模式下正文不上屏，但 content 每敲一个字符都会变——不短路就是每按一键跑一次 marked + hljs
   const renderedMarkdown = useMemo(
-    () => highlightMarkdownHtml(marked.parse(documentParts.body || content || '')),
-    [content, documentParts.body],
+    () => (mode === 'edit' ? '' : cachedRender('md', documentParts.body || content || '', renderMarkdown)),
+    [content, documentParts.body, mode],
   );
 
   const auxRendered = useMemo(
     () => (selectedFile !== 'SKILL.md' && selectedFile.endsWith('.md')
-      ? highlightMarkdownHtml(marked.parse(splitFrontmatter(auxFileContent || '').body || ''))
+      ? cachedRender('md', splitFrontmatter(auxFileContent || '').body || '', renderMarkdown)
       : ''),
     [auxFileContent, selectedFile],
   );
 
   // 文件查看器（非 markdown）的语法高亮 HTML + 行号
-  // 逐行高亮：每行包 <span class="code-line">，行号由 CSS counter 渲染
+  // 整文件高亮一次再按行切开，行号仍由 CSS counter 渲染
   const fileHighlightedLines = useMemo(() => {
     if (selectedFile === 'SKILL.md' || selectedFile.endsWith('.md')) return [];
-    const raw = auxFileContent || '';
+    const raw = (auxFileContent || '').replace(/\n$/, '');
     if (!raw) return [];
     const language = languageForPath(selectedFile);
-    const lines = raw.replace(/\n$/, '').split('\n');
-    return lines.map((line) => {
-      const highlighted = highlightCode(line, language);
-      return highlighted || '&nbsp;';
-    });
+    return cachedRender(
+      `file:${language || 'text'}`,
+      raw,
+      (text) => splitHighlightedLines(highlightCode(text, language)),
+    );
   }, [auxFileContent, selectedFile]);
 
   // 渲染后为标题 DOM 补 id，与大纲的 slug 保持一致（marked v18 renderer 回调
