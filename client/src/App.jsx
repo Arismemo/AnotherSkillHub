@@ -5,6 +5,7 @@ import usePersistedState from './hooks/usePersistedState';
 import useDebouncedValue from './hooks/useDebouncedValue';
 import useHotkeys, { isTypingTarget } from './hooks/useHotkeys';
 import { requestJson } from './utils/requestJson';
+import { settleRequests } from './utils/settleRequests';
 import { targetFolderForView } from './utils/systemFolders';
 import FolderTree from './components/FolderTree';
 import SkillList from './components/SkillList';
@@ -182,6 +183,27 @@ export default function App() {
     }
   };
 
+  const runBatch = async (ids, request, successMessage, undo) => {
+    if (!ids.length) return [];
+    const { succeeded, failed } = await settleRequests(ids, request);
+    await refreshAll();
+    // 失败项保留在批量选择中，用户可以直接重试；提示只按实际成功数计。
+    setSelectedIds(new Set(failed.map(({ id }) => id)));
+    setMultiSelectMode(failed.length > 0);
+    if (succeeded.length) {
+      showToast(successMessage(succeeded.length), undo ? {
+        actionLabel: '撤销',
+        onAction: async () => {
+          const undone = await settleRequests(succeeded, undo);
+          await refreshAll();
+          if (undone.failed.length) showToast(`撤销失败 ${undone.failed.length} 项：${undone.failed[0].error?.message || '请重试'}`);
+        },
+      } : {});
+    }
+    if (failed.length) showToast(`${failed.length} 项操作失败：${failed[0].error?.message || '请重试'}`);
+    return succeeded;
+  };
+
   const handleSelectFolder = (folder) => {
     setCurrentFolder(folder);
     setCurrentTag(null);
@@ -240,12 +262,12 @@ export default function App() {
   // C3: 拖拽/移动带 Toast 撤销
   const handleMoveSkill = async (skillId, targetFolder) => {
     const skill = skills.find((s) => s.id === skillId);
-    await runMutation(`/api/skills/${skillId}/move`, {
+    const moved = await runMutation(`/api/skills/${skillId}/move`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ target_folder: targetFolder }),
     });
-    if (skill) {
+    if (moved && skill) {
       showToast(`已移动「${skill.name}」到 ${targetFolder}`, {
         actionLabel: '撤销',
         onAction: () => runMutation(`/api/skills/${skillId}/move`, {
@@ -260,7 +282,8 @@ export default function App() {
   // C1: 废纸篓改为 Toast + 撤销，去掉 confirm
   const handleTrashSkill = async (skillId) => {
     const skill = skills.find((s) => s.id === skillId);
-    await runMutation(`/api/skills/${skillId}/trash`, { method: 'POST' });
+    const trashed = await runMutation(`/api/skills/${skillId}/trash`, { method: 'POST' });
+    if (!trashed) return;
     showToast(`已将「${skill?.name ?? '技能'}」移入废纸篓`, {
       actionLabel: '撤销',
       onAction: () => runMutation(`/api/skills/${skillId}/restore`, { method: 'POST' }),
@@ -270,35 +293,30 @@ export default function App() {
   // C4: 批量操作
   const handleBatchMove = async (targetFolder, explicitIds) => {
     const ids = explicitIds && explicitIds.length ? [...explicitIds] : [...selectedIds];
-    const targets = ids.map((id) => skills.find((s) => s.id === id)).filter(Boolean);
-    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/move`, {
+    const originalFolders = new Map(ids.map((id) => {
+      const skill = skills.find((s) => s.id === id) || allSkills.find((s) => s.id === id);
+      return [id, skill?.folder_path];
+    }));
+    const undoMove = [...originalFolders.values()].every(Boolean)
+      ? (id) => requestJson(`/api/skills/${id}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_folder: originalFolders.get(id) }),
+      })
+      : undefined;
+    await runBatch(ids, (id) => requestJson(`/api/skills/${id}/move`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ target_folder: targetFolder }),
-    }).catch(() => null)));
-    await refreshAll();
-    setMultiSelectMode(false);
-    showToast(`已移动 ${ids.length} 个技能到 ${targetFolder}`, {
-      actionLabel: '撤销',
-      onAction: () => Promise.all(targets.map((s) => requestJson(`/api/skills/${s.id}/move`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_folder: s.folder_path }),
-      }).catch(() => null))).then(() => refreshAll()),
-    });
-    setSelectedIds(new Set());
+    }), (count) => `已移动 ${count} 个技能到 ${targetFolder}`, undoMove);
   };
 
   const handleBatchTrash = async (explicitIds) => {
     const ids = explicitIds && explicitIds.length ? explicitIds : [...selectedIds];
-    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/trash`, { method: 'POST' }).catch(() => null)));
-    await refreshAll();
-    showToast(`已将 ${ids.length} 个技能移入废纸篓`, {
-      actionLabel: '撤销',
-      onAction: () => Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/restore`, { method: 'POST' }).catch(() => null))).then(() => refreshAll()),
-    });
-    setSelectedIds(new Set());
-    setMultiSelectMode(false);
+    await runBatch(ids,
+      (id) => requestJson(`/api/skills/${id}/trash`, { method: 'POST' }),
+      (count) => `已将 ${count} 个技能移入废纸篓`,
+      (id) => requestJson(`/api/skills/${id}/restore`, { method: 'POST' }));
   };
 
   // 批量收藏：把所选全部置为已收藏（星标 API 是 toggle，所以只对未收藏的发请求）
@@ -307,31 +325,25 @@ export default function App() {
     const targets = ids0.map((id) => skills.find((s) => s.id === id) || allSkills.find((s) => s.id === id)).filter(Boolean);
     const toStar = targets.filter((s) => !s.is_starred);
     const ids = toStar.length ? toStar.map((s) => s.id) : targets.map((s) => s.id);
-    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/star`, { method: 'POST' }).catch(() => null)));
-    await refreshAll();
-    showToast(toStar.length ? `已收藏 ${ids.length} 个技能` : `已取消收藏 ${ids.length} 个技能`, {
-      actionLabel: '撤销',
-      onAction: () => Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/star`, { method: 'POST' }).catch(() => null))).then(() => refreshAll()),
-    });
+    await runBatch(ids,
+      (id) => requestJson(`/api/skills/${id}/star`, { method: 'POST' }),
+      (count) => toStar.length ? `已收藏 ${count} 个技能` : `已取消收藏 ${count} 个技能`,
+      (id) => requestJson(`/api/skills/${id}/star`, { method: 'POST' }));
   };
 
   const handleBatchRestore = async () => {
     const ids = [...selectedIds];
-    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}/restore`, { method: 'POST' }).catch(() => null)));
-    await refreshAll();
-    showToast(`已恢复 ${ids.length} 个技能`);
-    setSelectedIds(new Set());
-    setMultiSelectMode(false);
+    await runBatch(ids,
+      (id) => requestJson(`/api/skills/${id}/restore`, { method: 'POST' }),
+      (count) => `已恢复 ${count} 个技能`);
   };
 
   const handleBatchDelete = async () => {
     const ids = [...selectedIds];
     if (!window.confirm(`永久删除这 ${ids.length} 个技能？此操作无法撤销。`)) return;
-    await Promise.all(ids.map((id) => requestJson(`/api/skills/${id}`, { method: 'DELETE' }).catch(() => null)));
-    await refreshAll();
-    showToast(`已永久删除 ${ids.length} 个技能`);
-    setSelectedIds(new Set());
-    setMultiSelectMode(false);
+    await runBatch(ids,
+      (id) => requestJson(`/api/skills/${id}`, { method: 'DELETE' }),
+      (count) => `已永久删除 ${count} 个技能`);
   };
 
   const handlePermanentDelete = async (skillId) => {
@@ -514,16 +526,14 @@ export default function App() {
   useHotkeys(shortcuts, overlayOpen);
 
   const handleAddSkillsToBundle = async (bundleId, ids) => {
-    for (const id of ids) {
-      // 顺序发送：后端是 INSERT OR IGNORE，并发没有收益
-      await requestJson(`/api/bundles/${bundleId}/skills`, {
+    const { succeeded, failed } = await settleRequests(ids, (id) => requestJson(`/api/bundles/${bundleId}/skills`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skill_id: id }),
-      }).catch(() => null);
-    }
+      }));
     await fetchFoldersAndStats();
-    showToast(`已加入组合（${ids.length} 个技能）`);
+    if (succeeded.length) showToast(`已加入组合（${succeeded.length} 个技能）`);
+    if (failed.length) showToast(`${failed.length} 个技能加入组合失败：${failed[0].error?.message || '请重试'}`);
   };
 
   // C3: 拖拽技能到目录——目标扩展到收藏 / 废纸篓 / 组合，都是零学习成本的直觉操作
