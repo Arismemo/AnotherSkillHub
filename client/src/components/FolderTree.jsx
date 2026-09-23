@@ -33,6 +33,7 @@ function findNode(nodes, path) {
 }
 
 export default function FolderTree({
+  collapsed = false,
   bundles = [],
   onSelectBundle,
   onNewBundle,
@@ -223,6 +224,66 @@ export default function FolderTree({
       </li>
     );
   };
+
+  // 折叠态不是一条空白竖条：系统分类 + 最近浏览 + 顶层文件夹都保留成图标入口，
+  // 计数收成右上角小圆点，hover 出完整标题。
+  if (collapsed) {
+    const railItems = [
+      ...navItems.map((item) => ({ ...item, count: stats[item.id] || 0 })),
+      { id: 'recent', label: '最近浏览', icon: Clock3, count: recentSkills.length },
+    ];
+    return (
+      <div className="sidebar-content sidebar-rail">
+        <ul className="nav-list" aria-label="系统分类">
+          {railItems.map(({ id, label, icon: Icon, count }) => {
+            const active = currentFolder === id && !currentTag;
+            return (
+              <li key={id}>
+                <button
+                  type="button"
+                  className={`nav-item rail-item ${active ? 'is-active' : ''}`}
+                  onClick={() => onSelectFolder(id)}
+                  aria-current={active ? 'page' : undefined}
+                  aria-label={count > 0 ? `${label}（${count}）` : label}
+                  title={count > 0 ? `${label}（${count}）` : label}
+                >
+                  <Icon size={16} aria-hidden="true" />
+                  {count > 0 && <span className="rail-dot" aria-hidden="true">{count > 99 ? '99+' : count}</span>}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {tree.length > 0 && (
+          <ul className="nav-list rail-folders" aria-label="文件夹">
+            {tree.slice(0, 8).map((node) => {
+              const active = currentFolder === node.path && !currentTag;
+              return (
+                <li key={node.path}>
+                  <button
+                    type="button"
+                    className={`nav-item rail-item ${active ? 'is-active' : ''}`}
+                    onClick={() => onSelectFolder(node.path)}
+                    aria-current={active ? 'page' : undefined}
+                    aria-label={node.count > 0 ? `${node.name}（${node.count}）` : node.name}
+                    title={node.count > 0 ? `${node.name}（${node.count}）` : node.name}
+                    {...dropHandlers(node.path)}
+                  >
+                    <Folder size={15} aria-hidden="true" />
+                    {node.count > 0 && <span className="rail-dot" aria-hidden="true">{node.count > 99 ? '99+' : node.count}</span>}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <div className="sidebar-footer">
+          <button type="button" className="nav-item rail-item" onClick={onNewSkill} aria-label="新建技能" title="新建技能"><Plus size={16} /></button>
+          <button type="button" className="nav-item rail-item" onClick={onOpenSetup} aria-label="终端接入" title="终端接入"><Settings size={16} /></button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="sidebar-content">

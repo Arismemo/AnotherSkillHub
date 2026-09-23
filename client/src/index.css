@@ -172,7 +172,16 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 body.is-resizing { cursor: col-resize; user-select: none; }
 body.is-resizing .detail-scroll { pointer-events: none; }
 .app-list { border-right: 1px solid var(--border); background: var(--surface); }
-/* 中栏（技能列表）折叠成细条：grid 列同步收窄 */
+/* 中栏（技能列表）折叠成细条：列宽由 App 的 --w-list 收到 2.4rem，细条复用文件栏的竖排样式 */
+.list-rail { width: 100%; height: 100%; border-right: 0; }
+/* 折叠态侧栏：图标导航 + 右上角计数圆点，不再是一条只有展开箭头的空竖条 */
+.sidebar-rail { align-items: center; padding: .35rem .25rem; }
+.sidebar-rail .nav-list { width: 100%; }
+.rail-folders { margin-top: .3rem; padding-top: .3rem; border-top: 1px solid var(--border-muted); }
+.rail-item { position: relative; justify-content: center; width: 100%; min-height: 1.95rem; padding: 0; }
+.rail-dot { position: absolute; top: .05rem; right: .05rem; min-width: .85rem; height: .85rem; padding: 0 .16rem; border-radius: 999px; background: var(--surface-hover); color: var(--text-subtle); font-size: 9px; line-height: .85rem; text-align: center; font-variant-numeric: tabular-nums; }
+.rail-item.is-active .rail-dot { background: var(--accent-muted); color: var(--accent); }
+.sidebar-rail .sidebar-footer { width: 100%; margin-top: auto; padding: .35rem .25rem 0; }
 
 .app-detail { position: relative; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
 

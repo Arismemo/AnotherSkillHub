@@ -44,6 +44,7 @@ export default function App() {
   const [sortBy, setSortBy] = useState('updated');
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState('sidebar-collapsed', false);
   const [listDensity, setListDensity] = usePersistedState('list-density', 'standard');
+  const [listCollapsed, setListCollapsed] = usePersistedState('list-collapsed', false);
   // D1: 三栏宽度可拖 + 记忆（双击拖拽条复位，←/→ 微调）
   const [sidebarWidth, , sidebarResizer] = useResizableWidth('sidebar-width', { min: 160, max: 360, initial: 208, label: '调整分类导航宽度' });
   const [listWidth, , listResizer] = useResizableWidth('list-width', { min: 220, max: 560, initial: 280, label: '调整技能列表宽度' });
@@ -363,7 +364,10 @@ export default function App() {
   return (
     <div
       className="app-shell"
-      style={{ '--w-sidebar': sidebarCollapsed ? '2.6rem' : `${sidebarWidth}px`, '--w-list': `${listWidth}px` }}
+      style={{
+        '--w-sidebar': sidebarCollapsed ? '2.6rem' : `${sidebarWidth}px`,
+        '--w-list': listCollapsed ? '2.4rem' : `${listWidth}px`,
+      }}
     >
       <a className="skip-link" href="#skill-detail">跳至技能详情</a>
       <aside className={`app-sidebar${sidebarCollapsed ? ' is-collapsed' : ''}`} aria-label="技能分类导航">
@@ -399,8 +403,8 @@ export default function App() {
             </>
           )}
         </div>
-        {!sidebarCollapsed && (
-          <FolderTree
+        <FolderTree
+            collapsed={sidebarCollapsed}
             currentFolder={currentFolder}
             onSelectFolder={handleSelectFolder}
             folders={folders}
@@ -420,11 +424,23 @@ export default function App() {
             onNewBundle={() => setShowBundleModal(true)}
             onDropOnFolder={handleDropOnFolder}
           />
-        )}
         {!sidebarCollapsed && <div {...sidebarResizer} />}
       </aside>
 
-      <section className="app-list" aria-label="技能列表">
+      <section className={`app-list${listCollapsed ? ' is-collapsed' : ''}`} aria-label="技能列表">
+        {listCollapsed ? (
+          <button
+            type="button"
+            className="file-sidebar-rail list-rail"
+            onClick={() => setListCollapsed(false)}
+            aria-label={`展开技能列表（${sortedSkills.length} 个）`}
+            title="展开技能列表"
+          >
+            <span className="rail-count">{sortedSkills.length}</span>
+            <span className="rail-label">列表</span>
+          </button>
+        ) : (
+          <>
         <SkillList
           skills={sortedSkills}
           selectedSkillId={selectedSkillId}
@@ -451,8 +467,11 @@ export default function App() {
           loading={loading}
           error={appError}
           onRetry={refreshAll}
+          onCollapse={() => setListCollapsed(true)}
         />
         <div {...listResizer} />
+          </>
+        )}
       </section>
 
       <main id="skill-detail" className="app-detail" tabIndex="-1">

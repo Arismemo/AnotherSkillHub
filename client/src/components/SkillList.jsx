@@ -7,6 +7,7 @@ import {
   Download,
   Inbox,
   Package,
+  PanelLeftClose,
   Plus,
   RotateCcw,
   Rows2,
@@ -64,6 +65,7 @@ export default function SkillList({
   loading,
   error,
   onRetry,
+  onCollapse,
 }) {
   const isTrash = currentFolder === 'trash';
   const listTitle = currentTag ? `标签：${currentTag}` : folderLabels[currentFolder] || currentFolder;
@@ -124,6 +126,15 @@ export default function SkillList({
               aria-label={`列表密度：${currentDensity.label}，点击切换为${nextDensity.label}`}
             >
               <DensityIcon size={13} />
+            </button>
+            <button
+              type="button"
+              className="sort-button"
+              onClick={onCollapse}
+              title="收起技能列表"
+              aria-label="收起技能列表"
+            >
+              <PanelLeftClose size={13} />
             </button>
           </div>
         </div>
