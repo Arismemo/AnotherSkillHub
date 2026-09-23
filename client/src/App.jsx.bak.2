@@ -578,6 +578,7 @@ export default function App() {
             skill={selectedSkill}
             onSave={handleSaveSkill}
             onSelectFolder={handleSelectFolder}
+            apiRef={detailApiRef}
           />
         ) : (
           <div className="detail-empty">
@@ -647,6 +648,11 @@ export default function App() {
       <AgentSetupModal
         isOpen={showSetupModal}
         onClose={() => setShowSetupModal(false)}
+      />
+      <ShortcutsModal
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+        shortcuts={shortcuts}
       />
       <ToastContainer />
     </div>

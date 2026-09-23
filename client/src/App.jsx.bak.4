@@ -429,8 +429,7 @@ export default function App() {
     { id: 'edit', group: '当前技能', keys: 'e', label: '编辑 / 预览切换', run: () => detailApiRef.current?.toggleMode() },
     { id: 'save', group: '当前技能', keys: 'mod+s', label: '保存编辑', allowInInput: true, run: () => detailApiRef.current?.save() },
     { id: 'trash', group: '当前技能', keys: ['Delete', 'Backspace'], label: '移入废纸篓', run: () => selectedSkill && currentFolder !== 'trash' && handleTrashSkill(selectedSkill.id) },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [sortedSkills, selectedSkill, selectedSkillId, selectedIds, searchQuery, currentFolder]);
+  ];
 
   useHotkeys(overlayOpen ? shortcuts.filter((s) => s.alwaysOn) : shortcuts);
 
@@ -539,6 +538,7 @@ export default function App() {
           onSelectSkill={handleSelectSkill}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
+          searchInputRef={searchInputRef}
           currentFolder={currentFolder}
           currentTag={currentTag}
           sortBy={sortBy}

@@ -376,11 +376,17 @@ export default function App() {
   };
 
   const focusSearch = () => {
-    setListCollapsed(false);
-    window.requestAnimationFrame(() => {
+    const focusNow = () => {
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
-    });
+    };
+    // 列表已展开时同步聚焦：rAF 在后台标签页里会被挂起，下一个按键就漏进全局快捷键
+    if (!listCollapsed) {
+      focusNow();
+      return;
+    }
+    setListCollapsed(false);
+    window.setTimeout(focusNow, 0);
   };
 
   // Esc 是一层层退出：输入框 → 搜索词 → 多选 → 焦点
@@ -648,6 +654,11 @@ export default function App() {
       <AgentSetupModal
         isOpen={showSetupModal}
         onClose={() => setShowSetupModal(false)}
+      />
+      <ShortcutsModal
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+        shortcuts={shortcuts}
       />
       <ToastContainer />
     </div>

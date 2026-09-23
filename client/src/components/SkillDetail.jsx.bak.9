@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { marked } from 'marked';
 import hljs from 'highlight.js/lib/common';
 import { VersionHistoryModal } from './Modals';
-import { showToast } from './toastBus';
 import useResizableWidth from '../hooks/useResizableWidth';
 import {
   Check,
@@ -19,7 +18,6 @@ import {
   List,
   Terminal,
   History,
-  MoreHorizontal,
   PanelLeftClose,
 } from 'lucide-react';
 
@@ -246,7 +244,7 @@ function highlightMarkdownHtml(html) {
   return container.innerHTML;
 }
 
-export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill, apiRef }) {
+export default function SkillDetail({ skill, onSave, onSelectFolder, apiRef }) {
   const [mode, setMode] = useState('preview');
   const [content, setContent] = useState(skill.content || '');
   const [name, setName] = useState(skill.name || '');
@@ -266,7 +264,6 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
   // D1: 面板宽度/大纲显隐持久化
   const [fileSidebarWidth, , fileSidebarResizer] = useResizableWidth('file-sidebar-width', { min: 160, max: 480, initial: 240, label: '调整技能文件栏宽度' });
   const [showVersions, setShowVersions] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [outlineHidden, setOutlineHidden] = useState(() => window.localStorage.getItem('ash:outline-hidden') === '1');
   // 大纲按「视口宽度」判定，而不是滚动区宽度：滚动区永远是视口减去左两栏，
   // 用它做阈值会让大纲在 1684px 以下的视口里永远不出现。
@@ -602,30 +599,6 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onCopySkill
           <button type="button" className="icon-button bordered-button" onClick={() => setShowVersions(true)} aria-label="历史版本" title="历史版本">
             <History size={15} />
           </button>
-          {/* 溢出菜单：一键取值（slug / 路径 / 链接）与「复制技能」——后者后端早有 API，前端一直没入口 */}
-          <div className="folder-menu-wrap detail-more">
-            <button
-              type="button"
-              className="icon-button bordered-button"
-              onClick={() => setMoreOpen((v) => !v)}
-              aria-label="更多操作"
-              aria-expanded={moreOpen}
-              title="更多操作"
-            >
-              <MoreHorizontal size={15} />
-            </button>
-            {moreOpen && (
-              <div className="folder-menu" role="menu">
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); onCopySkill?.(skill.id); }}>复制为新技能</button>
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(skill.slug, 'slug'); }}>复制 slug</button>
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(`${skill.folder_path}/${skill.slug}`, 'path'); }}>复制仓库路径</button>
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(`[${skill.name}](${origin}/s/${skill.slug})`, 'link'); }}>复制 Markdown 链接</button>
-                {selectedFile !== 'SKILL.md' && (
-                  <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(auxFileContent, 'file'); }}>复制当前文件内容</button>
-                )}
-              </div>
-            )}
-          </div>
           <div className="mode-switch" aria-label="详情模式">
             <button type="button" className={mode === 'preview' ? 'is-active' : ''} onClick={() => switchMode('preview')} aria-pressed={mode === 'preview'}><Eye size={14} />预览</button>
             <button type="button" className={`${mode === 'edit' ? 'is-active' : ''}${dirty ? ' is-dirty' : ''}`} onClick={() => switchMode('edit')} aria-pressed={mode === 'edit'} disabled={saving} title={dirty ? '有未保存的修改（⌘S 保存）' : '编辑（E）'}><Edit3 size={14} />{saving ? '保存中…' : '编辑'}{dirty && <i className="dirty-dot" aria-label="有未保存的修改" />}</button>

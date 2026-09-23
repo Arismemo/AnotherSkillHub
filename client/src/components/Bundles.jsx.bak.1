@@ -10,15 +10,12 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
   const [adding, setAdding] = useState(false);
   const [allSkills, setAllSkills] = useState([]);
   const [copied, setCopied] = useState(false);
-  const [nameDraft, setNameDraft] = useState(bundle?.name || '');
 
   const load = async () => {
     try {
       const r = await fetch(`/api/bundles/${bundle.id}`);
       if (!r.ok) throw new Error('加载失败');
-      const data = await r.json();
-      setDetail(data);
-      setNameDraft(data.name || '');
+      setDetail(await r.json());
     } catch (e) { setError(e.message); }
   };
 
@@ -77,32 +74,6 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
     >
       <div className="bundle-detail">
         {error && <div className="inline-error" role="alert">{error}</div>}
-        {/* 后端早有 PUT /api/bundles/:id，前端没有入口：名字打错只能删了重建 */}
-        <form
-          className="bundle-rename"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            const next = nameDraft.trim();
-            if (!next || next === (detail?.name || bundle.name)) return;
-            const response = await fetch(`/api/bundles/${bundle.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name: next }),
-            });
-            if (!response.ok) { setError('重命名失败'); return; }
-            setDetail(await response.json());
-            showToast?.('已重命名组合');
-            onChanged?.();
-          }}
-        >
-          <input
-            value={nameDraft}
-            onChange={(event) => setNameDraft(event.target.value)}
-            aria-label="组合名称"
-            placeholder="组合名称"
-          />
-          <button type="submit" className="secondary-button" disabled={!nameDraft.trim() || nameDraft.trim() === (detail?.name || bundle.name)}>重命名</button>
-        </form>
         <div className="bundle-command">
           <code>{agentCommand}</code>
           <button type="button" className="primary-button" onClick={copyCommand}>

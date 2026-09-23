@@ -538,6 +538,7 @@ export default function App() {
           onSelectSkill={handleSelectSkill}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
+          searchInputRef={searchInputRef}
           currentFolder={currentFolder}
           currentTag={currentTag}
           sortBy={sortBy}
@@ -577,6 +578,7 @@ export default function App() {
             skill={selectedSkill}
             onSave={handleSaveSkill}
             onSelectFolder={handleSelectFolder}
+            apiRef={detailApiRef}
           />
         ) : (
           <div className="detail-empty">

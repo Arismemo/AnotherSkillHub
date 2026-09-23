@@ -297,6 +297,21 @@ export default function App() {
     return Boolean(created);
   };
 
+  // 后端早有 POST /api/skills/:id/copy，前端一直没有入口：做变体只能手抄一遍
+  const handleCopySkill = async (skillId) => {
+    const source = skills.find((s) => s.id === skillId) || allSkills.find((s) => s.id === skillId);
+    const created = await runMutation(`/api/skills/${skillId}/copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_folder: source?.folder_path }),
+    });
+    if (created?.id) {
+      setSelectedSkillId(Number(created.id));
+      showToast(`已复制「${source?.name ?? '技能'}」为 ${created.slug}`);
+    }
+    return created;
+  };
+
   const handleSaveSkill = async (updatedData) => Boolean(await runMutation(`/api/skills/${updatedData.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -584,6 +599,7 @@ export default function App() {
             skill={selectedSkill}
             onSave={handleSaveSkill}
             onSelectFolder={handleSelectFolder}
+            onCopySkill={handleCopySkill}
             apiRef={detailApiRef}
           />
         ) : (

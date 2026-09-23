@@ -78,6 +78,9 @@ export default function App() {
   const [showBundleModal, setShowBundleModal] = useState(false);
   const [addToBundleTarget, setAddToBundleTarget] = useState(null);
   const [showPalette, setShowPalette] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const searchInputRef = useRef(null);
+  const detailApiRef = useRef(null); // SkillDetail 暴露的 { mode, dirty, save, toggleMode }
 
   const fetchFoldersAndStats = useCallback(async () => {
     try {
@@ -165,18 +168,6 @@ export default function App() {
     const timer = window.setTimeout(fetchSkills, 0);
     return () => window.clearTimeout(timer);
   }, [fetchSkills]);
-
-  // A1: ⌘K / Ctrl+K 命令面板
-  useEffect(() => {
-    const onKey = (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        setShowPalette((v) => !v);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([fetchSkills(), fetchFoldersAndStats()]);

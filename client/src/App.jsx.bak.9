@@ -8,7 +8,7 @@ import SkillDetail from './components/SkillDetail';
 import CommandPalette from './components/CommandPalette';
 import ToastContainer from './components/Toast';
 import { showToast } from './components/toastBus';
-import { AgentSetupModal, NewSkillModal, PasteSkillModal } from './components/Modals';
+import { AgentSetupModal, NewSkillModal, PasteSkillModal, ShortcutsModal } from './components/Modals';
 import { BundleDetail, NewBundleModal, AddToBundleModal } from './components/Bundles';
 
 async function requestJson(url, options) {
@@ -78,6 +78,9 @@ export default function App() {
   const [showBundleModal, setShowBundleModal] = useState(false);
   const [addToBundleTarget, setAddToBundleTarget] = useState(null);
   const [showPalette, setShowPalette] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const searchInputRef = useRef(null);
+  const detailApiRef = useRef(null); // SkillDetail 暴露的 { mode, dirty, save, toggleMode }
 
   const fetchFoldersAndStats = useCallback(async () => {
     try {

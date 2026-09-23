@@ -405,8 +405,9 @@ export default function App() {
   const overlayOpen = showPalette || showShortcuts || showNewModal || showPasteModal
     || showSetupModal || showBundleModal || Boolean(activeBundle) || Boolean(addToBundleTarget);
 
-  // 唯一的快捷键注册表：速查面板（?）由它生成，键位不再散落在各组件的 keydown 里
-  const shortcuts = useMemo(() => [
+  // 唯一的快捷键注册表：速查面板（?）由它生成，键位不再散落在各组件的 keydown 里。
+  // 每次渲染重建（useHotkeys 只把它存进 ref），这样处理函数永远闭包到最新状态。
+  const shortcuts = [
     { id: 'palette', group: '全局', keys: 'mod+k', label: '命令面板（全库检索）', allowInInput: true, alwaysOn: true, run: () => setShowPalette((v) => !v) },
     { id: 'help', group: '全局', keys: '?', label: '快捷键速查', run: () => setShowShortcuts(true) },
     { id: 'search', group: '全局', keys: '/', label: '聚焦搜索框', run: focusSearch },
@@ -428,8 +429,7 @@ export default function App() {
     { id: 'edit', group: '当前技能', keys: 'e', label: '编辑 / 预览切换', run: () => detailApiRef.current?.toggleMode() },
     { id: 'save', group: '当前技能', keys: 'mod+s', label: '保存编辑', allowInInput: true, run: () => detailApiRef.current?.save() },
     { id: 'trash', group: '当前技能', keys: ['Delete', 'Backspace'], label: '移入废纸篓', run: () => selectedSkill && currentFolder !== 'trash' && handleTrashSkill(selectedSkill.id) },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [sortedSkills, selectedSkill, selectedSkillId, selectedIds, searchQuery, currentFolder]);
+  ];
 
   useHotkeys(overlayOpen ? shortcuts.filter((s) => s.alwaysOn) : shortcuts);
 
