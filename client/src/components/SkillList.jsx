@@ -74,6 +74,7 @@ export default function SkillList({
   folders,
   onClearSelection,
   loading,
+  fetching,
   error,
   onRetry,
   onCollapse,
@@ -242,6 +243,7 @@ export default function SkillList({
       )}
 
       <div className="skill-list-scroll">
+        {fetching && !loading && <div className="list-progress" role="status" aria-label="正在载入结果" />}
         {loading ? (
           <div className="list-skeleton" role="status" aria-label="正在载入技能列表">
             {[0, 1, 2].map((i) => (

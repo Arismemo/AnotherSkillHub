@@ -38,10 +38,21 @@ function usePersistedState(key, initial) {
   return [value, setValue];
 }
 
+// 搜索防抖：每个按键直接打一次全量查询，列表会随输入整块重建；150ms 内的连续输入合并成一次
+function useDebouncedValue(value, delay) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
 export default function App() {
   const [currentFolder, setCurrentFolder] = useState('inbox');
   const [currentTag, setCurrentTag] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(searchQuery, 150);
   const [sortBy, setSortBy] = useState('updated');
   const [sidebarCollapsed, setSidebarCollapsed] = usePersistedState('sidebar-collapsed', false);
   const [listDensity, setListDensity] = usePersistedState('list-density', 'standard');
@@ -72,6 +83,10 @@ export default function App() {
   const [multiSelectMode, setMultiSelectMode] = useState(false);
   const [lastSelectedIndex, setLastSelectedIndex] = useState(null);
   const [loading, setLoading] = useState(true);
+  // 有旧结果时不铺骨架，只在列表顶部走一条细进度条；hasRowsRef 记住「屏幕上还有没有可留的行」
+  const [fetching, setFetching] = useState(false);
+  const hasRowsRef = useRef(false);
+  const skillsAbortRef = useRef(null);
   const [appError, setAppError] = useState('');
   const [showNewModal, setShowNewModal] = useState(false);
   const [showPasteModal, setShowPasteModal] = useState(false);
@@ -105,44 +120,53 @@ export default function App() {
   }, []);
 
   const fetchSkills = useCallback(async () => {
-    setLoading(true);
+    // 上一次查询还在路上就取消掉：连着敲键时只有最后一次的结果该落地
+    skillsAbortRef.current?.abort();
+    const controller = new AbortController();
+    skillsAbortRef.current = controller;
+    setLoading(!hasRowsRef.current);
+    setFetching(true);
     setAppError('');
+    const applyList = (list) => {
+      hasRowsRef.current = list.length > 0;
+      setSkills(list);
+      setSelectedSkillId((previousId) => {
+        if (previousId && list.some((skill) => skill.id === previousId)) return previousId;
+        return list[0]?.id ?? null;
+      });
+      // 已经是空集就保持同一个引用，免得白白让列表再渲染一轮
+      setSelectedIds((prev) => (prev.size ? new Set() : prev));
+      setMultiSelectMode(false);
+    };
     try {
       if (currentFolder === 'recent') {
         // 最近浏览视图：全量拉取后按最近浏览顺序过滤
-        const all = await requestJson('/api/skills?folder=all');
+        const all = await requestJson('/api/skills?folder=all', { signal: controller.signal });
         const allList = Array.isArray(all) ? all : all.data || [];
         const byId = new Map(allList.map((s) => [s.id, s]));
-        const list = recentIdsRef.current.map((id) => byId.get(id)).filter(Boolean);
-        setSkills(list);
-        setSelectedSkillId((previousId) => {
-          if (previousId && list.some((skill) => skill.id === previousId)) return previousId;
-          return list[0]?.id ?? null;
-        });
-        setSelectedIds(new Set());
-        setMultiSelectMode(false);
+        applyList(recentIdsRef.current.map((id) => byId.get(id)).filter(Boolean));
       } else {
         const params = new URLSearchParams({ folder: currentFolder });
         if (currentTag) params.set('tag', currentTag);
-        if (searchQuery.trim()) params.set('search', searchQuery.trim());
-        const result = await requestJson(`/api/skills?${params}`);
-        const list = Array.isArray(result) ? result : result.data || [];
-        setSkills(list);
-        setSelectedSkillId((previousId) => {
-          if (previousId && list.some((skill) => skill.id === previousId)) return previousId;
-          return list[0]?.id ?? null;
-        });
-        setSelectedIds(new Set());
-        setMultiSelectMode(false);
+        if (debouncedQuery.trim()) params.set('search', debouncedQuery.trim());
+        const result = await requestJson(`/api/skills?${params}`, { signal: controller.signal });
+        applyList(Array.isArray(result) ? result : result.data || []);
       }
     } catch (error) {
+      // 被后一次输入取消：列表与错误态都不动，等最新那次收尾
+      if (error.name === 'AbortError') return;
+      hasRowsRef.current = false;
       setSkills([]);
       setSelectedSkillId(null);
       setAppError(error.message);
     } finally {
-      setLoading(false);
+      if (skillsAbortRef.current === controller) {
+        skillsAbortRef.current = null;
+        setLoading(false);
+        setFetching(false);
+      }
     }
-  }, [currentFolder, currentTag, searchQuery]);
+  }, [currentFolder, currentTag, debouncedQuery]);
 
   useEffect(() => {
     const timer = window.setTimeout(fetchFoldersAndStats, 0);
@@ -669,6 +693,7 @@ export default function App() {
           folders={folders}
           onClearSelection={() => { setSelectedIds(selectedSkillId ? new Set([selectedSkillId]) : new Set()); setMultiSelectMode(false); }}
           loading={loading}
+          fetching={fetching}
           error={appError}
           onRetry={refreshAll}
           onCollapse={() => setListCollapsed(true)}

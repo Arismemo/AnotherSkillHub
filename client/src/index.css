@@ -283,6 +283,12 @@ body.is-resizing .detail-scroll { pointer-events: none; }
 .sort-button:hover { color: var(--text); background: var(--surface-hover); }
 .list-heading-actions { display: flex; flex: 0 0 auto; align-items: center; gap: .15rem; }
 .skill-list-scroll { flex: 1; overflow-y: auto; padding: .45rem; }
+/* 搜索结果在途时的细进度条：保留旧列表，不再整块换成骨架 */
+.skill-list-scroll { position: relative; }
+.list-progress { position: sticky; top: 0; z-index: 2; display: block; height: 2px; margin: -.45rem -.45rem .2rem; overflow: hidden; background: var(--border-muted); }
+.list-progress::after { content: ''; display: block; width: 40%; height: 100%; background: var(--accent, currentColor); animation: list-progress-slide 900ms ease-in-out infinite; }
+@keyframes list-progress-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) { .list-progress::after { animation: none; width: 100%; opacity: .5; } }
 .skill-row { position: relative; padding: .32rem .6rem .28rem; border: 1px solid transparent; border-radius: var(--r-md); cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 3.6rem; transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease; }
 .skill-row + .skill-row { margin-top: .06rem; }
 .skill-row:hover { background: var(--row-hover); }
