@@ -46,6 +46,8 @@ export default function App() {
   const [folders, setFolders] = useState([]);
   const [tags, setTags] = useState([]);
   const [selectedSkillId, setSelectedSkillId] = usePersistedState('selected-skill-id', null, (value) => value === null || Number.isInteger(value));
+  // ?skill=<slug> 直达定位中：此期间列表加载不得回退选中，避免 URL 目标被持久化状态覆盖
+  const urlTargetingRef = useRef(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   // 多选模式：普通点击也会把 selectedIds 设成 1 项，光看 size 分不清「浏览」和「批量操作」。
   // 只有 Cmd/Shift 点选或 ⌘A 才进入多选模式，批量条据此显示——这样选到只剩 1 项时它也不会消失。
@@ -101,6 +103,7 @@ export default function App() {
       setSkills(list);
       setSelectedSkillId((previousId) => {
         if (previousId && list.some((skill) => skill.id === previousId)) return previousId;
+        if (urlTargetingRef.current) return previousId ?? null; // URL 直达定位中：不回退到首条
         return list[0]?.id ?? null;
       });
       // 已经是空集就保持同一个引用，免得白白让列表再渲染一轮
@@ -147,18 +150,22 @@ export default function App() {
     if (!targetSlug) return;
 
     let cancelled = false;
+    urlTargetingRef.current = true; // URL 定位期间列表不得回退选中
     requestJson(`/api/skills/${encodeURIComponent(targetSlug)}`)
       .then((skill) => {
         if (cancelled || !skill?.id) return;
         setCurrentFolder(skill.folder_path || 'all');
         setSelectedSkillId(skill.id);
         rememberRecent(skill.id);
+        // 等 folder 切换引发的列表重载落定后再解除定位保护
+        window.setTimeout(() => { urlTargetingRef.current = false; }, 600);
       })
       .catch((error) => {
         if (!cancelled) setAppError(error.message);
       });
     return () => {
       cancelled = true;
+      urlTargetingRef.current = false;
     };
   }, [rememberRecent, setCurrentFolder, setSelectedSkillId]);
 
