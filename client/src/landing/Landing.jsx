@@ -1,20 +1,11 @@
 import { useState } from 'react';
 import {
-  ArrowRight, Bot, Check, Copy, GitCompare, History, KeyRound, Network, Package, ShieldCheck, Terminal,
+  ArrowRight, BookOpen, Bot, Check, Copy, GitCompare, History, KeyRound, Network, Package, ShieldCheck,
 } from 'lucide-react';
-import ThemeToggle from '../components/ThemeToggle';
-
-export function Brand() {
-  return (
-    <span className="brand">
-      <span className="brand-mark" aria-hidden="true"><Terminal size={16} /></span>
-      <span>AnotherSkillHub</span>
-    </span>
-  );
-}
+import { SiteFooter, SiteHeader } from './SiteChrome';
 
 // 终端片段：$ 开头是输入，其余是输出（文案与 ash 的真实输出保持一致）
-function TerminalBlock({ title, lines }) {
+export function TerminalBlock({ title, lines }) {
   return (
     <figure className="terminal">
       <figcaption><span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />{title}</figcaption>
@@ -29,7 +20,7 @@ function TerminalBlock({ title, lines }) {
   );
 }
 
-function CopyCommand({ command }) {
+export function CopyCommand({ command }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -96,28 +87,13 @@ export default function Landing({ user, registration }) {
   return (
     <div className="landing">
       <a className="skip-link" href="#main">跳到正文</a>
-      <header className="site-header">
-        <div className="container site-header-inner">
-          <a href="/" aria-label="AnotherSkillHub 首页"><Brand /></a>
-          <nav className="site-nav" aria-label="页面导航">
-            <a href="#workflow">工作流</a>
-            <a href="#features">功能</a>
-            <a href="#quickstart">接入</a>
-            <a href="#self-host">自托管</a>
-          </nav>
-          <div className="site-actions">
-            <span className="theme-slot"><ThemeToggle compact /></span>
-            {user ? (
-              <a className="btn btn-primary" href="/app">进入应用<ArrowRight size={14} aria-hidden="true" /></a>
-            ) : (
-              <>
-                <a className="btn btn-ghost" href="/login">登录</a>
-                {registration !== 'closed' && <a className="btn btn-primary" href="/register">注册</a>}
-              </>
-            )}
-          </div>
-        </div>
-      </header>
+      <SiteHeader user={user} registration={registration} nav={[
+        { href: '#workflow', label: '工作流' },
+        { href: '#features', label: '功能' },
+        { href: '#quickstart', label: '接入' },
+        { href: '#self-host', label: '自托管' },
+        { href: '/docs', label: '文档' },
+      ]} />
 
       <main id="main">
         <section className="hero">
@@ -131,7 +107,7 @@ export default function Landing({ user, registration }) {
               </p>
               <div className="hero-cta">
                 <a className="btn btn-primary btn-lg" href={primary.href}>{primary.label}<ArrowRight size={16} aria-hidden="true" /></a>
-                <a className="btn btn-ghost btn-lg" href="#quickstart">看看怎么接入</a>
+                <a className="btn btn-ghost btn-lg" href="/docs"><BookOpen size={16} aria-hidden="true" />阅读文档</a>
               </div>
               {user && <p className="hero-signed-in">已登录为 <strong>{user.username}</strong></p>}
             </div>
@@ -175,7 +151,7 @@ export default function Landing({ user, registration }) {
             <div>
               <h2>三行命令接入一台机器</h2>
               <p className="section-lede">先安装 <code>ash</code> 命令行工具，登录自己的账号，然后就能搜索和安装技能。接入后把一句引导语发给 Agent，它就知道什么时候该来这里查找和推送技能。</p>
-              <p className="quickstart-note"><GitCompare size={14} aria-hidden="true" />没有 ash 的环境也能直接用 HTTP 接口，完整说明见 <a href="/agent.md">/agent.md</a>。</p>
+              <p className="quickstart-note"><GitCompare size={14} aria-hidden="true" />命令、技能格式、审核规则和 HTTP 接口的完整说明见<a href="/docs">文档</a>。</p>
             </div>
             <ol className="commands">
               <li><span>安装 CLI</span><CopyCommand command={`curl -fsSL ${origin}/setup.sh | bash`} /></li>
@@ -203,12 +179,7 @@ export default function Landing({ user, registration }) {
         </section>
       </main>
 
-      <footer className="site-footer">
-        <div className="container site-footer-inner">
-          <Brand />
-          <span>MIT License · <a href="https://github.com/Arismemo/AnotherSkillHub" target="_blank" rel="noreferrer">GitHub</a> · <a href="/agent.md">Agent 指南</a></span>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

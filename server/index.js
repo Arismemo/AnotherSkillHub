@@ -53,6 +53,7 @@ if (fs.existsSync(clientDist)) {
     if (req.query.skill || req.query.view) return res.redirect(`/app${req.originalUrl.slice(1)}`);
     sendPage(res, landingPage);
   });
+  app.get('/docs', (req, res) => sendPage(res, landingPage));
   app.get(['/login', '/register'], (req, res) => {
     if (authenticate(req)) return res.redirect('/app');
     sendPage(res, landingPage);

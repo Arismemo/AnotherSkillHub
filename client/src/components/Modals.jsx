@@ -313,6 +313,7 @@ export function AgentSetupModal({ isOpen, onClose, onOpenAccount }) {
           <pre><code>{pushExamples}</code></pre>
           <p className="step-note">目录推送会打包整个技能，pull 时原样恢复。Agent 推送的新技能和更新会进入「待审核」，在这里采纳后其他 Agent 才能拉取。</p>
         </section>
+        <p className="step-note">全部命令、技能格式、审核规则和 HTTP 接口见<a className="text-link" href="/docs" target="_blank" rel="noreferrer">使用文档</a>。</p>
         <footer className="dialog-footer"><button type="button" className="primary-button" onClick={onClose}>完成</button></footer>
       </div>
     </DialogShell>

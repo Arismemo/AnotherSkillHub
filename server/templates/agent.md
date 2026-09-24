@@ -1,6 +1,6 @@
 # AnotherSkillHub · Agent 使用指南
 
-服务地址：__BASE_URL__
+服务地址：__BASE_URL__（面向人的完整文档：__BASE_URL__/docs）
 
 这是一个跨机器共享的技能库。一个技能就是一个目录：`SKILL.md`（入口，带 YAML frontmatter）加上可选的 `scripts/`、`references/`。你可以从这里查找并安装别人沉淀的技能，也可以把自己总结的流程推送回来。
 

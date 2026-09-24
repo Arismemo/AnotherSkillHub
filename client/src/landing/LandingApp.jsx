@@ -1,8 +1,9 @@
-// 公开入口：/ 是介绍页，/login 与 /register 是账号表单。服务端对这三个路径都返回同一个 index.html，
+// 公开入口：/ 是介绍页，/docs 是文档，/login 与 /register 是账号表单。服务端对这些路径都返回同一个 index.html，
 // 这里按 pathname 选页面（页面间用普通链接跳转，不引入路由库）。
 import { useEffect, useState } from 'react';
 import { requestJson } from '../utils/requestJson';
 import AuthPage from './AuthPage';
+import Docs from './Docs';
 import Landing from './Landing';
 
 export default function LandingApp() {
@@ -18,5 +19,6 @@ export default function LandingApp() {
 
   if (path === '/login') return <AuthPage mode="login" registration={registration} />;
   if (path === '/register') return <AuthPage mode="register" registration={registration} />;
+  if (path === '/docs') return <Docs user={user} registration={registration} />;
   return <Landing user={user} registration={registration} />;
 }

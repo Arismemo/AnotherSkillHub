@@ -15,7 +15,7 @@ function pageRoutes() {
         const [pathname, query = ''] = req.url.split('?');
         const search = query ? `?${query}` : '';
         if (pathname === '/app' || pathname.startsWith('/app/')) req.url = `/app.html${search}`;
-        else if (pathname === '/login' || pathname === '/register') req.url = `/index.html${search}`;
+        else if (['/login', '/register', '/docs'].includes(pathname)) req.url = `/index.html${search}`;
         next();
       });
     },

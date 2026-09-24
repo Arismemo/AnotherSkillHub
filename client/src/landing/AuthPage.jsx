@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { requestJson } from '../utils/requestJson';
-import { Brand } from './Landing';
+import { Brand } from './SiteChrome';
 import { safeNext } from './nextPath';
 
 const USERNAME_RE = /^[a-z0-9_-]{3,32}$/;

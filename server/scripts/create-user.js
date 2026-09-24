@@ -5,6 +5,7 @@
 //   --claim-legacy  把多用户之前的数据（user_id 为空的技能、文件夹、组合）归到这个账号，
 //                   并把磁盘目录 <STORAGE_DIR>/<folder>/<slug> 搬到该用户的存储根目录。
 //                   账号已存在时只做认领（不改密码）；与该账号已有技能/组合同名时中止并列出冲突。
+//   --reset-password  已有账号：设置新密码（从标准输入读取），并注销它所有的网页会话
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
@@ -90,10 +91,23 @@ async function main() {
   const username = (args.find((a) => !a.startsWith('--')) || '').trim().toLowerCase();
   const admin = args.includes('--admin');
   const claim = args.includes('--claim-legacy');
-  if (!username) die('用法: npm run user:create -- <username> [--admin] [--claim-legacy]');
+  if (!username) die('用法: npm run user:create -- <username> [--admin] [--claim-legacy | --reset-password]');
   const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  if (args.includes('--reset-password')) {
+    if (!existing) die(`用户 ${username} 不存在`);
+    const password = await readPassword();
+    const invalid = validateCredentials(username, password);
+    if (invalid) die(invalid);
+    const passwordHash = await hashPassword(password);
+    db.transaction(() => {
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, existing.id);
+      db.prepare('DELETE FROM auth_sessions WHERE user_id = ?').run(existing.id);
+    })();
+    console.log(`✅ 已重置 ${username} 的密码，并注销了它所有的网页登录`);
+    return;
+  }
   if (existing) {
-    if (!claim) die(`用户 ${username} 已存在`);
+    if (!claim) die(`用户 ${username} 已存在（重置密码加 --reset-password）`);
     claimLegacy(existing.id);
     ensureUserDefaults(existing.id);
     return;

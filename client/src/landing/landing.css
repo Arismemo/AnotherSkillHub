@@ -130,6 +130,66 @@ code, pre { font-family: var(--mono); }
 .site-footer a { color: var(--text-muted); }
 .site-footer a:hover { color: var(--text); }
 
+/* ——— 文档页 ——— */
+.docs-layout { display: grid; gap: 1.5rem; padding-top: 1.5rem; padding-bottom: 4rem; }
+.docs-toc details { border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface); }
+.docs-toc summary { padding: .65rem .9rem; color: var(--text); font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
+.docs-toc-group { padding: .15rem .9rem .75rem; }
+.docs-toc-group p { margin-bottom: .3rem; color: var(--text-subtle); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; }
+.docs-toc-group a { display: block; padding: .28rem .6rem; border-left: 2px solid transparent; color: var(--text-muted); font-size: var(--fs-sm); text-decoration: none; }
+.docs-toc-group a:hover { color: var(--text); }
+.docs-toc-group a[aria-current] { border-left-color: var(--accent); color: var(--text); font-weight: 600; }
+@media (min-width: 960px) {
+  .docs-layout { grid-template-columns: 13.5rem minmax(0, 1fr); gap: 3rem; padding-top: 2.5rem; }
+  .docs-toc { position: sticky; top: 4.75rem; align-self: start; max-height: calc(100dvh - 6rem); overflow-y: auto; }
+  .docs-toc details { border: 0; background: transparent; }
+  .docs-toc summary { display: none; }
+  .docs-toc-group { padding: 0 0 1rem; }
+  .docs-toc-group a { padding-left: .75rem; }
+}
+
+.docs-content { min-width: 0; max-width: 50rem; }
+.docs-intro { padding-bottom: 1.5rem; border-bottom: 1px solid var(--border-muted); }
+.docs-intro h1 { margin-top: .6rem; font-size: clamp(1.7rem, 4vw, 2.3rem); font-weight: 750; letter-spacing: -.02em; }
+.doc-section { padding-top: 2.5rem; }
+.doc-section h2 { font-size: var(--fs-xl); font-weight: 700; letter-spacing: -.01em; }
+.doc-section h2 a { color: inherit; text-decoration: none; }
+.doc-section h2 a:hover::after { content: ' #'; color: var(--text-subtle); }
+.doc-section h3 { margin-top: 1.5rem; font-size: var(--fs-md); font-weight: 700; }
+.doc-section p, .doc-section ul, .doc-section ol, .doc-section dl { margin-top: .75rem; color: var(--text-body); font-size: var(--fs-md); line-height: 1.75; }
+.doc-section ul { padding-left: 1.2rem; list-style: disc; }
+.doc-section li + li { margin-top: .35rem; }
+.doc-section li::marker { color: var(--text-subtle); }
+.doc-section a { color: var(--accent); text-underline-offset: 2px; }
+.doc-section strong { color: var(--text); }
+.doc-section :not(pre) > code { padding: .1em .35em; border-radius: var(--r-xs); background: var(--surface-hover); color: var(--text); font-size: .88em; overflow-wrap: anywhere; }
+.doc-section kbd { display: inline-block; min-width: 1.5em; padding: .05em .4em; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: var(--r-xs); background: var(--surface-raised); color: var(--text); font-family: var(--mono); font-size: .82em; text-align: center; }
+
+.doc-steps { padding-left: 0; list-style: none; counter-reset: step; }
+.doc-steps > li { position: relative; padding-left: 2.4rem; counter-increment: step; }
+.doc-steps > li + li { margin-top: 1.4rem; }
+.doc-steps > li::before { content: counter(step); position: absolute; top: .05rem; left: 0; display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border: 1px solid var(--accent-border); border-radius: 50%; background: var(--accent-muted); color: var(--accent); font-size: var(--fs-xs); font-weight: 700; }
+.doc-steps h3 { margin-top: 0; }
+
+.doc-code { position: relative; margin-top: .75rem; }
+.doc-code pre { margin: 0; padding: .8rem 2.75rem .8rem 1rem; overflow-x: auto; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-code); color: var(--text-body); font-size: var(--fs-sm); line-height: 1.65; }
+.doc-code button { position: absolute; top: .45rem; right: .45rem; display: grid; place-items: center; width: 1.85rem; height: 1.85rem; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-subtle); cursor: pointer; }
+.doc-code button:hover { background: var(--surface-hover); color: var(--text); }
+
+.doc-table-wrap { margin-top: .9rem; overflow-x: auto; border: 1px solid var(--border-muted); border-radius: var(--r-md); }
+.doc-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); line-height: 1.6; }
+.doc-table th { padding: .55rem .8rem; border-bottom: 1px solid var(--border); background: var(--surface); color: var(--text-muted); font-weight: 600; text-align: left; white-space: nowrap; }
+.doc-table td { padding: .6rem .8rem; border-top: 1px solid var(--border-muted); color: var(--text-body); vertical-align: top; }
+.doc-table td:first-child { color: var(--text); }
+/* 表格里的命令、选项、变量名一整段不拆行（否则会在 [-- 这类位置断开），放不下时表格横向滚动 */
+.doc-section .doc-table code { white-space: nowrap; overflow-wrap: normal; }
+.doc-table tr:first-child td { border-top: 0; }
+
+.doc-faq dt { margin-top: 1.1rem; color: var(--text); font-weight: 600; }
+.doc-faq dd { margin: .3rem 0 0; color: var(--text-body); }
+
+.site-nav a[aria-current='page'] { color: var(--text); }
+
 /* ——— 登录 / 注册 ——— */
 .auth-page { display: flex; min-height: 100dvh; flex-direction: column; align-items: center; padding: 2.5rem 1rem; background: radial-gradient(40rem 24rem at 50% -8rem, var(--accent-muted), transparent), var(--bg); }
 .auth-brand { margin-bottom: 2rem; text-decoration: none; }

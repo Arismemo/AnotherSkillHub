@@ -188,6 +188,7 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash open                        在浏览器打开管理后台
   ash update                      更新 ash 自身
 
+完整文档：$SERVER_URL/docs
 环境变量：ASH_SERVER_URL 服务地址；ASH_TOKEN API token（默认读 ~/.ash/token）；ASH_SKILLS_DIR 默认安装目录；ASH_BIN_DIR ash 安装位置；ASH_TERMINAL 推送来源名（默认 hostname）
 EOF
 }

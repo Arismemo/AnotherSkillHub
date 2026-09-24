@@ -339,6 +339,16 @@ test('legacy data is migrated, hidden, then claimed by the admin', async (t) => 
   assert.equal((await O('/api/bundles/legacy-kit')).status, 200);
   assert.ok(!fs.existsSync(path.join(server.root, 'files', 'Ops', 'legacy-runbook')), 'files moved out of the legacy location');
 
+  // 管理员在服务器上重置密码：新密码可用，旧密码失效
+  const reset = spawnSync(process.execPath, [script, 'owner', '--reset-password'], { env: { ...process.env, ...server.env }, input: 'another-password\n', encoding: 'utf8' });
+  assert.equal(reset.status, 0, reset.stderr);
+  const loginWith = (password) => rawFetch(`${origin}/api/auth/login`, { method: 'POST', headers: SAME_SITE, body: JSON.stringify({ username: 'owner', password }) });
+  assert.equal((await loginWith('admin-password')).status, 401);
+  assert.equal((await loginWith('another-password')).status, 200);
+  const unknown = spawnSync(process.execPath, [script, 'nobody', '--reset-password'], { env: { ...process.env, ...server.env }, input: 'whatever-pass\n', encoding: 'utf8' });
+  assert.notEqual(unknown.status, 0, 'resetting an unknown user must not create one');
+  assert.match(unknown.stderr, /不存在/);
+
   // 已认领完：再认领一次没有东西可认领；陌生人仍然看不到
   assert.match(create('owner', '--claim-legacy').stdout, /没有待认领的旧数据/);
   assert.equal((await rawFetch(`${origin}/api/skills/legacy-runbook`, { headers: bearer(stranger.token) })).status, 404);
