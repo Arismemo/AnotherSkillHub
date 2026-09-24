@@ -14,9 +14,35 @@ function resolveInside(dir, relativePath) {
   return full.startsWith(path.resolve(dir) + path.sep) ? full : null;
 }
 
+// 每个用户一个存储根：<STORAGE_DIR>/@users/<id>/<folder>/<slug>。
+// 多用户之前的数据直接在 <STORAGE_DIR>/<folder>/<slug>，由管理员认领时搬进自己的根目录（见 scripts/create-user.js）。
+const USERS_DIR = '@users';
+
+function userRoot(userId) {
+  if (!Number.isInteger(Number(userId)) || Number(userId) <= 0) throw new Error(`invalid user id: ${userId}`);
+  return path.join(baseStorageDir, USERS_DIR, String(Number(userId)));
+}
+
+// 目录路径只允许普通的相对段：拒绝空段、. 与 ..、反斜杠，返回规范化后的路径或 null
+function cleanFolderPath(folderPath) {
+  const clean = String(folderPath ?? '').trim().replace(/^\/+|\/+$/g, '');
+  if (!clean || clean.includes('\\') || clean.includes('\0')) return null;
+  const segments = clean.split('/');
+  if (segments.some((s) => !s.trim() || s === '.' || s === '..')) return null;
+  return clean;
+}
+
+// 技能目录的绝对路径；任何越出用户根目录的组合都直接抛错（纵深防御，路由层已校验过）
+function skillDir(userId, folderPath, slug) {
+  const root = userRoot(userId);
+  const dir = resolveInside(root, path.join(folderPath || 'inbox', String(slug)));
+  if (!dir || !slug || String(slug).includes('/')) throw new Error('非法的技能路径');
+  return dir;
+}
+
 // 保存 skill 到文件系统
-function saveSkillToDisk(folderPath, slug, content, files = []) {
-  const targetDir = path.join(baseStorageDir, folderPath || 'inbox', slug);
+function saveSkillToDisk(userId, folderPath, slug, content, files = []) {
+  const targetDir = skillDir(userId, folderPath, slug);
   fs.mkdirSync(targetDir, { recursive: true });
   
   // 写入主 SKILL.md
@@ -37,19 +63,23 @@ function saveSkillToDisk(folderPath, slug, content, files = []) {
 }
 
 // 整体替换：先清空旧目录，避免新版本里已删除的附属文件残留（推送/采纳/恢复版本时使用）
-function replaceSkillOnDisk(folderPath, slug, content, files = []) {
-  fs.rmSync(path.join(baseStorageDir, folderPath || 'inbox', slug), { recursive: true, force: true });
-  return saveSkillToDisk(folderPath, slug, content, files);
+function replaceSkillOnDisk(userId, folderPath, slug, content, files = []) {
+  fs.rmSync(skillDir(userId, folderPath, slug), { recursive: true, force: true });
+  return saveSkillToDisk(userId, folderPath, slug, content, files);
 }
 
-function skillDirExists(folderPath, slug) {
-  return fs.existsSync(path.join(baseStorageDir, folderPath || 'inbox', slug, 'SKILL.md'));
+function removeSkillFromDisk(userId, folderPath, slug) {
+  fs.rmSync(skillDir(userId, folderPath, slug), { recursive: true, force: true });
+}
+
+function skillDirExists(userId, folderPath, slug) {
+  return fs.existsSync(path.join(skillDir(userId, folderPath, slug), 'SKILL.md'));
 }
 
 // 移动文件系统上的 skill
-function moveSkillOnDisk(oldFolder, newFolder, slug) {
-  const oldDir = path.join(baseStorageDir, oldFolder || 'inbox', slug);
-  const newDir = path.join(baseStorageDir, newFolder || 'inbox', slug);
+function moveSkillOnDisk(userId, oldFolder, newFolder, slug) {
+  const oldDir = skillDir(userId, oldFolder, slug);
+  const newDir = skillDir(userId, newFolder, slug);
   if (fs.existsSync(oldDir)) {
     fs.mkdirSync(path.dirname(newDir), { recursive: true });
     fs.renameSync(oldDir, newDir);
@@ -75,8 +105,8 @@ function parseSkillContent(rawContent) {
 }
 
 // 获取 skill 的所有文件树
-function getSkillFileTree(folderPath, slug) {
-  const targetDir = path.join(baseStorageDir, folderPath || 'inbox', slug);
+function getSkillFileTree(userId, folderPath, slug) {
+  const targetDir = skillDir(userId, folderPath, slug);
   if (!fs.existsSync(targetDir)) return [];
   
   const results = [];
@@ -106,8 +136,8 @@ function getSkillFileTree(folderPath, slug) {
 }
 
 // 读取具体文件内容
-function getSkillFileContent(folderPath, slug, relativePath) {
-  const fullPath = resolveInside(path.join(baseStorageDir, folderPath || 'inbox', slug), relativePath);
+function getSkillFileContent(userId, folderPath, slug, relativePath) {
+  const fullPath = resolveInside(skillDir(userId, folderPath, slug), relativePath);
   if (!fullPath || !fs.existsSync(fullPath) || fs.statSync(fullPath).isDirectory()) {
     return null;
   }
@@ -115,9 +145,9 @@ function getSkillFileContent(folderPath, slug, relativePath) {
 }
 
 // 打包为 tar.gz 流（使用系统原生 tar，原生保留权限、极速稳定）
-function createSkillTarGzArchive(folderPath, slug, res) {
+function createSkillTarGzArchive(userId, folderPath, slug, res) {
   const { spawn } = require('child_process');
-  const targetParent = path.join(baseStorageDir, folderPath || 'inbox');
+  const targetParent = path.dirname(skillDir(userId, folderPath, slug));
 
   const tar = spawn('tar', ['-czf', '-', '-C', targetParent, slug]);
   tar.stdout.pipe(res);
@@ -128,8 +158,8 @@ function createSkillTarGzArchive(folderPath, slug, res) {
 }
 
 // 打包为 zip 流
-function createSkillArchive(folderPath, slug, res) {
-  const targetDir = path.join(baseStorageDir, folderPath || 'inbox', slug);
+function createSkillArchive(userId, folderPath, slug, res) {
+  const targetDir = skillDir(userId, folderPath, slug);
   const archive = archiver('zip', { zlib: { level: 9 } });
   
   archive.pipe(res);
@@ -139,6 +169,11 @@ function createSkillArchive(folderPath, slug, res) {
 
 module.exports = {
   baseStorageDir,
+  USERS_DIR,
+  userRoot,
+  cleanFolderPath,
+  skillDir,
+  removeSkillFromDisk,
   saveSkillToDisk,
   replaceSkillOnDisk,
   skillDirExists,

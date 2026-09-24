@@ -132,6 +132,7 @@ test('agent flow (review enabled)', async (t) => {
     assert.equal(agentFetch.status, 200);
     const browser = await fetch(`${origin}/s/deploy-kit`, { headers: { accept: 'text/html,application/xhtml+xml,*/*;q=0.8' }, redirect: 'manual' });
     assert.equal(browser.status, 302);
+    assert.equal(browser.headers.get('location'), '/app?skill=deploy-kit');
     const raw = await (await fetch(`${origin}/s/deploy-kit.md?raw=1`)).text();
     assert.doesNotMatch(raw, /## 附属文件/);
     assert.equal(await (await fetch(`${origin}/s/deploy-kit/files/scripts/run.sh`)).text(), '#!/bin/sh\necho ok\n');

@@ -9,12 +9,12 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const multer = require('multer');
 const db = require('../db');
-const { baseStorageDir, replaceSkillOnDisk, skillDirExists, createSkillArchive, createSkillTarGzArchive, getSkillFileTree, getSkillFileContent } = require('../storage');
+const { replaceSkillOnDisk, removeSkillFromDisk, skillDirExists, cleanFolderPath, createSkillArchive, createSkillTarGzArchive, getSkillFileTree, getSkillFileContent } = require('../storage');
 const { normalizeSkillMeta, dependenciesOf } = require('../skillMeta');
 const { findBundle, bundleMembers } = require('../bundleLookup');
 const { scanSkill, hasHighRisk } = require('../security');
 const { reviewRequired, parseJson, snapshotSkillVersion, isVisibleToAgents, skillRevision } = require('../review');
-const { shQuote, getBaseUrl } = require('../shell');
+const { shQuote, getBaseUrl, curlPipeCommand, SCRIPT_TOKEN_PRELUDE } = require('../shell');
 const { render } = require('../templates');
 
 const upload = multer({ limits: { fileSize: 20 * 1024 * 1024 } });
@@ -23,8 +23,9 @@ const INSTALL_AGENTS = ['auto', 'hermes', 'codex', 'claude', 'dsh'];
 const truthy = (value) => ['1', 'true', 'yes'].includes(String(value || '').toLowerCase());
 const wantsText = (req) => req.query.format === 'text' || req.body?.format === 'text';
 
-function findSkill(slug) {
-  return db.prepare('SELECT * FROM skills WHERE slug = ?').get(slug);
+// 只在请求者（token / 会话所属用户）自己的库里找
+function findSkill(userId, slug) {
+  return db.prepare('SELECT * FROM skills WHERE user_id = ? AND slug = ?').get(userId, slug);
 }
 
 // 安装脚本里的错误也必须是合法脚本：curl | bash 时给出原因并以非零退出
@@ -34,7 +35,7 @@ function scriptError(res, status, message) {
 
 // Agent 侧读取时，不可见的技能给出可操作的原因
 function agentLookup(req) {
-  const skill = findSkill(req.params.slug.replace(/\.md$/, ''));
+  const skill = findSkill(req.user.id, req.params.slug.replace(/\.md$/, ''));
   if (!skill || skill.is_deleted) return { error: [404, `技能 ${req.params.slug} 不存在或已删除（ash search <关键词> 查找）`] };
   if (!isVisibleToAgents(skill, { allowPending: truthy(req.query.pending) })) {
     return { error: [404, `技能 ${skill.slug} 正在等待人工审核，采纳后才能拉取；推送者自用请加 --pending（HTTP: ?pending=1）`] };
@@ -44,9 +45,9 @@ function agentLookup(req) {
 
 // 技能组合一键安装：/s/bundle/:ref/install.sh —— ref 可为标识或名称（URL 编码），依次安装全部已发布技能
 router.get('/bundle/:slug/install.sh', (req, res) => {
-  const { bundle, error } = findBundle(req.params.slug);
+  const { bundle, error } = findBundle(req.user.id, req.params.slug);
   if (!bundle) return scriptError(res, 404, error);
-  const items = bundleMembers(bundle.id);
+  const items = bundleMembers(bundle.id, bundle.user_id);
   const ready = items.filter((it) => it.status !== 'pending');
   const skipped = items.filter((it) => it.status === 'pending');
   if (!ready.length) return scriptError(res, 400, `技能组合 ${bundle.name} 中没有可安装的技能`);
@@ -62,11 +63,12 @@ router.get('/bundle/:slug/install.sh', (req, res) => {
     '# AnotherSkillHub 技能组合安装脚本（由服务端生成）',
     'set -euo pipefail',
     `BASE_URL=${shQuote(getBaseUrl(req))}`,
+    SCRIPT_TOKEN_PRELUDE,
     `echo ${shQuote(`📦 技能组合 [${bundle.name}]：共 ${ready.length} 个技能`)}`,
     ...skipped.map((it) => `echo ${shQuote(`⏭  跳过待审核技能 ${it.name} (${it.slug})`)}`),
     ...ready.flatMap((it, i) => [
       `echo ${shQuote(`--- [${i + 1}/${ready.length}] ${it.name} (${it.slug})`)}`,
-      `curl -fsSL "$BASE_URL"${shQuote(`/s/${it.slug}/install.sh${query}`)} | bash`,
+      `curl -fsSL -H "Authorization: Bearer $ASH_TOKEN" "$BASE_URL"${shQuote(`/s/${it.slug}/install.sh${query}`)} | bash`,
     ]),
     `echo ${shQuote(`✅ 技能组合 [${bundle.name}] 安装完毕`)}`,
   ];
@@ -79,10 +81,10 @@ router.get('/:slug/info', (req, res) => {
   if (error) return res.status(error[0]).type('text/plain').send(`错误: ${error[1]}\n`);
   const base = getBaseUrl(req);
   const tags = parseJson(skill.tags, []);
-  const files = getSkillFileTree(skill.folder_path, skill.slug).map((f) => f.path).sort();
+  const files = getSkillFileTree(skill.user_id, skill.folder_path, skill.slug).map((f) => f.path).sort();
   const warnings = parseJson(skill.security_warnings, []);
   const deps = dependenciesOf(skill.content);
-  const missing = deps.filter((d) => !isVisibleToAgents(findSkill(d)));
+  const missing = deps.filter((d) => !isVisibleToAgents(findSkill(skill.user_id, d)));
   const out = [
     `${skill.name} (${skill.slug})`,
     skill.description ? `描述: ${skill.description}` : '描述: （无）',
@@ -93,7 +95,7 @@ router.get('/:slug/info', (req, res) => {
     ...files.map((f) => `  ${f}`),
     ...warnings.map((w) => `⚠️  ${w.msg}`),
     `阅读: ash show ${skill.slug}    (${base}/s/${skill.slug}.md)`,
-    `安装: ash pull ${skill.slug}    (curl -fsSL ${base}/s/${skill.slug}/install.sh | bash)`,
+    `安装: ash pull ${skill.slug}    (${curlPipeCommand(`${base}/s/${skill.slug}/install.sh`)})`,
     `历史: ash versions ${skill.slug}`,
   ];
   res.type('text/plain').send(`${out.join('\n')}\n`);
@@ -120,22 +122,25 @@ router.get('/:slug/files/*filepath', (req, res) => {
   const { skill, error } = agentLookup(req);
   if (error) return res.status(error[0]).type('text/plain').send(`错误: ${error[1]}\n`);
   const rel = [].concat(req.params.filepath).join('/');
-  const content = getSkillFileContent(skill.folder_path, skill.slug, rel);
+  const content = getSkillFileContent(skill.user_id, skill.folder_path, skill.slug, rel);
   if (content === null) return res.status(404).type('text/plain').send(`错误: 文件 ${rel} 不存在\n`);
   res.type('text/plain').send(content);
 });
 
-// 智能短链：/s/:slug 或 /s/:slug.md —— 默认返回 Markdown，只有浏览器（Accept: text/html）才跳转到管理界面
+// 智能短链：/s/:slug 或 /s/:slug.md —— 默认返回 Markdown，只有浏览器（Accept: text/html）才跳转到管理界面。
+// 跳转发生在鉴权之前（挂在 requireAuth 前面）：浏览器没有 token，由 /app 自己决定是否要先登录。
+function browserRedirect(req, res, next) {
+  const m = req.method === 'GET' && /^\/([^/]+)$/.exec(req.path);
+  if (!m || m[1].endsWith('.md') || req.query.format === 'md') return next();
+  // 浏览器的 Accept 首选 text/html；curl 的 */*、Agent 抓取器的 text/markdown 都会落到 Markdown
+  if (req.accepts(['text/markdown', 'text/html']) !== 'text/html') return next();
+  let slug;
+  try { slug = decodeURIComponent(m[1]); } catch { return next(); }
+  return res.redirect(`/app?skill=${encodeURIComponent(slug)}`);
+}
+
 router.get('/:slug', (req, res) => {
   try {
-    const explicitMarkdown = req.params.slug.endsWith('.md');
-    const slug = req.params.slug.replace(/\.md$/, '');
-    // 浏览器的 Accept 首选 text/html；curl 的 */*、Agent 抓取器的 text/markdown 都会落到 Markdown
-    const prefersHtml = req.accepts(['text/markdown', 'text/html']) === 'text/html';
-    if (!explicitMarkdown && req.query.format !== 'md' && prefersHtml) {
-      return res.redirect(`/?skill=${encodeURIComponent(slug)}`);
-    }
-
     const { skill, error } = agentLookup(req);
     if (error) return res.status(error[0]).type('text/markdown').send(`# 错误\n\n${error[1]}\n`);
     res.type('text/markdown');
@@ -148,7 +153,7 @@ router.get('/:slug', (req, res) => {
     if (truthy(req.query.raw)) return res.send(skill.content);
 
     // 多文件技能：直接 fetch 只拿得到 SKILL.md，附上文件清单让 Agent 能取到脚本/参考资料
-    const files = getSkillFileTree(skill.folder_path, skill.slug).filter((f) => f.path !== 'SKILL.md').map((f) => f.path).sort();
+    const files = getSkillFileTree(skill.user_id, skill.folder_path, skill.slug).filter((f) => f.path !== 'SKILL.md').map((f) => f.path).sort();
     if (!files.length) return res.send(skill.content);
     const base = getBaseUrl(req);
     const manifest = [
@@ -159,7 +164,7 @@ router.get('/:slug', (req, res) => {
       '<!-- 以下由 AnotherSkillHub 附加，不属于 SKILL.md 原文（?raw=1 可获取原文） -->',
       '## 附属文件',
       '',
-      `本技能包含 ${files.length} 个附属文件，正文中的相对路径指向它们。需要执行脚本时请完整安装：\`ash pull ${skill.slug}\`（或 \`curl -fsSL ${base}/s/${skill.slug}/install.sh | bash\`）。`,
+      `本技能包含 ${files.length} 个附属文件，正文中的相对路径指向它们。需要执行脚本时请完整安装：\`ash pull ${skill.slug}\`（或 \`${curlPipeCommand(`${base}/s/${skill.slug}/install.sh`)}\`）。`,
       '',
       ...files.map((f) => `- \`${f}\`：${base}/s/${skill.slug}/files/${f.split('/').map(encodeURIComponent).join('/')}`),
       '',
@@ -201,13 +206,13 @@ router.get('/:slug/install.sh', (req, res) => {
 function sendArchive(req, res, kind) {
   const { skill, error } = agentLookup(req);
   if (error) return res.status(error[0]).type('text/plain').send(`错误: ${error[1]}\n`);
-  if (!skillDirExists(skill.folder_path, skill.slug)) return res.status(404).type('text/plain').send('错误: 技能文件缺失\n');
+  if (!skillDirExists(skill.user_id, skill.folder_path, skill.slug)) return res.status(404).type('text/plain').send('错误: 技能文件缺失\n');
   if (kind === 'tar') {
     res.attachment(`${skill.slug}.tar.gz`);
-    createSkillTarGzArchive(skill.folder_path, skill.slug, res);
+    createSkillTarGzArchive(skill.user_id, skill.folder_path, skill.slug, res);
   } else {
     res.attachment(`${skill.slug}.zip`);
-    createSkillArchive(skill.folder_path, skill.slug, res);
+    createSkillArchive(skill.user_id, skill.folder_path, skill.slug, res);
   }
 }
 
@@ -324,12 +329,12 @@ function extractSkillArchive(buffer) {
 }
 
 // 推送时指定的目录：逐级补齐 folders 记录，拒绝 .. 与空段
-function ensureFolderPath(folderPath) {
-  const clean = String(folderPath || 'inbox').trim().replace(/^\/+|\/+$/g, '');
+function ensureFolderPath(userId, folderPath) {
+  const clean = cleanFolderPath(folderPath || 'inbox');
+  if (!clean) return null;
   const segments = clean.split('/');
-  if (!clean || segments.some((s) => !s.trim() || s === '.' || s === '..')) return null;
-  const insert = db.prepare('INSERT OR IGNORE INTO folders (path, name, parent_path) VALUES (?, ?, ?)');
-  segments.forEach((segment, i) => insert.run(segments.slice(0, i + 1).join('/'), segment, segments.slice(0, i).join('/')));
+  const insert = db.prepare('INSERT OR IGNORE INTO folders (user_id, path, name, parent_path) VALUES (?, ?, ?, ?)');
+  segments.forEach((segment, i) => insert.run(userId, segments.slice(0, i + 1).join('/'), segment, segments.slice(0, i).join('/')));
   return clean;
 }
 
@@ -389,7 +394,8 @@ api.post('/push', upload.single('file'), (req, res) => {
     const securityWarnings = scanSkill(content, archiveFiles);
     const needsReview = reviewRequired() || hasHighRisk(securityWarnings);
     const slug = meta.slug;
-    const existing = findSkill(slug);
+    const uid = req.user.id;
+    const existing = findSkill(uid, slug);
     const base = getBaseUrl(req);
 
     let result;
@@ -416,7 +422,7 @@ api.post('/push', upload.single('file'), (req, res) => {
         `).run(content, JSON.stringify(archiveFiles), meta.description || existing.description,
           meta.frontmatter.version ? meta.version : existing.version, terminalSource, JSON.stringify(securityWarnings),
           isPending ? 'pending' : 'approved', existing.id);
-        replaceSkillOnDisk(existing.folder_path, slug, content, archiveFiles);
+        replaceSkillOnDisk(uid, existing.folder_path, slug, content, archiveFiles);
         result = { ...common, action: 'updated', status: isPending ? 'pending' : 'approved' };
       } else {
         db.prepare(`
@@ -428,15 +434,15 @@ api.post('/push', upload.single('file'), (req, res) => {
         result = { ...common, action: 'update-pending', status: 'approved' };
       }
     } else {
-      const folderPath = ensureFolderPath(body.folder || body.folder_path || 'inbox');
+      const folderPath = ensureFolderPath(uid, body.folder || body.folder_path || 'inbox');
       if (!folderPath) return fail(400, `非法的目录: ${body.folder || body.folder_path}`);
       const status = needsReview ? 'pending' : 'approved';
       db.prepare(`
-        INSERT INTO skills (slug, name, description, folder_path, tags, content, files, terminal_source, version, status, security_warnings)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(slug, meta.name, meta.description, folderPath, JSON.stringify(meta.tags), content, JSON.stringify(archiveFiles),
+        INSERT INTO skills (user_id, slug, name, description, folder_path, tags, content, files, terminal_source, version, status, security_warnings)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(uid, slug, meta.name, meta.description, folderPath, JSON.stringify(meta.tags), content, JSON.stringify(archiveFiles),
         terminalSource, meta.version, status, JSON.stringify(securityWarnings));
-      replaceSkillOnDisk(folderPath, slug, content, archiveFiles);
+      replaceSkillOnDisk(uid, folderPath, slug, content, archiveFiles);
       result = { slug, name: meta.name, folder_path: folderPath, action: 'created', status };
     }
 
@@ -450,7 +456,7 @@ api.post('/push', upload.single('file'), (req, res) => {
       // 兼容旧版 CLI：合并成一行提示
       warning: [...securityWarnings.map((w) => `⚠️ 安全提醒: ${w.msg}`), ...notices].join(' | ') || undefined,
       url: `${base}/s/${slug}`,
-      install_cmd: `curl -fsSL ${base}/s/${slug}/install.sh | bash`,
+      install_cmd: curlPipeCommand(`${base}/s/${slug}/install.sh`),
     };
     const status = result.action === 'created' ? 201 : 200;
     return asText ? res.status(status).type('text/plain').send(pushSummaryText(payload)) : res.status(status).json(payload);
@@ -464,7 +470,7 @@ api.post('/push', upload.single('file'), (req, res) => {
 api.get('/revisions', (req, res) => {
   const slugs = [].concat(req.query.slug || []).map(String).filter(Boolean).slice(0, 500);
   const lines = slugs.map((slug) => {
-    const skill = findSkill(slug);
+    const skill = findSkill(req.user.id, slug);
     if (!skill) return `${slug}\tmissing\t-\t-`;
     if (skill.is_deleted) return `${slug}\ttrashed\t-\t-`;
     return `${slug}\t${skill.status === 'pending' ? 'pending' : 'published'}\t${skillRevision(skill)}\t${skill.version || '-'}`;
@@ -484,9 +490,9 @@ api.get('/mine', (req, res) => {
   const rows = db.prepare(`
     SELECT slug, name, status, is_deleted, pending_content IS NOT NULL AS has_pending, pending_at, last_review, updated_at, terminal_source, pending_meta
     FROM skills
-    WHERE terminal_source = ? OR json_extract(pending_meta, '$.terminal_source') = ? OR json_extract(last_review, '$.source') = ?
+    WHERE user_id = ? AND (terminal_source = ? OR json_extract(pending_meta, '$.terminal_source') = ? OR json_extract(last_review, '$.source') = ?)
     ORDER BY COALESCE(pending_at, updated_at) DESC
-  `).all(terminal, terminal, terminal);
+  `).all(req.user.id, terminal, terminal, terminal);
   if (!rows.length) return res.type('text/plain').send(`没有来自 ${terminal} 的推送记录\n`);
   const lines = rows.map((r) => {
     const review = parseJson(r.last_review, null);
@@ -506,7 +512,7 @@ api.post('/withdraw', (req, res) => {
   const slug = String(req.body?.slug || '').trim();
   const terminal = String(req.body?.terminal || '').trim();
   const fail = (status, message) => res.status(status).type('text/plain').send(`错误: ${message}\n`);
-  const skill = findSkill(slug);
+  const skill = findSkill(req.user.id, slug);
   if (!skill || skill.is_deleted) return fail(404, `技能 ${slug} 不存在`);
   if (skill.status === 'pending') {
     if (skill.terminal_source !== terminal) return fail(403, `${slug} 不是由 ${terminal} 推送的，不能撤回`);
@@ -515,7 +521,7 @@ api.post('/withdraw', (req, res) => {
       db.prepare('DELETE FROM skill_versions WHERE skill_id = ?').run(skill.id);
       db.prepare('DELETE FROM skills WHERE id = ?').run(skill.id);
     })();
-    fs.rmSync(path.join(baseStorageDir, skill.folder_path || 'inbox', skill.slug), { recursive: true, force: true });
+    removeSkillFromDisk(skill.user_id, skill.folder_path, skill.slug);
     return res.type('text/plain').send(`✅ 已撤回待审核的新技能 ${slug}\n`);
   }
   if (skill.pending_content != null) {
@@ -527,4 +533,4 @@ api.post('/withdraw', (req, res) => {
   return fail(400, `${slug} 没有待审核的内容，已发布的技能不能撤回`);
 });
 
-module.exports = { publicRouter: router, apiRouter: api };
+module.exports = { publicRouter: router, apiRouter: api, browserRedirect };

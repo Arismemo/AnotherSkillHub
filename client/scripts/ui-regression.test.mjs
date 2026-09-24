@@ -68,6 +68,6 @@ test('three-pane shell and readable Markdown styles remain present', async () =>
   assert.match(css, /\.pane-resizer\s*\{[^}]*cursor:\s*col-resize/s, 'panes need a shared resizer affordance');
   assert.match(css, /\.markdown-document\s*\{[^}]*line-height:\s*1\.6/s);
   assert.match(css, /\.detail-content\s*\{[^}]*max\(44rem,\s*82%\)/s, 'body column must stay a soft cap, not a hard 40rem lock');
-  assert.match(css, /--measure:\s*48rem/, 'readable measure token must exist for markdown text blocks');
+  assert.match(await source('src/tokens.css'), /--measure:\s*48rem/, 'readable measure token must exist for markdown text blocks');
   assert.ok(css.includes(':focus-visible'));
 });

@@ -5,11 +5,19 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d1117" />
-    <meta name="description" content="集中管理、检索和维护 Agent 技能。" />
-    <title>AnotherSkillHub · Agent 技能库</title>
+    <meta name="description" content="自托管的 Agent 技能库：把 Agent 做成的流程沉淀成技能，审核后分发到每一台机器。" />
+    <title>AnotherSkillHub · 自托管的 Agent 技能库</title>
+    <script>
+      // 首帧前按已保存的外观设置主题，避免深浅色闪烁（与 ThemeToggle 共用 ash-theme）
+      try {
+        var saved = localStorage.getItem('ash-theme');
+        var dark = saved === 'dark' || (saved !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      } catch (e) { /* 存储不可用时沿用默认深色 */ }
+    </script>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module" src="/src/landing/main.jsx"></script>
   </body>
 </html>

@@ -46,7 +46,13 @@ git push origin HEAD:refs/heads/main
 ssh 100.112.81.111 "docker exec ash node -e 'const D=require(\"better-sqlite3\"); new D(\"/app/data/another-skillhub.db\").backup(\"/app/data/backup-before-$SHA.db\").then(()=>console.log(\"backup ok\"))'"
 ```
 
-备份文件留在数据卷内（`backup-before-<sha>.db`），可按需清理旧备份。
+技能文件也一起备份（多用户迁移、认领旧数据会搬动目录）：
+
+```bash
+ssh 100.112.81.111 "cd /home/liukun/services/skillhub-app/data && tar -czf backup-files-before-$SHA.tgz skills_files"
+```
+
+备份文件留在数据卷内（`backup-before-<sha>.db`、`backup-files-before-<sha>.tgz`），可按需清理旧备份。
 
 ### 4. 传输源码 → 服务器构建镜像
 
@@ -73,13 +79,34 @@ ssh 100.112.81.111 "
 "
 ```
 
-线上冒烟（本地即可）：
+线上冒烟（本地即可；除 landing、/setup.sh、/agent.md 外都要 token，`ash login` 后从 ~/.ash/token 取）：
 
 ```bash
-curl -s "https://ash.709970.xyz/api/skills?folder=all" | python3 -c "import json,sys; print('skills:', len(json.load(sys.stdin)))"
-curl -s https://ash.709970.xyz/s/ego-browser.md | head -3   # Agent 协议
+AUTH="Authorization: Bearer $(cat ~/.ash/token)"
+curl -s -o /dev/null -w '%{http_code}\n' https://ash.709970.xyz/api/skills   # 未带 token 应为 401
+curl -s -H "$AUTH" "https://ash.709970.xyz/api/skills?folder=all" | python3 -c "import json,sys; print('skills:', len(json.load(sys.stdin)))"
+curl -s -H "$AUTH" https://ash.709970.xyz/s/ego-browser.md | head -3   # Agent 协议
 # 浏览器强刷（⌘⇧R）验证 UI；DB 结构变化时确认老库自动迁移（CREATE IF NOT EXISTS / 轻量 ALTER）
 ```
+
+## 一次性：上线多用户鉴权（feat/auth-landing）
+
+这个版本起所有接口都要登录。老库启动时自动迁移，但旧数据**没有主人，任何账号都看不到**，要由管理员认领。按顺序做：
+
+1. 照常执行第 1–4 步。第 3 步的 DB 备份和 `skills_files` 备份都不能省。
+2. 第 5 步生成 `compose.deploy.yml` 之后、`up -d` 之前，先在 `environment` 里加一行 `- ASH_REGISTRATION=closed`，避免认领前有陌生人注册。
+3. `up -d` 之后，认领旧数据（会交互读取密码）：
+   ```bash
+   docker exec -it ash npm run user:create -- liukun --admin --claim-legacy
+   # 输出应为：✅ 已认领旧数据：N 个技能（搬移 N 个目录）、…
+   ```
+4. 浏览器打开 https://ash.709970.xyz ：先看到 landing，登录后进入 `/app`，技能都在。
+5. 每台接入的机器执行一次 `ash update && ash login`，否则 Agent 会报「尚未登录」。
+6. 如果需要开放注册：把 `compose.deploy.yml` 里这一行改成 `open`，再执行一次 `up -d --no-build`。
+
+回滚到鉴权之前的版本时，**数据也要一起回滚**：旧代码不认识迁移后的表结构。停容器后用 `backup-before-<sha>.db` 覆盖数据库，并把 `backup-files-before-<sha>.tgz` 解压回 `skills_files`。
+
+公网网关的 Nginx 需要传 `X-Forwarded-For` 和 `X-Forwarded-Proto`。否则登录限流会把所有人算作同一个 IP，cookie 也拿不到 `Secure` 标记。
 
 ## 回滚
 

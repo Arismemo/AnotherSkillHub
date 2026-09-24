@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { saveSkillToDisk, replaceSkillOnDisk, moveSkillOnDisk, parseSkillContent, getSkillFileTree, getSkillFileContent } = require('../storage');
+const { saveSkillToDisk, replaceSkillOnDisk, moveSkillOnDisk, parseSkillContent, getSkillFileTree, getSkillFileContent, cleanFolderPath } = require('../storage');
 const { normalizeSkillMeta } = require('../skillMeta');
 const { buildSkillGraph } = require('../skillGraph');
 const { parseJson, snapshotSkillVersion, approveSkill, rejectSkill, warningsFor } = require('../review');
@@ -9,14 +9,25 @@ const { parseJson, snapshotSkillVersion, approveSkill, rejectSkill, warningsFor 
 // 待审核：Agent 推送的新技能，或已发布技能上挂着 Agent 提交的更新
 const PENDING_WHERE = "(status = 'pending' OR pending_content IS NOT NULL)";
 
+// 所有查询都限定在当前用户自己的库里；:id 可以是数字 id 或 slug
+function findOwnSkill(userId, id) {
+  return isNaN(id)
+    ? db.prepare('SELECT * FROM skills WHERE user_id = ? AND slug = ?').get(userId, id)
+    : db.prepare('SELECT * FROM skills WHERE user_id = ? AND (id = ? OR slug = ?)').get(userId, id, id);
+}
+
+const findOwnSkillById = (userId, id) => db.prepare('SELECT * FROM skills WHERE id = ? AND user_id = ?').get(id, userId);
+
 // 获取统计数据 (用于左侧栏 badge)
 router.get('/stats', (req, res) => {
   try {
-    const inboxCount = db.prepare(`SELECT COUNT(*) as count FROM skills WHERE folder_path = 'inbox' AND is_deleted = 0`).get().count;
-    const starredCount = db.prepare(`SELECT COUNT(*) as count FROM skills WHERE is_starred = 1 AND is_deleted = 0`).get().count;
-    const allCount = db.prepare(`SELECT COUNT(*) as count FROM skills WHERE is_deleted = 0`).get().count;
-    const trashCount = db.prepare(`SELECT COUNT(*) as count FROM skills WHERE is_deleted = 1`).get().count;
-    const pendingCount = db.prepare(`SELECT COUNT(*) as count FROM skills WHERE is_deleted = 0 AND ${PENDING_WHERE}`).get().count;
+    const uid = req.user.id;
+    const count = (where) => db.prepare(`SELECT COUNT(*) as count FROM skills WHERE user_id = ? AND ${where}`).get(uid).count;
+    const inboxCount = count(`folder_path = 'inbox' AND is_deleted = 0`);
+    const starredCount = count(`is_starred = 1 AND is_deleted = 0`);
+    const allCount = count(`is_deleted = 0`);
+    const trashCount = count(`is_deleted = 1`);
+    const pendingCount = count(`is_deleted = 0 AND ${PENDING_WHERE}`);
 
     res.json({
       pending: pendingCount,
@@ -33,7 +44,7 @@ router.get('/stats', (req, res) => {
 // 获取所有标签
 router.get('/tags', (req, res) => {
   try {
-    const rows = db.prepare(`SELECT tags FROM skills WHERE is_deleted = 0`).all();
+    const rows = db.prepare(`SELECT tags FROM skills WHERE user_id = ? AND is_deleted = 0`).all(req.user.id);
     const tagSet = new Set();
     rows.forEach(r => {
       try {
@@ -57,8 +68,8 @@ router.get('/', (req, res) => {
     let query = `SELECT id, slug, name, description, folder_path, tags, terminal_source, is_starred, is_deleted, version, created_at, updated_at,
       status, pending_content IS NOT NULL AS has_pending_update, json_array_length(COALESCE(security_warnings, '[]')) AS warning_count,
       json_array_length(COALESCE(files, '[]')) + 1 AS file_count
-      FROM skills WHERE 1=1`;
-    const params = [];
+      FROM skills WHERE user_id = ?`;
+    const params = [req.user.id];
 
     if (folder === 'trash') {
       query += ` AND is_deleted = 1`;
@@ -122,7 +133,7 @@ router.get('/', (req, res) => {
 // Compact graph payload; full skill bodies stay on the server.
 router.get('/graph', (req, res) => {
   try {
-    const skills = db.prepare('SELECT id, slug, name, description, folder_path, tags, content FROM skills WHERE is_deleted = 0 ORDER BY slug').all();
+    const skills = db.prepare('SELECT id, slug, name, description, folder_path, tags, content FROM skills WHERE user_id = ? AND is_deleted = 0 ORDER BY slug').all(req.user.id);
     res.json(buildSkillGraph(skills));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -132,13 +143,7 @@ router.get('/graph', (req, res) => {
 // 获取单个技能详情
 router.get('/:id', (req, res) => {
   try {
-    const { id } = req.params;
-    let skill;
-    if (isNaN(id)) {
-      skill = db.prepare(`SELECT * FROM skills WHERE slug = ?`).get(id);
-    } else {
-      skill = db.prepare(`SELECT * FROM skills WHERE id = ? OR slug = ?`).get(id, id);
-    }
+    const skill = findOwnSkill(req.user.id, req.params.id);
 
     if (!skill) {
       return res.status(404).json({ error: 'Skill not found' });
@@ -147,7 +152,7 @@ router.get('/:id', (req, res) => {
     skill.tags = JSON.parse(skill.tags || '[]');
     skill.files = JSON.parse(skill.files || '[]');
     skill.security_warnings = parseJson(skill.security_warnings, []);
-    skill.file_tree = getSkillFileTree(skill.folder_path, skill.slug);
+    skill.file_tree = getSkillFileTree(skill.user_id, skill.folder_path, skill.slug);
     // 待审更新：连同文件列表一起给前端做差异对比
     skill.pending_update = skill.pending_content != null ? {
       content: skill.pending_content,
@@ -172,12 +177,10 @@ router.get('/:id/file', (req, res) => {
     if (!filePath) {
       return res.status(400).json({ error: 'path query parameter is required' });
     }
-    const skill = isNaN(id) 
-      ? db.prepare(`SELECT * FROM skills WHERE slug = ?`).get(id)
-      : db.prepare(`SELECT * FROM skills WHERE id = ? OR slug = ?`).get(id, id);
+    const skill = findOwnSkill(req.user.id, id);
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
 
-    const content = getSkillFileContent(skill.folder_path, skill.slug, filePath);
+    const content = getSkillFileContent(skill.user_id, skill.folder_path, skill.slug, filePath);
     if (content === null) {
       return res.status(404).json({ error: 'File not found' });
     }
@@ -191,7 +194,7 @@ router.get('/:id/file', (req, res) => {
 router.post('/parse', (req, res) => {
   const { content = '', slug, name, description } = req.body || {};
   const meta = normalizeSkillMeta(String(content), { slug, name, description });
-  const existing = meta.slug ? db.prepare('SELECT id, is_deleted FROM skills WHERE slug = ?').get(meta.slug) : null;
+  const existing = meta.slug ? db.prepare('SELECT id, is_deleted FROM skills WHERE user_id = ? AND slug = ?').get(req.user.id, meta.slug) : null;
   res.json({
     slug: meta.slug, name: meta.name, description: meta.description, tags: meta.tags, version: meta.version,
     errors: meta.errors, warnings: meta.warnings,
@@ -215,26 +218,27 @@ router.post('/', (req, res) => {
     const { slug, name, description, tags, version } = meta;
 
     // 默认放入 inbox
-    folder_path = folder_path || 'inbox';
+    folder_path = cleanFolderPath(folder_path || 'inbox');
+    if (!folder_path) return res.status(400).json({ error: `非法的目录: ${req.body.folder_path}` });
     files = Array.isArray(files) ? files : [];
     terminal_source = terminal_source || 'Web';
 
     // 检查是否存在同名 slug
-    const existing = db.prepare(`SELECT id FROM skills WHERE slug = ?`).get(slug);
+    const existing = db.prepare(`SELECT id FROM skills WHERE user_id = ? AND slug = ?`).get(req.user.id, slug);
 
     if (existing) {
       return res.status(409).json({ error: `标识符「${slug}」已存在，请更换标识符或编辑已有技能` });
     }
 
     const stmt = db.prepare(`
-      INSERT INTO skills (slug, name, description, folder_path, tags, content, files, terminal_source, version, security_warnings)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO skills (user_id, slug, name, description, folder_path, tags, content, files, terminal_source, version, security_warnings)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const result = stmt.run(slug, name, description || '', folder_path, JSON.stringify(tags), content, JSON.stringify(files), terminal_source, version,
+    const result = stmt.run(req.user.id, slug, name, description || '', folder_path, JSON.stringify(tags), content, JSON.stringify(files), terminal_source, version,
       JSON.stringify(warningsFor(content, files)));
 
-    saveSkillToDisk(folder_path, slug, content, files);
+    saveSkillToDisk(req.user.id, folder_path, slug, content, files);
 
     res.status(201).json({
       message: 'Skill created successfully',
@@ -253,7 +257,7 @@ router.post('/', (req, res) => {
 // 历史版本列表
 router.get('/:id/versions', (req, res) => {
   const { id } = req.params;
-  const skill = db.prepare('SELECT id FROM skills WHERE id = ?').get(id);
+  const skill = findOwnSkillById(req.user.id, id);
   if (!skill) return res.status(404).json({ error: 'Skill not found' });
   const rows = db.prepare(`
     SELECT id, name, description, source, created_at, label, LENGTH(content) AS content_size
@@ -264,6 +268,7 @@ router.get('/:id/versions', (req, res) => {
 
 // 单个历史版本的完整内容（差异对比用）
 router.get('/:id/versions/:versionId', (req, res) => {
+  if (!findOwnSkillById(req.user.id, req.params.id)) return res.status(404).json({ error: 'Skill not found' });
   const ver = db.prepare('SELECT id, skill_id, content, files, name, description, source, label, created_at FROM skill_versions WHERE id = ? AND skill_id = ?')
     .get(req.params.versionId, Number(req.params.id));
   if (!ver) return res.status(404).json({ error: 'Version not found' });
@@ -273,7 +278,7 @@ router.get('/:id/versions/:versionId', (req, res) => {
 // 审核：采纳 Agent 推送的新技能或待审更新
 router.post('/:id/approve', (req, res) => {
   try {
-    const skill = db.prepare('SELECT * FROM skills WHERE id = ?').get(req.params.id);
+    const skill = findOwnSkillById(req.user.id, req.params.id);
     if (!skill || skill.is_deleted) return res.status(404).json({ error: 'Skill not found' });
     if (skill.status !== 'pending' && skill.pending_content == null) return res.status(400).json({ error: '该技能没有待审核的内容' });
     res.json({ success: true, result: approveSkill(skill) });
@@ -285,7 +290,7 @@ router.post('/:id/approve', (req, res) => {
 // 审核：拒绝（待审更新直接丢弃；待审新技能移入废纸篓）
 router.post('/:id/reject', (req, res) => {
   try {
-    const skill = db.prepare('SELECT * FROM skills WHERE id = ?').get(req.params.id);
+    const skill = findOwnSkillById(req.user.id, req.params.id);
     if (!skill || skill.is_deleted) return res.status(404).json({ error: 'Skill not found' });
     const result = rejectSkill(skill);
     if (result === 'noop') return res.status(400).json({ error: '该技能没有待审核的内容' });
@@ -299,6 +304,7 @@ router.post('/:id/reject', (req, res) => {
 router.put('/:id/versions/:versionId/label', (req, res) => {
   const { label } = req.body;
   if (typeof label !== 'string') return res.status(400).json({ error: 'label must be string' });
+  if (!findOwnSkillById(req.user.id, req.params.id)) return res.status(404).json({ error: 'Skill not found' });
   const r = db.prepare('UPDATE skill_versions SET label = ? WHERE id = ? AND skill_id = ?').run(label || null, req.params.versionId, Number(req.params.id));
   if (!r.changes) return res.status(404).json({ error: 'Version not found' });
   res.json({ success: true });
@@ -308,7 +314,7 @@ router.put('/:id/versions/:versionId/label', (req, res) => {
 router.post('/:id/versions/:versionId/restore', (req, res) => {
   try {
     const { id, versionId } = req.params;
-    const skill = db.prepare('SELECT * FROM skills WHERE id = ?').get(id);
+    const skill = findOwnSkillById(req.user.id, id);
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
     const ver = db.prepare('SELECT * FROM skill_versions WHERE id = ? AND skill_id = ?').get(versionId, Number(id));
     if (!ver) return res.status(404).json({ error: 'Version not found' });
@@ -317,7 +323,7 @@ router.post('/:id/versions/:versionId/restore', (req, res) => {
     const verFiles = JSON.parse(ver.files || '[]');
     db.prepare('UPDATE skills SET content = ?, files = ?, security_warnings = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .run(ver.content, ver.files, JSON.stringify(warningsFor(ver.content, verFiles)), skill.id);
-    replaceSkillOnDisk(skill.folder_path, skill.slug, ver.content, verFiles);
+    replaceSkillOnDisk(skill.user_id, skill.folder_path, skill.slug, ver.content, verFiles);
     res.json({ success: true, restored_version_id: ver.id });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -330,10 +336,12 @@ router.put('/:id', (req, res) => {
     const { id } = req.params;
     const { name, description, folder_path, tags, content, files, terminal_source, is_starred, version } = req.body;
 
-    const skill = db.prepare(`SELECT * FROM skills WHERE id = ?`).get(id);
+    const skill = findOwnSkillById(req.user.id, id);
     if (!skill) {
       return res.status(404).json({ error: 'Skill not found' });
     }
+    const targetFolder = folder_path ? cleanFolderPath(folder_path) : null;
+    if (folder_path && !targetFolder) return res.status(400).json({ error: `非法的目录: ${folder_path}` });
 
     // 内容有实质变化才快照历史版本
     if (content !== undefined && content !== skill.content) snapshotSkillVersion(skill, 'web');
@@ -354,9 +362,9 @@ router.put('/:id', (req, res) => {
 
     // 如果改变了文件夹
     let finalFolder = skill.folder_path;
-    if (folder_path && folder_path !== skill.folder_path) {
-      moveSkillOnDisk(skill.folder_path, folder_path, skill.slug);
-      finalFolder = folder_path;
+    if (targetFolder && targetFolder !== skill.folder_path) {
+      moveSkillOnDisk(skill.user_id, skill.folder_path, targetFolder, skill.slug);
+      finalFolder = targetFolder;
     }
 
     const updatedWarnings = JSON.stringify(warningsFor(updatedContent, JSON.parse(updatedFiles || '[]')));
@@ -364,10 +372,10 @@ router.put('/:id', (req, res) => {
       UPDATE skills
       SET name = ?, description = ?, folder_path = ?, tags = ?, content = ?, files = ?, terminal_source = ?, is_starred = ?, version = ?, security_warnings = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(updatedName, updatedDesc, finalFolder, updatedTags, updatedContent, updatedFiles, updatedSource, updatedStarred, updatedVersion, updatedWarnings, id);
+    `).run(updatedName, updatedDesc, finalFolder, updatedTags, updatedContent, updatedFiles, updatedSource, updatedStarred, updatedVersion, updatedWarnings, skill.id);
 
     // 磁盘保存
-    saveSkillToDisk(finalFolder, skill.slug, updatedContent, JSON.parse(updatedFiles));
+    saveSkillToDisk(skill.user_id, finalFolder, skill.slug, updatedContent, JSON.parse(updatedFiles));
 
     res.json({ message: 'Skill updated successfully' });
   } catch (err) {
@@ -379,20 +387,20 @@ router.put('/:id', (req, res) => {
 router.post('/:id/move', (req, res) => {
   try {
     const { id } = req.params;
-    const { target_folder } = req.body;
-
-    if (!target_folder) {
+    if (!req.body.target_folder) {
       return res.status(400).json({ error: 'Target folder is required' });
     }
+    const target_folder = cleanFolderPath(req.body.target_folder);
+    if (!target_folder) return res.status(400).json({ error: `非法的目录: ${req.body.target_folder}` });
 
-    const skill = db.prepare(`SELECT * FROM skills WHERE id = ?`).get(id);
+    const skill = findOwnSkillById(req.user.id, id);
     if (!skill) {
       return res.status(404).json({ error: 'Skill not found' });
     }
 
-    moveSkillOnDisk(skill.folder_path, target_folder, skill.slug);
+    moveSkillOnDisk(skill.user_id, skill.folder_path, target_folder, skill.slug);
 
-    db.prepare(`UPDATE skills SET folder_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(target_folder, id);
+    db.prepare(`UPDATE skills SET folder_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(target_folder, skill.id);
 
     res.json({ message: `Moved to ${target_folder}` });
   } catch (err) {
@@ -406,23 +414,24 @@ router.post('/:id/copy', (req, res) => {
     const { id } = req.params;
     const { target_folder, new_name } = req.body;
 
-    const skill = db.prepare(`SELECT * FROM skills WHERE id = ?`).get(id);
+    const skill = findOwnSkillById(req.user.id, id);
     if (!skill) {
       return res.status(404).json({ error: 'Skill not found' });
     }
 
-    const destFolder = target_folder || skill.folder_path;
+    const destFolder = target_folder ? cleanFolderPath(target_folder) : skill.folder_path;
+    if (!destFolder) return res.status(400).json({ error: `非法的目录: ${target_folder}` });
     const baseSlug = skill.slug;
     const newSlug = `${baseSlug}-copy-${Date.now().toString().slice(-4)}`;
     const copyName = new_name || `${skill.name} (Copy)`;
 
     const stmt = db.prepare(`
-      INSERT INTO skills (slug, name, description, folder_path, tags, content, files, terminal_source, version, security_warnings)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO skills (user_id, slug, name, description, folder_path, tags, content, files, terminal_source, version, security_warnings)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const result = stmt.run(newSlug, copyName, skill.description, destFolder, skill.tags, skill.content, skill.files, 'Web-Copy', skill.version, skill.security_warnings || '[]');
+    const result = stmt.run(skill.user_id, newSlug, copyName, skill.description, destFolder, skill.tags, skill.content, skill.files, 'Web-Copy', skill.version, skill.security_warnings || '[]');
 
-    saveSkillToDisk(destFolder, newSlug, skill.content, JSON.parse(skill.files));
+    saveSkillToDisk(skill.user_id, destFolder, newSlug, skill.content, JSON.parse(skill.files));
 
     res.status(201).json({ message: 'Skill copied', id: result.lastInsertRowid, slug: newSlug });
   } catch (err) {
@@ -434,11 +443,11 @@ router.post('/:id/copy', (req, res) => {
 router.post('/:id/star', (req, res) => {
   try {
     const { id } = req.params;
-    const skill = db.prepare(`SELECT is_starred FROM skills WHERE id = ?`).get(id);
+    const skill = findOwnSkillById(req.user.id, id);
     if (!skill) return res.status(404).json({ error: 'Not found' });
 
     const newStarred = skill.is_starred ? 0 : 1;
-    db.prepare(`UPDATE skills SET is_starred = ? WHERE id = ?`).run(newStarred, id);
+    db.prepare(`UPDATE skills SET is_starred = ? WHERE id = ?`).run(newStarred, skill.id);
     res.json({ is_starred: newStarred });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -449,7 +458,8 @@ router.post('/:id/star', (req, res) => {
 router.post('/:id/trash', (req, res) => {
   try {
     const { id } = req.params;
-    db.prepare(`UPDATE skills SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(id);
+    const r = db.prepare(`UPDATE skills SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`).run(id, req.user.id);
+    if (!r.changes) return res.status(404).json({ error: 'Skill not found' });
     res.json({ message: 'Moved to trash' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -460,7 +470,8 @@ router.post('/:id/trash', (req, res) => {
 router.post('/:id/restore', (req, res) => {
   try {
     const { id } = req.params;
-    db.prepare(`UPDATE skills SET is_deleted = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(id);
+    const r = db.prepare(`UPDATE skills SET is_deleted = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`).run(id, req.user.id);
+    if (!r.changes) return res.status(404).json({ error: 'Skill not found' });
     res.json({ message: 'Restored from trash' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -471,7 +482,8 @@ router.post('/:id/restore', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const { id } = req.params;
-    db.prepare(`DELETE FROM skills WHERE id = ?`).run(id);
+    const r = db.prepare(`DELETE FROM skills WHERE id = ? AND user_id = ?`).run(id, req.user.id);
+    if (!r.changes) return res.status(404).json({ error: 'Skill not found' });
     res.json({ message: 'Permanently deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });

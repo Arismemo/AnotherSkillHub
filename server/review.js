@@ -49,7 +49,7 @@ function approveSkill(skill) {
       WHERE id = ?
     `).run(skill.pending_content, JSON.stringify(files), meta.description || skill.description, meta.version || skill.version,
       meta.terminal_source || skill.terminal_source, JSON.stringify(meta.security_warnings || []), skill.id);
-    replaceSkillOnDisk(skill.folder_path, skill.slug, skill.pending_content, files);
+    replaceSkillOnDisk(skill.user_id, skill.folder_path, skill.slug, skill.pending_content, files);
     recordReview(skill.id, 'approved', 'update', meta.terminal_source);
     return 'update-approved';
   }

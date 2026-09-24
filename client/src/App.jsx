@@ -12,7 +12,7 @@ import SkillList from './components/SkillList';
 import CommandPalette from './components/CommandPalette';
 import ToastContainer from './components/Toast';
 import { showToast } from './components/toastBus';
-import { AgentSetupModal, NewSkillModal, PasteSkillModal, ShortcutsModal } from './components/Modals';
+import { AccountModal, AgentSetupModal, NewSkillModal, PasteSkillModal, ShortcutsModal } from './components/Modals';
 import { BundleDetail, NewBundleModal, AddToBundleModal } from './components/Bundles';
 
 const SkillGraph = lazy(() => import('./components/SkillGraph'));
@@ -52,18 +52,9 @@ export default function App() {
   const [selectedSkillId, setSelectedSkillId] = usePersistedState('selected-skill-id', null, (value) => value === null || Number.isInteger(value));
   // ?skill=<slug> 直达定位中：此期间列表加载不得回退选中，避免 URL 目标被持久化状态覆盖
   const urlTargetingRef = useRef(false);
-  // 设备标识：跨浏览器/设备恢复「上次看到哪」的服务端会话键
-  const deviceKeyRef = useRef(null);
-  const getDeviceKey = () => {
-    if (deviceKeyRef.current) return deviceKeyRef.current;
-    let k = window.localStorage.getItem('ash:device-key');
-    if (!k) {
-      k = 'dev-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-      window.localStorage.setItem('ash:device-key', k);
-    }
-    deviceKeyRef.current = k;
-    return k;
-  };
+  // 当前登录用户：侧栏账户入口用；未登录时 requestJson 的 401 处理会跳去登录页
+  const [currentUser, setCurrentUser] = useState(null);
+  const [showAccountModal, setShowAccountModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   // 多选模式：普通点击也会把 selectedIds 设成 1 项，光看 size 分不清「浏览」和「批量操作」。
   // 只有 Cmd/Shift 点选或 ⌘A 才进入多选模式，批量条据此显示——这样选到只剩 1 项时它也不会消失。
@@ -162,12 +153,16 @@ export default function App() {
   }, [fetchFoldersAndStats]);
 
   useEffect(() => {
+    requestJson('/api/auth/me').then(({ user }) => setCurrentUser(user)).catch(() => null);
+  }, []);
+
+  useEffect(() => {
     const targetSlug = new URLSearchParams(window.location.search).get('skill');
     if (!targetSlug) {
       // 无 URL 指定且本机没有选中记忆 → 尝试服务端会话（跨浏览器首开落到上次位置）
       const stored = window.localStorage.getItem('ash:selected-skill-id');
       if (stored === null || stored === 'null') {
-        requestJson(`/api/session/${getDeviceKey()}`)
+        requestJson('/api/session')
           .then((state) => {
             if (state?.selected_slug) {
               return requestJson(`/api/skills/${encodeURIComponent(state.selected_slug)}`).then((skill) => {
@@ -489,7 +484,7 @@ export default function App() {
   // ——— 服务端会话同步（跨设备恢复）———
   useEffect(() => {
     const t = window.setTimeout(() => {
-      requestJson(`/api/session/${getDeviceKey()}`, {
+      requestJson('/api/session', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -519,7 +514,7 @@ export default function App() {
     const query = next.toString();
     // 只是给还没有 ?skill= 的地址补上首个选中 → 替换，不多留一条历史
     const method = !current.get('skill') && sameView ? 'replaceState' : 'pushState';
-    window.history[method]({ skillId: selectedSkill?.id ?? null }, '', query ? `/?${query}` : '/');
+    window.history[method]({ skillId: selectedSkill?.id ?? null }, '', query ? `/app?${query}` : '/app');
   }, [selectedSkill?.id, selectedSkill?.slug, selectedSkill?.name, graphOpen]);
 
   // 后退/前进：URL 的 ?skill= 变化 → 同步选中
@@ -597,7 +592,7 @@ export default function App() {
   const defaultTargetFolder = targetFolderForView(currentFolder);
 
   const overlayOpen = showPalette || showShortcuts || showNewModal || showPasteModal
-    || showSetupModal || showBundleModal || Boolean(activeBundle) || Boolean(addToBundleTarget);
+    || showSetupModal || showAccountModal || showBundleModal || Boolean(activeBundle) || Boolean(addToBundleTarget);
 
   // 唯一的快捷键注册表：速查面板（?）由它生成，键位不再散落在各组件的 keydown 里。
   // 每次渲染重建（useHotkeys 只把它存进 ref），这样处理函数永远闭包到最新状态。
@@ -718,6 +713,8 @@ export default function App() {
             onNewSkill={() => setShowNewModal(true)}
             onPasteImport={() => setShowPasteModal(true)}
             onOpenSetup={() => setShowSetupModal(true)}
+            user={currentUser}
+            onOpenAccount={() => setShowAccountModal(true)}
             recentSkills={recentSkills}
             bundles={bundles}
             onSelectBundle={setActiveBundle}
@@ -892,6 +889,12 @@ export default function App() {
       <AgentSetupModal
         isOpen={showSetupModal}
         onClose={() => setShowSetupModal(false)}
+        onOpenAccount={() => { setShowSetupModal(false); setShowAccountModal(true); }}
+      />
+      <AccountModal
+        isOpen={showAccountModal}
+        onClose={() => setShowAccountModal(false)}
+        user={currentUser}
       />
       <ShortcutsModal
         isOpen={showShortcuts}

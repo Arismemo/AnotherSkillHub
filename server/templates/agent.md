@@ -4,6 +4,15 @@
 
 这是一个跨机器共享的技能库。一个技能就是一个目录：`SKILL.md`（入口，带 YAML frontmatter）加上可选的 `scripts/`、`references/`。你可以从这里查找并安装别人沉淀的技能，也可以把自己总结的流程推送回来。
 
+## 登录
+
+每个账号有自己的私有技能库，所有命令都以登录的账号身份执行。先运行 `ash whoami` 确认已登录。
+如果提示未登录，**不要替用户输入密码**，而是请用户做以下任意一步：
+- 在终端里运行 `ash login`，输入用户名和密码；
+- 或者在网页「账户」里创建一个 API token，然后运行 `ash login --token <token>`。
+
+token 保存在 `~/.ash/token`，也可以通过环境变量 `ASH_TOKEN` 提供。它等同于账号的访问权限，不要打印、提交或推送进任何技能。
+
 ## 什么时候查找技能
 
 - 接到任务时，尤其是**项目特定或不熟悉的流程**（部署、仿真、内部工具、排障手册），先运行 `ash search <关键词>`。一次没搜到就换同义词，中英文都试一下。
@@ -86,6 +95,9 @@ ash guide
 默认安装目录是自动探测的：`$ASH_SKILLS_DIR`，否则依次尝试唯一的 `~/.hermes/profiles/*/skills`、`~/.hermes/skills`、`~/.agents/skills`、`~/.claude/skills`、`~/.dsh/skills`。
 
 ## 没有 ash 时的 HTTP 接口
+
+所有接口都要带上 `Authorization: Bearer <token>` 请求头（token 见上文「登录」一节），例如：
+`curl -fsSL -H "Authorization: Bearer $ASH_TOKEN" __BASE_URL__/s/<slug>/install.sh | bash`
 
 ```
 GET  __BASE_URL__/api/skills?search=<关键词>&tag=&folder=&format=text   搜索（纯文本，每行一个技能）

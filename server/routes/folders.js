@@ -1,19 +1,35 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { cleanFolderPath, moveSkillOnDisk } = require('../storage');
+
+// 目录本身或它的子目录（前缀比较；不用 LIKE，目录名里的 _ % 不是通配符）
+const within = (folderPath, root) => folderPath === root || folderPath.startsWith(`${root}/`);
+
+// 把 root 目录树下的技能搬到 mapFolder(旧目录) 给出的新目录：磁盘目录与数据库一起改，保持一致
+function relocateSkills(userId, root, mapFolder) {
+  const skills = db.prepare('SELECT id, slug, folder_path FROM skills WHERE user_id = ?').all(userId)
+    .filter((s) => within(s.folder_path || 'inbox', root));
+  const update = db.prepare('UPDATE skills SET folder_path = ? WHERE id = ?');
+  for (const s of skills) {
+    const target = mapFolder(s.folder_path || 'inbox');
+    moveSkillOnDisk(userId, s.folder_path, target, s.slug);
+    update.run(target, s.id);
+  }
+}
 
 // 获取文件夹列表及树状结构
 router.get('/', (req, res) => {
   try {
-    const folders = db.prepare(`SELECT * FROM folders ORDER BY path ASC`).all();
+    const folders = db.prepare(`SELECT * FROM folders WHERE user_id = ? ORDER BY path ASC`).all(req.user.id);
     
     // 获取各文件夹下的 skill 计数
     const counts = db.prepare(`
       SELECT folder_path, COUNT(*) as count 
       FROM skills 
-      WHERE is_deleted = 0 
+      WHERE user_id = ? AND is_deleted = 0 
       GROUP BY folder_path
-    `).all().reduce((acc, cur) => {
+    `).all(req.user.id).reduce((acc, cur) => {
       acc[cur.folder_path] = cur.count;
       return acc;
     }, {});
@@ -32,13 +48,14 @@ router.get('/', (req, res) => {
 // 创建文件夹
 router.post('/', (req, res) => {
   try {
-    let { path: folderPath, name } = req.body;
-    if (!folderPath) {
+    let { name } = req.body;
+    if (!req.body.path) {
       return res.status(400).json({ error: 'Folder path is required' });
     }
 
-    // 标准化 path，去除首尾斜杠
-    folderPath = folderPath.trim().replace(/^\/+|\/+$/g, '');
+    // 标准化 path，去除首尾斜杠；拒绝 . / .. 等会越出存储目录的段
+    const folderPath = cleanFolderPath(req.body.path);
+    if (!folderPath) return res.status(400).json({ error: `非法的目录: ${req.body.path}` });
     if (!name) {
       const segments = folderPath.split('/');
       name = segments[segments.length - 1];
@@ -50,14 +67,16 @@ router.post('/', (req, res) => {
     // 递归确保父级存在
     if (parentPath) {
       const parentName = segments[segments.length - 2];
-      db.prepare(`INSERT OR IGNORE INTO folders (path, name, parent_path) VALUES (?, ?, ?)`).run(
+      db.prepare(`INSERT OR IGNORE INTO folders (user_id, path, name, parent_path) VALUES (?, ?, ?, ?)`).run(
+        req.user.id,
         parentPath,
         parentName,
         segments.slice(0, -2).join('/')
       );
     }
 
-    db.prepare(`INSERT OR IGNORE INTO folders (path, name, parent_path) VALUES (?, ?, ?)`).run(
+    db.prepare(`INSERT OR IGNORE INTO folders (user_id, path, name, parent_path) VALUES (?, ?, ?, ?)`).run(
+      req.user.id,
       folderPath,
       name,
       parentPath
@@ -72,10 +91,13 @@ router.post('/', (req, res) => {
 // 重命名或移动文件夹
 router.put('/', (req, res) => {
   try {
-    const { old_path, new_path, new_name } = req.body;
-    if (!old_path || !new_path) {
+    const { old_path, new_name } = req.body;
+    if (!old_path || !req.body.new_path) {
       return res.status(400).json({ error: 'old_path and new_path are required' });
     }
+    const new_path = cleanFolderPath(req.body.new_path);
+    if (!new_path) return res.status(400).json({ error: `非法的目录: ${req.body.new_path}` });
+    const uid = req.user.id;
     if (old_path === 'inbox') {
       return res.status(400).json({ error: 'Cannot rename inbox' });
     }
@@ -84,32 +106,28 @@ router.put('/', (req, res) => {
     const name = new_name || new_path.split('/').pop();
     const parentPath = new_path.split('/').slice(0, -1).join('/');
 
-    db.prepare(`UPDATE folders SET path = ?, name = ?, parent_path = ? WHERE path = ?`).run(
+    db.prepare(`UPDATE folders SET path = ?, name = ?, parent_path = ? WHERE user_id = ? AND path = ?`).run(
       new_path,
       name,
       parentPath,
+      uid,
       old_path
     );
 
     // 级联更新子文件夹
-    const children = db.prepare(`SELECT * FROM folders WHERE path LIKE ?`).all(`${old_path}/%`);
+    const children = db.prepare(`SELECT * FROM folders WHERE user_id = ? AND path LIKE ?`).all(uid, `${old_path}/%`);
     for (const child of children) {
       const childNewPath = child.path.replace(old_path, new_path);
       const childParentPath = childNewPath.split('/').slice(0, -1).join('/');
-      db.prepare(`UPDATE folders SET path = ?, parent_path = ? WHERE path = ?`).run(
+      db.prepare(`UPDATE folders SET path = ?, parent_path = ? WHERE id = ?`).run(
         childNewPath,
         childParentPath,
-        child.path
+        child.id
       );
     }
 
-    // 级联更新 skills 表中的 folder_path
-    db.prepare(`UPDATE skills SET folder_path = ? WHERE folder_path = ?`).run(new_path, old_path);
-    const subSkills = db.prepare(`SELECT id, folder_path FROM skills WHERE folder_path LIKE ?`).all(`${old_path}/%`);
-    for (const s of subSkills) {
-      const updatedPath = s.folder_path.replace(old_path, new_path);
-      db.prepare(`UPDATE skills SET folder_path = ? WHERE id = ?`).run(updatedPath, s.id);
-    }
+    // 级联更新技能：磁盘目录随 folder_path 一起搬，否则文件树、下载、安装都会找不到文件
+    relocateSkills(uid, old_path, (folder) => new_path + folder.slice(old_path.length));
 
     res.json({ message: 'Folder renamed successfully' });
   } catch (err) {
@@ -128,14 +146,11 @@ router.delete('/', (req, res) => {
       return res.status(400).json({ error: 'Cannot delete inbox' });
     }
 
-    // 将该文件夹及其子文件夹下的 skill 移回 inbox，避免丢失
-    db.prepare(`UPDATE skills SET folder_path = 'inbox' WHERE folder_path = ? OR folder_path LIKE ?`).run(
-      folderPath,
-      `${folderPath}/%`
-    );
+    // 将该文件夹及其子文件夹下的 skill 移回 inbox（连同磁盘目录），避免丢失
+    relocateSkills(req.user.id, folderPath, () => 'inbox');
 
     // 删除文件夹
-    db.prepare(`DELETE FROM folders WHERE path = ? OR path LIKE ?`).run(folderPath, `${folderPath}/%`);
+    db.prepare(`DELETE FROM folders WHERE user_id = ? AND (path = ? OR path LIKE ?)`).run(req.user.id, folderPath, `${folderPath}/%`);
 
     res.json({ message: 'Folder deleted, skills moved to inbox' });
   } catch (err) {

@@ -10,7 +10,8 @@
     "test:ui": "npm --prefix client run test:ui",
     "test:server": "node --test server/tests/*.test.js",
     "check": "npm --prefix client run check && npm run test:server",
-    "dev": "node server/index.js"
+    "dev": "node server/index.js",
+    "user:create": "node server/scripts/create-user.js"
   },
   "keywords": [],
   "author": "",
@@ -18,7 +19,6 @@
   "dependencies": {
     "archiver": "^8.0.0",
     "better-sqlite3": "^13.0.3",
-    "cors": "^2.8.6",
     "express": "^5.2.1",
     "gray-matter": "^4.0.3",
     "morgan": "^1.12.1",

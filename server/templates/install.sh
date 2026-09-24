@@ -13,6 +13,12 @@ REVISION=__REVISION__
 VERSION=__VERSION__
 DEPS=(__DEPS__)
 
+# 个人 API token：不写进脚本，运行时从环境变量或 ash login 保存的文件读取，并导出给依赖安装
+ASH_TOKEN="${ASH_TOKEN:-$(cat "$HOME/.ash/token" 2>/dev/null || true)}"
+export ASH_TOKEN
+AUTH=()
+if [ -n "$ASH_TOKEN" ]; then AUTH=(-H "Authorization: Bearer $ASH_TOKEN"); fi
+
 echo "📦 AnotherSkillHub: 正在安装技能 [$SKILL_NAME]"
 
 # 自动探测：ASH_SKILLS_DIR > 唯一的 hermes profile > 已存在的常见目录 > ~/.agents/skills
@@ -55,12 +61,12 @@ STAGING="$(mktemp -d "$SKILLS_ROOT/.ash-staging.XXXXXX")"
 TMP_ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/ash-pull.XXXXXX")"
 trap 'rm -rf "$STAGING" "$TMP_ARCHIVE"' EXIT
 # 归档顶层带 <slug>/ 目录，--strip-components=1 去掉
-if curl -fsSL "$BASE_URL/s/$SKILL_NAME/archive.tar.gz?pending=$PENDING" -o "$TMP_ARCHIVE"; then
+if curl -fsSL ${AUTH[@]+"${AUTH[@]}"} "$BASE_URL/s/$SKILL_NAME/archive.tar.gz?pending=$PENDING" -o "$TMP_ARCHIVE"; then
   tar -xzf "$TMP_ARCHIVE" -C "$STAGING" --strip-components=1
   echo "✓ 完整技能包下载成功"
 else
   echo "⚠️  完整技能包下载失败，改为只拉取 SKILL.md" >&2
-  curl -fsSL "$BASE_URL/s/$SKILL_NAME.md?raw=1&pending=$PENDING" -o "$STAGING/SKILL.md"
+  curl -fsSL ${AUTH[@]+"${AUTH[@]}"} "$BASE_URL/s/$SKILL_NAME.md?raw=1&pending=$PENDING" -o "$STAGING/SKILL.md"
 fi
 rm -f "$STAGING/.ash"
 if [ -d "$STAGING/scripts" ]; then
@@ -108,7 +114,7 @@ if [ "$NODEPS" != "1" ] && [ "${#DEPS[@]}" -gt 0 ]; then
       continue
     fi
     echo "↳ 安装依赖 $dep"
-    if ! dep_script="$(curl -fsS "$BASE_URL/s/$dep/install.sh")" || ! printf '%s\n' "$dep_script" | ASH_SKILLS_DIR="$SKILLS_ROOT" bash; then
+    if ! dep_script="$(curl -fsS ${AUTH[@]+"${AUTH[@]}"} "$BASE_URL/s/$dep/install.sh")" || ! printf '%s\n' "$dep_script" | ASH_SKILLS_DIR="$SKILLS_ROOT" bash; then
       echo "⚠️  依赖 $dep 安装失败（不存在、未发布或网络错误），请手动处理" >&2
     fi
   done

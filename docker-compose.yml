@@ -14,3 +14,5 @@ services:
       - NODE_ENV=production
       - STORAGE_DIR=/app/data/skills_files
       - DATA_DIR=/app/data
+      # 公网部署时先设为 closed，管理员认领旧数据后再按需开放注册
+      - ASH_REGISTRATION=${ASH_REGISTRATION:-open}

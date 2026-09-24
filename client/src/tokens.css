@@ -1,0 +1,101 @@
+/* 设计 token：应用（index.css）与 landing（landing/landing.css）共用，改一处两边生效 */
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  /* 表面：sidebar(sunken) < detail(bg) < list(surface) < raised < hover；浮层/代码另设 */
+  --bg: #0d1117;
+  --surface: #0f141a;
+  --surface-sunken: #0a0d12;
+  --surface-raised: #161b22;
+  --surface-hover: #1d242d;
+  --surface-overlay: #1b2129;
+  --surface-code: #090d12;
+  --row-hover: #171d24;
+  --row-selected: #1a212a;
+  --backdrop: rgba(1, 4, 9, .7);
+  /* 边框 */
+  --border: #2b3139;
+  --border-muted: #21262d;
+  --border-strong: #3d444d;
+  /* 文字：subtle 在 bg/surface/raised/hover 上均 ≥ 4.5:1 */
+  --text: #e6edf3;
+  --text-body: #c9d1d9;
+  --text-muted: #9aa4b0;
+  --text-subtle: #858e9a;
+  /* 强调色：琥珀（与收藏星同族，替代 GitHub 蓝） */
+  --accent: #e8a33d;
+  --accent-hover: #f0b04f;
+  --accent-fg: #0d1117;
+  --accent-muted: rgba(232, 163, 61, .14);
+  --accent-border: rgba(232, 163, 61, .4);
+  --focus: #f0b04f;
+  /* 语义色 */
+  --danger: #f85149;
+  --danger-text: #ff7b72;
+  --danger-muted: rgba(248, 81, 73, .12);
+  --danger-border: rgba(248, 81, 73, .38);
+  --warning: #d29922;
+  --success: #56d364;
+  /* 字体栈 */
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* 字号 6 档 */
+  --fs-2xs: .6875rem;
+  --fs-xs: .75rem;
+  --fs-sm: .8125rem;
+  --fs-md: .875rem;
+  --fs-lg: 1rem;
+  --fs-xl: 1.25rem;
+  --fs-2xl: 1.625rem;
+  /* 正文版式：measure = 文字可读行宽；content-max = 代码/表格的破框上限 */
+  --measure: 48rem;
+  --content-max: 76rem;
+  /* 圆角 4 档 */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  /* 阴影 2 档 */
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, .4);
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, .55);
+  /* 动效 */
+  --dur-fast: .12s;
+  --dur: .16s;
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #f5f7fa;
+  --surface-sunken: #edf1f5;
+  --surface-raised: #ffffff;
+  --surface-hover: #e9eef4;
+  --surface-overlay: #ffffff;
+  --surface-code: #f5f7fa;
+  --row-hover: #eef2f6;
+  --row-selected: #e7f0fa;
+  --backdrop: rgba(31, 41, 55, .45);
+  --border: #c7d0da;
+  --border-muted: #d3dbe3;
+  --border-strong: #aab6c3;
+  --text: #1f2933;
+  --text-body: #2f3c4b;
+  --text-muted: #475569;
+  --text-subtle: #566579;
+  --accent: #895000;
+  --accent-hover: #704000;
+  --accent-fg: #ffffff;
+  --accent-muted: rgba(137, 80, 0, .1);
+  --accent-border: rgba(137, 80, 0, .4);
+  --focus: #895000;
+  --danger: #b42318;
+  --danger-text: #b42318;
+  --danger-muted: rgba(180, 35, 24, .08);
+  --danger-border: rgba(180, 35, 24, .35);
+  --warning: #805400;
+  --success: #116329;
+  --shadow-pop: 0 8px 24px rgba(31, 41, 55, .16);
+  --shadow-modal: 0 24px 64px rgba(31, 41, 55, .22);
+}

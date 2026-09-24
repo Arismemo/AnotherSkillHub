@@ -12,4 +12,16 @@ function getBaseUrl(req) {
   return `${safeProto}://${safeHost}`;
 }
 
-module.exports = { shQuote, getBaseUrl };
+// 给人/Agent 看的一键安装命令：token 取自环境变量 ASH_TOKEN，否则取 ash login 写入的 ~/.ash/token
+const AUTH_CURL_HEADER = '-H "Authorization: Bearer ${ASH_TOKEN:-$(cat ~/.ash/token)}"';
+function curlPipeCommand(url) {
+  return `curl -fsSL ${AUTH_CURL_HEADER} ${url} | bash`;
+}
+
+// 生成的脚本里再发请求时用：运行时读取 token 并导出，交给子脚本继续使用（不写进脚本本身）
+const SCRIPT_TOKEN_PRELUDE = [
+  'ASH_TOKEN="${ASH_TOKEN:-$(cat "$HOME/.ash/token" 2>/dev/null || true)}"',
+  'export ASH_TOKEN',
+].join('\n');
+
+module.exports = { shQuote, getBaseUrl, curlPipeCommand, SCRIPT_TOKEN_PRELUDE };

@@ -8,21 +8,35 @@ SERVER_URL="${ASH_SERVER_URL:-$DEFAULT_SERVER_URL}"
 SERVER_URL="${SERVER_URL%/}"
 TERMINAL="${ASH_TERMINAL:-$(hostname 2>/dev/null || echo Unknown-Host)}"
 
+# 个人 API token：ASH_TOKEN 优先，否则取 ash login 保存的 ~/.ash/token。导出给安装脚本（及其依赖安装）继续使用
+TOKEN_FILE="$HOME/.ash/token"
+ASH_TOKEN="${ASH_TOKEN:-$(cat "$TOKEN_FILE" 2>/dev/null || true)}"
+export ASH_TOKEN
+AUTH=()
+if [ -n "$ASH_TOKEN" ]; then AUTH=(-H "Authorization: Bearer $ASH_TOKEN"); fi
+
 die() { echo "错误: $*" >&2; exit 1; }
 
 # 调用接口：成功时输出响应体；HTTP ≥400 时把服务端返回的错误信息输出到 stderr 并返回非零
 http() {
   local out code body
-  out=$(curl -sS -w '\n%{http_code}' "$@") || die "无法连接 $SERVER_URL"
+  out=$(curl -sS -w '\n%{http_code}' ${AUTH[@]+"${AUTH[@]}"} "$@") || die "无法连接 $SERVER_URL"
   code="${out##*$'\n'}"
   body="${out%$'\n'*}"
   body="${body%$'\n'}"
   if [ "$code" -ge 400 ] 2>/dev/null; then
     printf '%s\n' "$body" >&2
+    if [ "$code" = 401 ]; then
+      if [ -n "$ASH_TOKEN" ]; then echo "提示: token 无效或已吊销，请重新运行 ash login" >&2
+      else echo "提示: 尚未登录，请先运行 ash login" >&2; fi
+    fi
     return 1
   fi
   printf '%s\n' "$body"
 }
+
+# 从 JSON 响应里取一个字符串字段（值里没有引号的简单场景：token、用户名）
+json_field() { sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p" | head -n 1; }
 
 valid_slug() { [[ "$1" =~ ^[A-Za-z0-9_.-]+$ ]] || die "非法的技能标识符: $1"; }
 
@@ -93,7 +107,7 @@ skill_state() {
 run_install() {
   local url="$1"; shift
   local script
-  script="$(curl -sS -G "$@" "$url")" || die "无法连接 $SERVER_URL"
+  script="$(curl -sS -G ${AUTH[@]+"${AUTH[@]}"} "$@" "$url")" || die "无法连接 $SERVER_URL"
   printf '%s\n' "$script" | bash
 }
 
@@ -164,12 +178,17 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash mine                        我（本机）推送的技能及审核状态
   ash withdraw <slug>             撤回自己尚在待审核的推送
 
+账号
+  ash login [--token TOKEN]       登录：输入用户名密码换取 token，或直接保存网页「账户」里创建的 token
+  ash whoami                      当前登录的账号
+  ash logout                      删除本机保存的 token（要让它彻底失效，请在网页「账户」里吊销）
+
 其它
   ash guide                       Agent 使用指南
   ash open                        在浏览器打开管理后台
   ash update                      更新 ash 自身
 
-环境变量：ASH_SERVER_URL 服务地址；ASH_SKILLS_DIR 默认安装目录；ASH_BIN_DIR ash 安装位置；ASH_TERMINAL 推送来源名（默认 hostname）
+环境变量：ASH_SERVER_URL 服务地址；ASH_TOKEN API token（默认读 ~/.ash/token）；ASH_SKILLS_DIR 默认安装目录；ASH_BIN_DIR ash 安装位置；ASH_TERMINAL 推送来源名（默认 hostname）
 EOF
 }
 
@@ -363,13 +382,47 @@ EOF
     [ -n "${1:-}" ] || die "请提供技能标识 (slug)"; valid_slug "$1"
     http -X POST --data-urlencode "slug=$1" --data-urlencode "terminal=$TERMINAL" "$SERVER_URL/api/agent/withdraw"
     ;;
+  login)
+    token=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --token) [ -n "${2:-}" ] || die "--token 需要参数"; token="$2"; shift 2 ;;
+        *) die "未知参数: $1" ;;
+      esac
+    done
+    if [ -z "$token" ]; then
+      [ -r /dev/tty ] || die "无法交互输入：请在网页「账户」里创建 token，然后运行 ash login --token <token>"
+      printf '用户名: ' >&2; IFS= read -r username </dev/tty
+      printf '密码: ' >&2; IFS= read -rs password </dev/tty; echo >&2
+      # 密码走标准输入（password@-），不出现在进程参数里
+      resp="$(AUTH=(); printf '%s' "$password" | http -X POST -H 'X-ASH-Request: 1' --data-urlencode "username=$username" \
+        --data-urlencode "password@-" --data-urlencode "terminal=$TERMINAL" "$SERVER_URL/api/auth/cli-token")" || exit 1
+      password=
+      token="$(printf '%s' "$resp" | json_field token)"
+      [ -n "$token" ] || die "服务端没有返回 token"
+    fi
+    AUTH=(-H "Authorization: Bearer $token")
+    me="$(http "$SERVER_URL/api/auth/me")" || die "token 校验失败，未保存"
+    mkdir -p "$(dirname "$TOKEN_FILE")"
+    (umask 077; printf '%s\n' "$token" > "$TOKEN_FILE")
+    chmod 600 "$TOKEN_FILE"
+    echo "✅ 已登录为 $(printf '%s' "$me" | json_field username)（token 保存在 $TOKEN_FILE）"
+    ;;
+  whoami)
+    me="$(http "$SERVER_URL/api/auth/me")" || exit 1
+    echo "$(printf '%s' "$me" | json_field username) @ $SERVER_URL"
+    ;;
+  logout)
+    rm -f "$TOKEN_FILE"
+    echo "✓ 已删除本机 token。它在服务端仍然有效，如需作废请到网页「账户」里吊销"
+    ;;
   guide)
     http "$SERVER_URL/agent.md"
     ;;
   open)
-    if command -v open >/dev/null 2>&1; then open "$SERVER_URL"
-    elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$SERVER_URL"
-    else echo "请在浏览器打开: $SERVER_URL"; fi
+    if command -v open >/dev/null 2>&1; then open "$SERVER_URL/app"
+    elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$SERVER_URL/app"
+    else echo "请在浏览器打开: $SERVER_URL/app"; fi
     ;;
   update)
     echo "正在更新 ash…"
