@@ -1,0 +1,10 @@
+[Unit]
+Description=AnotherSkillHub CD: deploy CI-green commits on main (ash-cd poll)
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/services/skillhub-cd/bin/ash-cd poll
+TimeoutStartSec=30min
+Nice=5

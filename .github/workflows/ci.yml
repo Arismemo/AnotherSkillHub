@@ -1,0 +1,65 @@
+# CI：每个 PR 和 main 上的每次推送都要过这两关。
+# CD 不在这里——seed-SER9 上的 ash-cd 定时轮询 main，只部署这两个检查都通过的提交（见 deploy/cd/）。
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # 名字即检查项名称，ash-cd 按 "check" / "docker" 判定能否上线，改名要同步改 deploy/cd/ash-cd.sh
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm ci --prefix client --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
+      - name: UI tests
+        run: npm run test:ui
+      - name: Build
+        run: npm run build
+      - name: Server tests
+        run: npm run test:server
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build image
+        run: docker build -t ash:ci .
+      - name: Smoke test the container
+        run: |
+          docker run -d --name ash-ci -p 9444:9444 -e ASH_SEED=0 ash:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:9444/healthz && break
+            sleep 2
+          done
+          set -x
+          curl -fsS http://127.0.0.1:9444/healthz
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9444/)" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9444/docs)" = 200
+          # 所有数据接口都必须要求登录
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9444/api/skills)" = 401
+      - name: Container logs
+        if: always()
+        run: docker logs ash-ci || true

@@ -1,7 +1,55 @@
 # AnotherSkillHub 部署手册（seed-SER9 / Docker）
 
-单容器部署：Mac 本地构建源码 → scp 到服务器 → 服务器 docker build → compose 切镜像 tag 滚动更新。
-全程约 1–2 分钟；数据库在宿主机卷，容器重建不丢数据。
+单容器部署：服务器 docker build → compose 切镜像 tag 滚动更新。数据库在宿主机卷，容器重建不丢数据。
+
+**日常上线走 CI/CD，不需要手动操作**（见下一节）。后面的「手动部署五步」是 CD 不可用时的后备，也是 CD 脚本每一步的出处。
+
+## CI/CD（标准流程）
+
+```
+分支 / worktree ──push──▶ PR ──CI: check + docker──▶ 合并到 main ──CI 再跑一遍──▶ ash-cd 自动上线
+```
+
+- **CI**：`.github/workflows/ci.yml`，GitHub Actions 托管 runner。每个 PR、main 的每次推送都跑两个检查：
+  - `check`：`npm ci` → lint（error 为 0）→ UI 测试 → 构建 → 服务端测试
+  - `docker`：构建镜像并真正启动容器，验证 `/healthz`、首页、`/docs` 为 200，`/api/skills` 未登录为 401
+- **CD**：seed-SER9 上的 `ash-cd`（`deploy/cd/`），systemd 用户定时器每 2 分钟轮询 main。main 最新提交的 `check`、`docker` **都通过**才部署：
+  备份 DB 与技能文件 → 从自己的镜像仓库 `git archive` → `docker build -t ash:<sha>` → compose 只换 tag → 冒烟 → 失败自动切回上一版本。
+  冒烟项：本机 `/healthz`、首页、`/docs` 为 200，`/api/skills` 为 401，**容器里的技能数与部署前一致**，日志无迁移/未捕获错误；公网 `/healthz` 不通只告警（隧道是独立设施）。
+  部署进度回写到仓库的 Deployments（environment: `production`）；成功后只保留最近 10 个 `ash` 镜像。
+- **为什么是拉取式**：仓库公开，不在这台机器上挂自托管 runner（fork 的 PR 可能借此在服务器上执行代码）。服务器只主动拉取、只部署 CI 通过的 main 提交，不开放任何入口。
+
+### 日常用法
+
+```bash
+git push -u origin <分支>  &&  gh pr create --fill     # CI 在 PR 上跑
+gh pr merge --squash --delete-branch                   # 绿了就合并；约 2 分钟 + CI 时间后自动上线
+~/services/skillhub-cd/bin/ash-cd status               # 线上版本 / main 最新提交及 CI 状态 / 最近部署
+journalctl --user -u ash-cd -f                         # 实时日志
+```
+
+### 出问题时
+
+```bash
+ash-cd rollback                # 撤销最近一次部署（切回它之前的版本），并把被撤下的提交标记为失败
+ash-cd rollback <tag>          # 切到指定版本（镜像还在时）
+ash-cd deploy <sha>            # 手动部署某个 CI 通过的提交；--force 跳过 CI 检查（紧急修复）
+systemctl --user stop ash-cd.timer    # 暂停自动部署；start 恢复
+```
+
+- 部署失败或被回滚的提交记在 `~/services/skillhub-cd/state/failed-<sha>`，**不会自动重试**；修复后推新提交即可。
+- 自动回滚只切代码。新版本做过不兼容的迁移时，还要用 `backup-before-<sha>.db` / `backup-files-before-<sha>.tgz` 恢复数据（见下文「回滚」）。
+- 需要人工步骤的发布（例如「上线多用户鉴权」那样要先改 compose 环境变量、再认领数据）：先 `systemctl --user stop ash-cd.timer`，按手动流程做完，再 `start`。
+
+### 安装 / 更新 ash-cd（服务器上一次性）
+
+```bash
+deploy/cd/install.sh     # 复制脚本到 ~/services/skillhub-cd/bin/ash-cd，安装并启用 systemd 用户定时器
+```
+
+脚本是**复制**过去固定下来的：合并到 main 的 `deploy/cd/` 改动不会自动改变部署逻辑，要在服务器上重跑 `install.sh`。
+前提：用户在 docker 组、`gh auth status` 已登录（用来读 CI 结果、写 Deployments）、`loginctl` linger 已开启。
+在预发环境演练时，可以用 `ASH_CD_SERVICES` / `ASH_CD_CONTAINER` / `ASH_CD_PROJECT` / `ASH_CD_IMAGE` / `ASH_CD_LOCAL_URL` 指向另一套容器，`ASH_CD_GH_DEPLOYMENTS=0` 不写 GitHub。
 
 ## 环境
 
@@ -14,7 +62,7 @@
 | 公网入口 | https://ash.709970.xyz（反向 SSH 隧道 38084→9444，公网网关 Nginx 反代，独立于本流程） |
 | 端口 | 容器 9444，仅绑服务器 127.0.0.1 |
 
-## 标准部署流程（五步）
+## 手动部署五步（CD 的后备）
 
 在本地仓库（`/Users/liukun/workspace/AnotherSkillHub-dev`，分支与 main 同点）执行：
 
