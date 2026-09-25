@@ -142,7 +142,7 @@ fetch_self() {
 
 # 通过 curl|bash 管道执行（$0 为 bash/sh）或显式 `install` 时走安装分支
 if [ "$0" = "bash" ] || [ "$0" = "sh" ] || [ "${1:-}" = "install" ]; then
-  echo "🚀 正在安装 AnotherSkillHub 命令行工具 ash（服务: $SERVER_URL）"
+  echo "🚀 正在安装 AnotherSkillHub 命令行工具 ash（服务: ${SERVER_URL}）"
   fetch_self
   echo "✅ 安装完成。Agent 使用说明：ash guide"
   exit 0
@@ -239,8 +239,8 @@ case "$cmd" in
         case "$code" in
           outdated) ;;
           modified-outdated)
-            if [ "$force" != 1 ]; then echo "⏭  $slug：$note，跳过（ash pull $slug 会先备份再覆盖，或加 --force）"; skipped=$((skipped + 1)); continue; fi ;;
-          missing|trashed) echo "⚠️  $slug：$note"; continue ;;
+            if [ "$force" != 1 ]; then echo "⏭  ${slug}：${note}，跳过（ash pull $slug 会先备份再覆盖，或加 --force）"; skipped=$((skipped + 1)); continue; fi ;;
+          missing|trashed) echo "⚠️  ${slug}：$note"; continue ;;
           *) continue ;;
         esac
         # 装回原来的目录：把它的上级目录作为安装根目录
@@ -298,7 +298,7 @@ EOF
         backup="$HOME/.ash/backups/$slug-$(date +%Y%m%d%H%M%S)"
         mkdir -p "$(dirname "$backup")"
         mv "$d" "$backup"
-        echo "✓ 已卸载 $d（本地有修改，已备份到 $backup）"
+        echo "✓ 已卸载 ${d}（本地有修改，已备份到 ${backup}）"
       else
         rm -rf "$d"
         echo "✓ 已卸载 $d"
@@ -307,7 +307,7 @@ EOF
     done <<EOF
 $(installed_dirs "$dir")
 EOF
-    [ "$removed" -gt 0 ] || die "没有找到由 ash 安装的 $slug（不是 ash 安装的目录不会被删除）"
+    [ "$removed" -gt 0 ] || die "没有找到由 ash 安装的 ${slug}（不是 ash 安装的目录不会被删除）"
     ;;
   list)
     parse_filters "$@"
@@ -368,11 +368,11 @@ EOF
       COPYFILE_DISABLE=1 tar -czf "$archive" --exclude='.git' --exclude='node_modules' --exclude='__pycache__' \
         --exclude='.DS_Store' --exclude='._*' --exclude='./.ash' -C "$target" .
       nfiles="$(tar -tzf "$archive" | grep -vc '/$' || true)"
-      echo "→ 推送目录 $target（$nfiles 个文件，来源 $TERMINAL）" >&2
+      echo "→ 推送目录 ${target}（$nfiles 个文件，来源 ${TERMINAL}）" >&2
       http -X POST "$SERVER_URL/api/agent/push" -F "file=@$archive;filename=skill.tar.gz;type=application/gzip" "${form[@]}"
     else
       [ -f "$target" ] || die "找不到技能文件或目录: $target"
-      echo "→ 推送文件 $target（来源 $TERMINAL）" >&2
+      echo "→ 推送文件 ${target}（来源 ${TERMINAL}）" >&2
       http -X POST "$SERVER_URL/api/agent/push" -F "file=@$target" "${form[@]}"
     fi
     ;;
@@ -407,7 +407,7 @@ EOF
     mkdir -p "$(dirname "$TOKEN_FILE")"
     (umask 077; printf '%s\n' "$token" > "$TOKEN_FILE")
     chmod 600 "$TOKEN_FILE"
-    echo "✅ 已登录为 $(printf '%s' "$me" | json_field username)（token 保存在 $TOKEN_FILE）"
+    echo "✅ 已登录为 $(printf '%s' "$me" | json_field username)（token 保存在 ${TOKEN_FILE}）"
     ;;
   whoami)
     me="$(http "$SERVER_URL/api/auth/me")" || exit 1
