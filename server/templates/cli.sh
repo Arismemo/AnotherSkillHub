@@ -113,11 +113,16 @@ run_install() {
 
 # 安装到 bin 目录：优先可写目录，其次免密 sudo（sudo -n 不会卡住无人值守的 Agent），最后 ~/.local/bin
 install_to_bin() {
-  local src="$1" bin_dir="${ASH_BIN_DIR:-}" use_sudo=""
+  local src="$1" bin_dir="${ASH_BIN_DIR:-}" use_sudo="" current
+  current="$(command -v ash 2>/dev/null || true)"
   if [ -z "$bin_dir" ]; then
-    local current
-    current="$(command -v ash 2>/dev/null || true)"
     if [ -n "$current" ] && [ -w "$(dirname "$current")" ]; then bin_dir="$(dirname "$current")"
+    # 目录不可写、但 ash 文件本身可写（常见：root 建的 /usr/local/bin 里放着本人的 ash）：原地覆盖。
+    # 否则会在别处另装一份，而 PATH 里更靠前的旧版本永远不会被替换
+    elif [ -n "$current" ] && [ -f "$current" ] && [ -w "$current" ]; then
+      cat "$src" > "$current" && rm -f "$src"
+      echo "✓ 已更新 $current"
+      return
     elif [ -w /usr/local/bin ]; then bin_dir=/usr/local/bin
     elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then bin_dir=/usr/local/bin; use_sudo="sudo -n"
     else bin_dir="$HOME/.local/bin"; fi
@@ -130,6 +135,11 @@ install_to_bin() {
     *":$bin_dir:"*) ;;
     *) echo "⚠️  $bin_dir 不在 PATH 中，请执行：export PATH=\"$bin_dir:\$PATH\"（并写入 shell 配置）" ;;
   esac
+  hash -r 2>/dev/null || true
+  current="$(command -v ash 2>/dev/null || true)"
+  if [ -n "$current" ] && [ "$current" != "$bin_dir/ash" ]; then
+    echo "⚠️  PATH 里更靠前的 $current 不是刚安装的版本，运行 ash 仍会用到它：请删除它，或把 $bin_dir 放到 PATH 更前面"
+  fi
 }
 
 fetch_self() {
@@ -429,6 +439,8 @@ EOF
     echo "正在更新 ash…"
     fetch_self
     echo "✅ ash 已更新到最新版本"
+    # 本文件可能刚被原地改写：立即退出，别让 bash 从改写后的文件里接着读
+    exit 0
     ;;
   help|-h|--help) show_help ;;
   *) show_help; exit 1 ;;

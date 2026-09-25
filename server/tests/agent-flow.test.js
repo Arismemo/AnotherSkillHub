@@ -311,6 +311,38 @@ test('agent flow (review enabled)', async (t) => {
     const help = spawnSync(path.join(bin, 'ash'), ['help'], { encoding: 'utf8' });
     assert.match(help.stdout, /ash push <技能目录\|SKILL\.md> \[--update\]/);
   });
+
+  await t.test('update replaces an ash in a read-only bin dir in place instead of shadowing it', async (t2) => {
+    const work = tmpDir('ash-update-');
+    const locked = path.join(work, 'locked-bin');
+    fs.mkdirSync(locked);
+    const stale = path.join(locked, 'ash');
+    // 本人拥有的 ash 放在不可写的目录里（带一行标记，用来判断是否被替换）
+    const cli = await (await fetch(`${origin}/cli.sh`)).text();
+    fs.writeFileSync(stale, cli.replace(/^(#![^\n]*\n)/, '$1# stale\n'), { mode: 0o755 });
+    fs.chmodSync(locked, 0o555);
+    t2.after(() => fs.chmodSync(locked, 0o755));
+    const env = { ...process.env, HOME: work, PATH: `${locked}:${process.env.PATH}` };
+    delete env.ASH_BIN_DIR;
+    const run = spawnSync('ash', ['update'], { env, encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr + run.stdout);
+    assert.match(run.stdout, new RegExp(`已更新 ${stale}`));
+    assert.doesNotMatch(fs.readFileSync(stale, 'utf8'), /# stale/, 'the file on PATH was replaced');
+    assert.ok(!fs.existsSync(path.join(work, '.local', 'bin', 'ash')), 'no shadow copy elsewhere');
+    assert.doesNotMatch(run.stdout + run.stderr, /command not found|syntax error/, 'rewriting the running script does not derail bash');
+  });
+
+  await t.test('install warns when an earlier ash on PATH shadows the new one', async () => {
+    const work = tmpDir('ash-shadow-');
+    const early = path.join(work, 'early');
+    const target = path.join(work, 'target');
+    fs.mkdirSync(early);
+    fs.writeFileSync(path.join(early, 'ash'), '#!/bin/sh\necho old\n', { mode: 0o755 });
+    const script = await (await fetch(`${origin}/setup.sh`)).text();
+    const run = spawnSync('bash', { input: script, env: { ...process.env, HOME: work, ASH_BIN_DIR: target, PATH: `${early}:${target}:${process.env.PATH}` }, encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, new RegExp(`PATH 里更靠前的 ${path.join(early, 'ash')}`));
+  });
 });
 
 test('agent flow with review disabled still forces high-risk pushes into review', async (t) => {
