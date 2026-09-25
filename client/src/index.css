@@ -297,7 +297,8 @@ button.row-tag:hover { border-color: var(--accent-border); color: var(--text); }
 
 /* Detail */
 .detail-panel { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.detail-body { display: flex; flex: 1; min-height: 0; }
+/* relative：悬浮大纲以正文区（工具栏之下）为定位基准，工具栏换行变高时跟着下移，不再压住「编辑」 */
+.detail-body { position: relative; display: flex; flex: 1; min-height: 0; }
 
 /* 窄屏文件栏收成细条：竖排计数 + 「文件」，点击恢复 */
 .file-sidebar-rail { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3rem; flex: 0 0 auto; width: 2.1rem; border: 0; border-right: 1px solid var(--border-muted); background: var(--surface); color: var(--text-subtle); cursor: pointer; }
@@ -308,7 +309,8 @@ button.row-tag:hover { border-color: var(--accent-border); color: var(--text); }
    以前那条 @media 里的 width 从来没生效过 */
 .file-sidebar { position: relative; display: flex; flex-direction: column; flex: 0 0 auto; width: min(var(--file-sidebar-w, 15rem), 40%); min-height: 0; border-right: 1px solid var(--border-muted); background: var(--surface); }
 .file-sidebar-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: .55rem .45rem 1rem; }
-.detail-scroll { position: relative; flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
+/* 不设 position：让大纲的包含块落在 .detail-body（非滚动容器）上，大纲才不随正文滚走 */
+.detail-scroll { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
 /* 悬浮大纲占 right:1.1rem + 15rem 宽 —— 正文在其下时右侧留出通道，避免文字被盖住 */
 .detail-scroll { transition: padding-right var(--dur) var(--ease-out); }
 .detail-scroll.has-outline { --outline-channel: 16.4rem; padding-right: var(--outline-channel); }
@@ -369,12 +371,12 @@ button.row-tag:hover { border-color: var(--accent-border); color: var(--text); }
 .file-tree-leaf-spacer { flex: 0 0 auto; width: .95rem; }
 
 /* Floating document outline */
-.doc-outline { position: fixed; top: 4.3rem; right: 1.1rem; z-index: 30; width: 15rem; max-height: min(60vh, 30rem); display: flex; flex-direction: column; padding: .6rem .5rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); overflow: hidden; transform-origin: top right; animation: pop-in var(--dur-fast) ease-out; }
+.doc-outline { position: absolute; top: 1.2rem; right: 1.1rem; z-index: 30; width: 15rem; max-height: min(60vh, calc(100% - 2.4rem), 30rem); display: flex; flex-direction: column; padding: .6rem .5rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-overlay); box-shadow: var(--shadow-pop); overflow: hidden; transform-origin: top right; animation: pop-in var(--dur-fast) ease-out; }
 .doc-outline-header { display: flex; align-items: baseline; justify-content: space-between; padding: .15rem .45rem .45rem; border-bottom: 1px solid var(--border-muted); }
 .doc-outline-header span { color: var(--text-subtle); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .doc-outline-toggle { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-subtle); }
 .doc-outline-toggle:hover { color: var(--text); background: var(--surface-hover); }
-.doc-outline-restore { position: fixed; top: 4.3rem; right: 1.1rem; z-index: 30; display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface-overlay); color: var(--text-muted); box-shadow: var(--shadow-pop); }
+.doc-outline-restore { position: absolute; top: 1.2rem; right: 1.1rem; z-index: 30; display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface-overlay); color: var(--text-muted); box-shadow: var(--shadow-pop); }
 .doc-outline-restore:hover { color: var(--text); border-color: var(--border-strong); }
 .doc-outline ul { list-style: none; margin: 0; padding: .3rem 0 0; overflow-y: auto; }
 .doc-outline li { margin: 0; }
@@ -693,6 +695,8 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
    多写一条会让窗口从 1301px 缩到 1300px 时两栏反而变宽（反向跳变） */
 @media (max-width: 1300px) {
   .detail-toolbar { align-items: flex-start; flex-direction: column; gap: .55rem; padding: .5rem 1rem; }
+  /* 竖排后 flex-basis 管的是高度：不重置的话 10rem 的 basis 会在标题和按钮之间撑出一大片空白 */
+  .detail-identity { flex: 0 0 auto; width: 100%; }
   .detail-meta { display: none; }
   .detail-actions { width: 100%; justify-content: flex-start; }
   .compact-action span { display: none; }
