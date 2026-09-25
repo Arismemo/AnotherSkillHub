@@ -1,10 +1,10 @@
 [Unit]
-Description=Poll main for deployable commits every 2 minutes
+Description=Poll main for deployable commits every 30 seconds
 
 [Timer]
 OnBootSec=3min
-OnUnitActiveSec=2min
-RandomizedDelaySec=15s
+OnUnitActiveSec=30s
+RandomizedDelaySec=5s
 
 [Install]
 WantedBy=timers.target

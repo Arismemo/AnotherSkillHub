@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # ash-cd — seed-SER9 上的拉取式持续部署。
 #
-# systemd 定时器每 2 分钟执行一次 `ash-cd poll`：main 出现新提交、且它的 CI 检查（check、docker）
-# 全部通过时，按部署手册的顺序上线：备份 DB 与技能文件 → 构建 ash:<sha> → 切换容器 → 冒烟。
-# 冒烟失败自动切回上一个版本。部署进度回写到 GitHub Deployments（environment: production）。
+# systemd 定时器每 30 秒执行一次 `ash-cd poll`，两种触发方式：
+#   · 手动：GitHub 上 Actions → Deploy → Run workflow 登记的部署请求（优先处理）
+#   · 自动：main 出现新提交、且它的 CI 检查（check、docker）全部通过
+# 部署按手册顺序：备份 DB 与技能文件 → 构建 ash:<sha> → 切换容器 → 冒烟；冒烟失败自动切回上一个版本。
+# 进度回写到 GitHub Deployments（environment: production）。
+# 手动上线的不是 main 最新提交时（例如回滚到旧版），自动部署暂停，直到 main 出现新提交。
 #
 # 用法：
-#   ash-cd poll                 定时器入口；没有新的可部署提交时什么也不做
+#   ash-cd poll                 定时器入口；没有请求、也没有新的可部署提交时什么也不做
 #   ash-cd deploy <sha>         立即部署某个提交（仍要求它的 CI 已通过；--force 跳过 CI 检查）
 #   ash-cd rollback [<tag>]     切回上一个（或指定的）已发布版本
 #   ash-cd status               当前版本、main 最新提交及其 CI 状态、最近的部署记录
@@ -27,7 +30,9 @@ LOCAL_URL="${ASH_CD_LOCAL_URL:-http://127.0.0.1:9444}"
 CONTAINER="${ASH_CD_CONTAINER:-ash}"   # 容器名
 PROJECT="${ASH_CD_PROJECT:-ash}"       # docker compose -p
 IMAGE="${ASH_CD_IMAGE:-ash}"           # 镜像仓库名，tag 为 7 位短 sha
-GH_DEPLOYMENTS="${ASH_CD_GH_DEPLOYMENTS:-1}"  # 0 = 不写 GitHub Deployments（演练用）
+GH_DEPLOYMENTS="${ASH_CD_GH_DEPLOYMENTS:-1}"  # 0 = 不读写 GitHub Deployments（演练用）
+GH_ENV="${ASH_CD_GH_ENV:-production}"         # GitHub Deployments 的 environment 名
+REQUEST_WINDOW_MIN=25                          # 只处理 25 分钟内登记的手动请求（Deploy workflow 等 20 分钟后自行判超时）
 PUBLIC_URL="${ASH_CD_PUBLIC_URL:-https://ash.709970.xyz}"
 REQUIRED_CHECKS=(check docker)   # 与 .github/workflows/ci.yml 的 job 名一致
 KEEP_IMAGES=10                   # 磁盘紧张：只保留最近 10 个 ash 镜像（当前版本永远保留）
@@ -70,11 +75,11 @@ ci_state() {
 }
 
 # ——— GitHub Deployments（失败不影响部署本身）———
-DEPLOY_ID=""
+DEPLOY_ID=""   # 手动请求时预先填好（沿用 Deploy workflow 登记的那条），否则由 gh_deployment 新建
 gh_deployment() {
-  [ "$GH_DEPLOYMENTS" = 1 ] || return 0
+  [ "$GH_DEPLOYMENTS" = 1 ] && [ -z "$DEPLOY_ID" ] || return 0
   DEPLOY_ID=$(gh api -X POST "repos/$REPO/deployments" --jq .id --input - 2>/dev/null <<JSON || true
-{"ref": "$1", "environment": "production", "auto_merge": false, "required_contexts": [],
+{"ref": "$1", "environment": "$GH_ENV", "auto_merge": false, "required_contexts": [],
  "description": "ash-cd on $(hostname)", "production_environment": true}
 JSON
 )
@@ -181,19 +186,78 @@ with_lock() {
   flock -n 9 || { log "另一个部署正在进行"; exit 0; }
 }
 
-cmd_poll() {
-  with_lock
-  sync_mirror
+# ——— 跳过标记：失败 / 回滚掉 / 被手动上线暂停的提交，定时器不自动部署 ———
+skip() { printf '%s %s\n' "$(date '+%F %T')" "$2" > "$STATE/skip-$1"; }
+skipped() { [ -f "$STATE/skip-$1" ]; }
+unskip() { rm -f "$STATE/skip-$1"; }
+
+# 手动上线的不是 main 最新时，暂停自动部署，免得半分钟后又被 main 覆盖回去
+hold_main_unless() {
+  local head; head=$(git -C "$MIRROR" rev-parse refs/heads/main)
+  [ "${head:0:7}" = "$1" ] && return 0
+  skip "${head:0:7}" "暂停：手动上线了 $1"
+  log "手动上线的 $1 不是 main 最新（${head:0:7}），自动部署暂停到 main 出现新提交"
+}
+
+# 输出排队中的手动部署请求：「id sha force」，最新的在前
+queued_requests() {
+  [ "$GH_DEPLOYMENTS" = 1 ] || return 0
+  local since; since=$(date -u -d "-$REQUEST_WINDOW_MIN min" +%Y-%m-%dT%H:%M:%SZ)
+  local id sha force state
+  gh api "repos/$REPO/deployments?environment=$GH_ENV&per_page=20" \
+    --jq ".[] | select(.payload.source == \"manual\" and .created_at > \"$since\") | \"\(.id) \(.sha) \(.payload.force // false)\"" 2>/dev/null \
+    | while read -r id sha force; do
+        state=$(gh api "repos/$REPO/deployments/$id/statuses?per_page=1" --jq '.[0].state // "none"' 2>/dev/null) || continue
+        if [ "$state" = queued ]; then echo "$id $sha $force"; fi
+      done || true   # 查询失败时当作没有请求，不中断本轮轮询
+}
+
+# 处理手动请求；有请求时返回 0（本轮不再走自动部署）
+handle_requests() {
+  local requests id full force current
+  requests=$(queued_requests)
+  [ -n "$requests" ] || return 1
+  read -r id full force <<<"$(head -1 <<<"$requests")"
+  # 同时排了多个请求：只做最新的，其余标为被取代
+  tail -n +2 <<<"$requests" | while read -r old_id _ _; do
+    DEPLOY_ID=$old_id gh_status error "被更新的部署请求取代"
+  done
+  DEPLOY_ID=$id
+  log "收到手动部署请求 #$id：${full:0:7}$([ "$force" = true ] && echo '（跳过 CI 检查）')"
+  if ! git -C "$MIRROR" cat-file -e "$full^{commit}" 2>/dev/null; then
+    gh_status error "服务器的镜像仓库里找不到 ${full:0:7}"; log "找不到 ${full:0:7}"; return 0
+  fi
+  if [ "$force" != true ] && [ "$(ci_state "$full")" != success ]; then
+    gh_status failure "${full:0:7} 的 CI 没有全部通过"; log "${full:0:7} 的 CI 没有全部通过，拒绝"; return 0
+  fi
+  current=$(current_tag)
+  if [ "${full:0:7}" = "$current" ]; then
+    gh_status success "$IMAGE:$current 已在线上"; log "${full:0:7} 已在线上"
+    hold_main_unless "$current"
+    return 0
+  fi
+  unskip "${full:0:7}"
+  if deploy "$full"; then hold_main_unless "${full:0:7}"; else skip "${full:0:7}" "手动部署失败"; fi
+  return 0
+}
+
+auto_deploy() {
   local head sha
   head=$(git -C "$MIRROR" rev-parse refs/heads/main)
   sha=${head:0:7}
   [ "$sha" = "$(current_tag)" ] && return 0
-  [ -f "$STATE/failed-$sha" ] && return 0   # 失败过的提交不自动重试，修好后推新提交即可
+  skipped "$sha" && return 0   # 失败过 / 被回滚 / 被手动上线暂停：修好后推新提交即可
   case "$(ci_state "$head")" in
-    success) deploy "$head" || touch "$STATE/failed-$sha" ;;
-    failure) log "main@$sha 的 CI 没通过，不部署"; touch "$STATE/failed-$sha" ;;
+    success) deploy "$head" || skip "$sha" "自动部署失败" ;;
+    failure) log "main@$sha 的 CI 没通过，不部署"; skip "$sha" "CI 未通过" ;;
     *) log "main@$sha 等待 CI" ;;
   esac
+}
+
+cmd_poll() {
+  with_lock
+  sync_mirror
+  handle_requests || auto_deploy
 }
 
 cmd_deploy() {
@@ -205,12 +269,13 @@ cmd_deploy() {
   if [ "$force" != "--force" ]; then
     [ "$(ci_state "$full")" = success ] || die "${full:0:7} 的 CI 没有全部通过（--force 可跳过）"
   fi
-  rm -f "$STATE/failed-${full:0:7}"
-  deploy "$full"
+  unskip "${full:0:7}"
+  deploy "$full" && hold_main_unless "${full:0:7}"
 }
 
 cmd_rollback() {
   with_lock
+  sync_mirror
   local target=${1:-} current; current=$(current_tag)
   if [ -z "$target" ]; then
     target=$(grep -E ' deployed [0-9a-f]{7} ' "$HISTORY" 2>/dev/null | tail -1 | sed -E 's/.*\(from ([0-9a-f]+)\)/\1/')
@@ -220,16 +285,19 @@ cmd_rollback() {
   log "回滚：$IMAGE:$current → $IMAGE:$target"
   switch_to "$target"
   wait_healthy || die "$IMAGE:$target 没有就绪"
-  touch "$STATE/failed-$current"   # 防止定时器马上又把刚回滚掉的版本部署回去
+  skip "$current" "被回滚"   # 防止定时器马上又把刚回滚掉的版本部署回去
+  hold_main_unless "$target"
   printf '%s rollback %s (from %s)\n' "$(date '+%F %T')" "$target" "$current" >> "$HISTORY"
-  log "✅ 已回滚到 $IMAGE:$target；$IMAGE:$current 被标记为失败，main 出现新提交前不会自动重新部署"
+  log "✅ 已回滚到 $IMAGE:$target；main 出现新提交前不会自动部署"
 }
 
 cmd_status() {
   sync_mirror
-  local head; head=$(git -C "$MIRROR" rev-parse refs/heads/main)
+  local head requests; head=$(git -C "$MIRROR" rev-parse refs/heads/main)
   echo "线上版本：$IMAGE:$(current_tag)"
-  echo "main 最新：${head:0:7}  CI：$(ci_state "$head")$([ -f "$STATE/failed-${head:0:7}" ] && echo '  （已标记失败，不会自动部署）')"
+  echo "main 最新：${head:0:7}  CI：$(ci_state "$head")$(skipped "${head:0:7}" && echo "  （不自动部署：$(cut -d' ' -f3- "$STATE/skip-${head:0:7}")）")"
+  requests=$(queued_requests)
+  echo "排队请求：$([ -n "$requests" ] && awk '{printf "#%s → %s  ", $1, substr($2,1,7)}' <<<"$requests" || echo 无)"
   echo "定时器：  $(systemctl --user is-active ash-cd.timer 2>/dev/null || true)"
   echo "最近部署："
   tail -5 "$HISTORY" 2>/dev/null | sed 's/^/  /' || echo "  （无）"

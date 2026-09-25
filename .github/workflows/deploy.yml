@@ -1,0 +1,99 @@
+# 手动上线按钮：Actions → Deploy → Run workflow。
+#
+# 这个 workflow 跑在 GitHub 托管的 runner 上，不接触服务器：它只确认目标提交的 CI 已通过，
+# 然后在 GitHub 上登记一条排队中的部署请求（environment: production，payload.source = manual）。
+# seed-SER9 上的 ash-cd 每 30 秒拉取一次，看到请求就按标准流程部署（备份 → 构建 → 切换 → 冒烟 → 失败回滚），
+# 并把结果写回这条部署记录；本 workflow 等到结果后以成功 / 失败结束。
+# 选旧提交即可回滚；手动上线的版本不是 main 最新时，自动部署会暂停到 main 出现新提交为止。
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 要上线的分支、tag 或提交（默认 main 最新）
+        required: true
+        default: main
+      skip_ci_check:
+        description: 跳过「CI 已通过」检查（紧急修复，或回滚到建立 CI 之前的旧版本）
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  checks: read
+  deployments: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      REF: ${{ inputs.ref }}
+      FORCE: ${{ inputs.skip_ci_check }}
+      ACTOR: ${{ github.actor }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Resolve commit
+        id: resolve
+        run: |
+          sha=$(gh api "repos/$REPO/commits/$REF" --jq .sha) || { echo "::error::找不到 $REF"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "### 上线 \`${sha:0:7}\`（$REF）" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require green CI
+        if: ${{ !inputs.skip_ci_check }}
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          # 与 ash-cd 相同的判定：check、docker 两项最近一次运行都成功
+          for name in check docker; do
+            state=$(gh api "repos/$REPO/commits/$SHA/check-runs?check_name=$name&per_page=100" \
+              --jq '[.check_runs[]] | sort_by(.started_at) | last | if . == null then "missing" else "\(.status)/\(.conclusion)" end')
+            if [ "$state" != completed/success ]; then
+              echo "::error::${SHA:0:7} 的 CI 检查 $name 为 $state，不能上线（确需上线请勾选 skip_ci_check）"
+              exit 1
+            fi
+          done
+
+      - name: Request deployment
+        id: request
+        env:
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          id=$(gh api -X POST "repos/$REPO/deployments" --jq .id --input - <<JSON
+          {"ref": "$SHA", "environment": "production", "auto_merge": false, "required_contexts": [],
+           "production_environment": true, "description": "manual deploy by $ACTOR",
+           "payload": {"source": "manual", "force": $FORCE, "requested_by": "$ACTOR", "run": "$RUN_URL"}}
+          JSON
+          )
+          gh api -X POST "repos/$REPO/deployments/$id/statuses" \
+            -f state=queued -f description="等待 seed-SER9 上的 ash-cd 拉取" -f log_url="$RUN_URL" >/dev/null
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "部署请求 #$id 已排队，ash-cd 约 30 秒内开始。"
+
+      - name: Wait for ash-cd
+        env:
+          ID: ${{ steps.request.outputs.id }}
+        run: |
+          deadline=$((SECONDS + 1200))
+          last=""
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            status=$(gh api "repos/$REPO/deployments/$ID/statuses?per_page=1" --jq '.[0] | "\(.state)|\(.description)"')
+            [ "$status" != "$last" ] && echo "$(date -u +%T) ${status/|/ — }" && last=$status
+            case "${status%%|*}" in
+              success) echo "✅ ${status#*|}" >> "$GITHUB_STEP_SUMMARY"; exit 0 ;;
+              failure|error) echo "::error::${status#*|}"; echo "❌ ${status#*|}" >> "$GITHUB_STEP_SUMMARY"; exit 1 ;;
+            esac
+            sleep 15
+          done
+          gh api -X POST "repos/$REPO/deployments/$ID/statuses" \
+            -f state=error -f description="20 分钟内 ash-cd 没有处理这个请求（服务器或定时器是否在运行？）" >/dev/null
+          echo "::error::ash-cd 20 分钟内没有处理部署请求"
+          exit 1

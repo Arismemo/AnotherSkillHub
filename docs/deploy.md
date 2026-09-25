@@ -8,12 +8,16 @@
 
 ```
 分支 / worktree ──push──▶ PR ──CI: check + docker──▶ 合并到 main ──CI 再跑一遍──▶ ash-cd 自动上线
+                                                   GitHub: Actions → Deploy → Run workflow ──▶ ash-cd 手动上线
 ```
 
 - **CI**：`.github/workflows/ci.yml`，GitHub Actions 托管 runner。每个 PR、main 的每次推送都跑两个检查：
   - `check`：`npm ci` → lint（error 为 0）→ UI 测试 → 构建 → 服务端测试
   - `docker`：构建镜像并真正启动容器，验证 `/healthz`、首页、`/docs` 为 200，`/api/skills` 未登录为 401
-- **CD**：seed-SER9 上的 `ash-cd`（`deploy/cd/`），systemd 用户定时器每 2 分钟轮询 main。main 最新提交的 `check`、`docker` **都通过**才部署：
+- **CD**：seed-SER9 上的 `ash-cd`（`deploy/cd/`），systemd 用户定时器每 30 秒拉取一次，两种触发：
+  - **自动**：main 最新提交的 `check`、`docker` **都通过**就部署。
+  - **手动**：GitHub 上 Actions → **Deploy** → Run workflow，填分支 / tag / 提交（默认 `main`）。workflow 跑在 GitHub 托管的 runner 上，只检查 CI、登记一条排队的部署请求，然后等 ash-cd 回报结果；run 的成败就是部署的成败。手动请求优先于自动部署；同时排了多个只做最新的。
+  部署流程：
   备份 DB 与技能文件 → 从自己的镜像仓库 `git archive` → `docker build -t ash:<sha>` → compose 只换 tag → 冒烟 → 失败自动切回上一版本。
   冒烟项：本机 `/healthz`、首页、`/docs` 为 200，`/api/skills` 为 401，**容器里的技能数与部署前一致**，日志无迁移/未捕获错误；公网 `/healthz` 不通只告警（隧道是独立设施）。
   部署进度回写到仓库的 Deployments（environment: `production`）；成功后只保留最近 10 个 `ash` 镜像。
@@ -23,12 +27,18 @@
 
 ```bash
 git push -u origin <分支>  &&  gh pr create --fill     # CI 在 PR 上跑
-gh pr merge --squash --delete-branch                   # 绿了就合并；约 2 分钟 + CI 时间后自动上线
+gh pr merge --squash --delete-branch                   # 绿了就合并；main 上 CI 通过后约 30 秒自动上线
+gh workflow run deploy.yml -f ref=<分支|tag|sha>        # 等同于在 GitHub 上点 Deploy；可加 -f skip_ci_check=true
 ~/services/skillhub-cd/bin/ash-cd status               # 线上版本 / main 最新提交及 CI 状态 / 最近部署
 journalctl --user -u ash-cd -f                         # 实时日志
 ```
 
 ### 出问题时
+
+**回滚首选 GitHub 上的 Deploy 按钮**：`ref` 填要回到的旧提交（建立 CI 之前的版本没有检查结果，勾选 `skip_ci_check`）。
+手动上线的不是 main 最新提交时，自动部署会**暂停到 main 出现新提交为止**，不会半分钟后又被覆盖回去；要恢复，再用 Deploy 上线 `main` 即可。
+
+服务器上的等价命令：
 
 ```bash
 ash-cd rollback                # 撤销最近一次部署（切回它之前的版本），并把被撤下的提交标记为失败
@@ -37,9 +47,9 @@ ash-cd deploy <sha>            # 手动部署某个 CI 通过的提交；--force
 systemctl --user stop ash-cd.timer    # 暂停自动部署；start 恢复
 ```
 
-- 部署失败或被回滚的提交记在 `~/services/skillhub-cd/state/failed-<sha>`，**不会自动重试**；修复后推新提交即可。
+- 部署失败、被回滚、或因手动上线而暂停的 main 提交记在 `~/services/skillhub-cd/state/skip-<sha>`（内容是原因），**不会自动部署**；推新提交、或用 Deploy 按钮明确上线它即可。
 - 自动回滚只切代码。新版本做过不兼容的迁移时，还要用 `backup-before-<sha>.db` / `backup-files-before-<sha>.tgz` 恢复数据（见下文「回滚」）。
-- 需要人工步骤的发布（例如「上线多用户鉴权」那样要先改 compose 环境变量、再认领数据）：先 `systemctl --user stop ash-cd.timer`，按手动流程做完，再 `start`。
+- 需要人工步骤的发布（例如「上线多用户鉴权」那样要先改 compose 环境变量、再认领数据）：先 `systemctl --user stop ash-cd.timer`，按手动流程做完，再 `start`。定时器停着时 Deploy 按钮会在 20 分钟后以超时失败结束。
 
 ### 安装 / 更新 ash-cd（服务器上一次性）
 
@@ -49,7 +59,7 @@ deploy/cd/install.sh     # 复制脚本到 ~/services/skillhub-cd/bin/ash-cd，�
 
 脚本是**复制**过去固定下来的：合并到 main 的 `deploy/cd/` 改动不会自动改变部署逻辑，要在服务器上重跑 `install.sh`。
 前提：用户在 docker 组、`gh auth status` 已登录（用来读 CI 结果、写 Deployments）、`loginctl` linger 已开启。
-在预发环境演练时，可以用 `ASH_CD_SERVICES` / `ASH_CD_CONTAINER` / `ASH_CD_PROJECT` / `ASH_CD_IMAGE` / `ASH_CD_LOCAL_URL` 指向另一套容器，`ASH_CD_GH_DEPLOYMENTS=0` 不写 GitHub。
+在预发环境演练时，可以用 `ASH_CD_SERVICES` / `ASH_CD_CONTAINER` / `ASH_CD_PROJECT` / `ASH_CD_IMAGE` / `ASH_CD_LOCAL_URL` 指向另一套容器，`ASH_CD_GH_ENV=staging` 让部署记录与手动请求都落在 GitHub 的 staging 环境（与生产互不干扰），`ASH_CD_GH_DEPLOYMENTS=0` 则完全不读写 GitHub。
 
 ## 环境
 
