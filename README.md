@@ -185,7 +185,7 @@ curl -X POST -H "$AUTH" https://your-host/api/bundles/1/skills -H 'Content-Type:
 curl -fsSL -H "$AUTH" https://your-host/s/bundle/<bundle-slug>/install.sh | bash
 ```
 
-Upload whitelist & limits: 扩展名白名单默认为文本类（.md/.json/.py/.sh/.yaml…），可用环境变量 `ASH_ALLOWED_EXTS=.md,.json,…) 覆盖；附属文件单文件 ≤512KB、总量 ≤4MB、数量 ≤200；超限与非白名单文件会被跳过并在响应 `warning` 中提示。推送内容会做轻量安全扫描（curl|sh、反弹 shell、混淆 eval、硬编码密钥等模式），结果随技能保存并在详情页展示；高危命中一律进入人工审核。
+Upload whitelist & limits: 扩展名白名单默认为文本类（.md/.json/.py/.sh/.yaml…），可用环境变量 `ASH_ALLOWED_EXTS=.md,.json,…` 覆盖；附属文件单文件 ≤512KB、总量 ≤4MB、数量 ≤200；超限与非白名单文件会被跳过并在响应 `warning` 中提示。推送内容会做轻量安全扫描（curl|sh、反弹 shell、混淆 eval、硬编码密钥等模式），结果随技能保存并在详情页展示；高危命中一律进入人工审核。
 
 ## Security notes
 
