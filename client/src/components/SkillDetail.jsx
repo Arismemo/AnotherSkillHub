@@ -1,26 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { VersionHistoryModal } from './Modals';
 import ReviewPanel from './ReviewPanel';
+import DetailToolbar from './detail/DetailToolbar';
 import FileTreeSidebar from './detail/FileTreeSidebar';
-import { installCommand, skillPrompt } from '../utils/agentPrompts';
 import { showToast } from './toastBus';
 import { requestJson } from '../utils/requestJson';
-import { formatDateTime, relativeTime } from '../utils/date';
 import { extractHeadings, parseFrontmatterPairs, slugifyHeading, splitFrontmatter } from '../utils/markdownDoc';
 import { cachedRender, highlightCode, languageForPath, renderMarkdown, splitHighlightedLines } from '../utils/highlight';
 import {
-  Check,
-  ChevronRight,
-  Copy,
-  Download,
-  Edit3,
-  Eye,
   EyeOff,
   FileCode2,
   List,
-  Terminal,
-  History,
-  MoreHorizontal,
 } from 'lucide-react';
 
 // 悬浮大纲的视口阈值：与 index.css 的 .doc-outline 收窄断点保持一致
@@ -61,7 +51,6 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   const [copied, setCopied] = useState('');
   // D1: 大纲显隐持久化
   const [showVersions, setShowVersions] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [outlineHidden, setOutlineHidden] = useState(() => {
     try { return window.localStorage.getItem('ash:outline-hidden') === '1'; }
     catch { return false; }
@@ -98,19 +87,6 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     try { window.localStorage.setItem('ash:outline-hidden', outlineHidden ? '1' : '0'); }
     catch { /* 存储不可用时仍可在当前会话切换大纲 */ }
   }, [outlineHidden]);
-
-  // 溢出菜单：点外部或按 Esc 关闭
-  useEffect(() => {
-    if (!moreOpen) return undefined;
-    const onPointerDown = (event) => { if (!event.target.closest('.detail-more')) setMoreOpen(false); };
-    const onKeyDown = (event) => { if (event.key === 'Escape') setMoreOpen(false); };
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [moreOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -319,10 +295,6 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     container.scrollTo({ top: container.scrollTop + delta - 12, behavior: 'smooth' });
   };
 
-  const origin = window.location.origin;
-  const agentPrompt = skillPrompt(origin, { ...skill, file_count: fileTree.length || skill.file_count });
-  const cliCommand = installCommand(origin, skill.slug);
-
   const copyToClipboard = async (text, type, toastLabel) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -387,18 +359,6 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     }
   }, [skill.id]);
 
-  // 附属文件单独下载：/api/skills/:id/file 返回 JSON 包装，直接做成本地 Blob 更省事
-  const downloadCurrentFile = () => {
-    const url = URL.createObjectURL(new Blob([auxFileContent], { type: 'text/plain;charset=utf-8' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = selectedFile.split('/').pop();
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-  };
-
   const openFile = (path) => {
     setFileError('');
     setAuxFileContent('');
@@ -408,78 +368,21 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
 
   return (
     <div className="detail-panel">
-      <header className="detail-toolbar">
-        <div className="detail-identity">
-          <nav className="breadcrumb" aria-label="技能路径">
-            {skill.folder_path.split('/').map((segment, i, arr) => (
-              <span key={`${segment}-${i}`} className="crumb-segment">
-                {/* 面包屑是导航：跳到该层目录，而不是把技能移动到它自己的目录 */}
-                    <button type="button" className="crumb-link" onClick={() => onSelectFolder?.(arr.slice(0, i + 1).join('/'))} title={`在目录中查看：${arr.slice(0, i + 1).join('/')}`}>{segment}</button>
-                {i < arr.length - 1 && <ChevronRight size={11} className="crumb-sep" aria-hidden="true" />}
-              </span>
-            ))}
-            <ChevronRight size={11} className="crumb-sep" aria-hidden="true" />
-            <span className="crumb-current">{skill.slug}</span>
-          </nav>
-          <h2 title={skill.name}>{skill.name}</h2>
-        </div>
-
-        {/* 头部中段原来是一大片空白：放只读身份信息（版本 / 更新时间 / 文件数 / 来源终端） */}
-        <div className="detail-meta" aria-label="技能信息">
-          {skill.version && <span className="chip" title={`版本 ${skill.version}`}>v{skill.version}</span>}
-          {skill.updated_at && <span title={`更新于 ${formatDateTime(skill.updated_at)}`}>{relativeTime(skill.updated_at)}</span>}
-          {fileTree.length > 1 && <span>{fileTree.length} 个文件</span>}
-          {skill.terminal_source && <span className="chip row-source" title={`来自终端 ${skill.terminal_source}`}>{skill.terminal_source}</span>}
-        </div>
-
-        <div className="detail-actions">
-          <button type="button" className="secondary-button" onClick={() => copyToClipboard(agentPrompt, 'agent')}>
-            {copied === 'agent' ? <Check size={14} /> : <Copy size={14} />}
-            {copied === 'agent' ? '已复制' : '复制 Agent 指令'}
-          </button>
-          <button type="button" className="secondary-button compact-action" onClick={() => copyToClipboard(cliCommand, 'cli')}>
-            {copied === 'cli' ? <Check size={14} /> : <Terminal size={14} />}
-            <span>{copied === 'cli' ? '已复制' : '复制 CLI'}</span>
-          </button>
-          <a className="icon-button bordered-button" href={`/s/${skill.slug}/archive.tar.gz`} download aria-label={`下载 ${skill.name} 完整技能包`}>
-            <Download size={15} />
-          </a>
-          <button type="button" className="icon-button bordered-button" onClick={() => setShowVersions(true)} aria-label="历史版本" title="历史版本">
-            <History size={15} />
-          </button>
-          {/* 溢出菜单：一键取值（slug / 路径 / 链接）与「复制技能」——后者后端早有 API，前端一直没入口 */}
-          <div className="folder-menu-wrap detail-more">
-            <button
-              type="button"
-              className="icon-button bordered-button"
-              onClick={() => setMoreOpen((v) => !v)}
-              aria-label="更多操作"
-              aria-expanded={moreOpen}
-              title="更多操作"
-            >
-              <MoreHorizontal size={15} />
-            </button>
-            {moreOpen && (
-              <div className="folder-menu" role="menu">
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); onCopySkill?.(skill.id); }}>复制为新技能</button>
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(skill.slug, 'slug', 'slug'); }}>复制 slug</button>
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(`${skill.folder_path}/${skill.slug}`, 'path', '仓库路径'); }}>复制仓库路径</button>
-                <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(`[${skill.name}](${origin}/s/${skill.slug})`, 'link', 'Markdown 链接'); }}>复制 Markdown 链接</button>
-                {selectedFile !== 'SKILL.md' && (
-                  <>
-                    <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); copyToClipboard(auxFileContent, 'file'); showToast(`已复制 ${selectedFile} 的内容`); }}>复制当前文件内容</button>
-                    <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); downloadCurrentFile(); }}>下载当前文件</button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="mode-switch" aria-label="详情模式">
-            <button type="button" className={mode === 'preview' ? 'is-active' : ''} onClick={() => switchMode('preview')} aria-pressed={mode === 'preview'}><Eye size={14} />预览</button>
-            <button type="button" className={`${mode === 'edit' ? 'is-active' : ''}${dirty ? ' is-dirty' : ''}`} onClick={() => switchMode('edit')} aria-pressed={mode === 'edit'} disabled={saving} title={dirty ? '有未保存的修改（⌘S 保存）' : '编辑（E）'}><Edit3 size={14} />{saving ? '保存中…' : '编辑'}{dirty && <i className="dirty-dot" aria-label="有未保存的修改" />}</button>
-          </div>
-        </div>
-      </header>
+      <DetailToolbar
+        skill={skill}
+        fileCount={fileTree.length}
+        selectedFile={selectedFile}
+        auxFileContent={auxFileContent}
+        copied={copied}
+        onCopy={copyToClipboard}
+        onShowVersions={() => setShowVersions(true)}
+        mode={mode}
+        dirty={dirty}
+        saving={saving}
+        onSwitchMode={switchMode}
+        onSelectFolder={onSelectFolder}
+        onCopySkill={onCopySkill}
+      />
       <VersionHistoryModal isOpen={showVersions} onClose={() => setShowVersions(false)} skillId={skill.id} onRestored={async () => {
             const fresh = await requestJson(`/api/skills/${skill.id}`).catch(() => null);
             if (fresh) { setContent(fresh.content || ''); setSavedContent(fresh.content || ''); }
