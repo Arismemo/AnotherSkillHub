@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { VersionHistoryModal } from './Modals';
 import ReviewPanel from './ReviewPanel';
+import FileTreeSidebar from './detail/FileTreeSidebar';
 import { installCommand, skillPrompt } from '../utils/agentPrompts';
 import { showToast } from './toastBus';
-import useResizableWidth from '../hooks/useResizableWidth';
 import { requestJson } from '../utils/requestJson';
 import { formatDateTime, relativeTime } from '../utils/date';
 import { extractHeadings, parseFrontmatterPairs, slugifyHeading, splitFrontmatter } from '../utils/markdownDoc';
 import { cachedRender, highlightCode, languageForPath, renderMarkdown, splitHighlightedLines } from '../utils/highlight';
 import {
   Check,
-  ChevronDown,
   ChevronRight,
   Copy,
   Download,
@@ -18,103 +17,16 @@ import {
   Eye,
   EyeOff,
   FileCode2,
-  FileText,
-  Folder,
   List,
   Terminal,
   History,
   MoreHorizontal,
-  PanelLeftClose,
 } from 'lucide-react';
 
 // 悬浮大纲的视口阈值：与 index.css 的 .doc-outline 收窄断点保持一致
 const OUTLINE_MIN_VIEWPORT = '(min-width: 1280px)';
 
 const HEADING_SELECTOR = '.markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4';
-
-function buildFileTree(files) {
-  const root = { name: '', path: '', children: new Map(), file: null };
-  for (const file of files) {
-    const parts = file.path.split('/');
-    let node = root;
-    parts.forEach((part, depth) => {
-      const isLeaf = depth === parts.length - 1;
-      if (!node.children.has(part)) {
-        node.children.set(part, { name: part, path: parts.slice(0, depth + 1).join('/'), children: new Map(), file: null });
-      }
-      node = node.children.get(part);
-      if (isLeaf) node.file = file;
-    });
-  }
-  return root;
-}
-
-function FileTreeNode({ node, depth, selectedFile, openFile, openDirs, toggleDir, hasSelectionInside, filterActive }) {
-  const dirEntries = [...node.children.values()].sort((a, b) => {
-    const aDir = a.children.size > 0;
-    const bDir = b.children.size > 0;
-    if (aDir !== bDir) return aDir ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-
-  return (
-    <ul className="file-tree" role={depth === 0 ? 'tree' : 'group'} aria-label={depth === 0 ? '技能文件目录' : undefined}>
-      {dirEntries.map((entry) => {
-        const isDir = entry.children.size > 0;
-        // 过滤激活时强制展开所有目录，保证匹配文件可见
-        const expanded = filterActive || openDirs.has(entry.path);
-        if (isDir) {
-          return (
-            <li key={entry.path} role="none">
-              <button
-                type="button"
-                className="file-tree-row file-tree-dir"
-                style={{ '--tree-depth': depth }}
-                aria-expanded={expanded}
-                onClick={() => toggleDir(entry.path)}
-              >
-                {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                <Folder size={13} />
-                <span>{entry.name}</span>
-              </button>
-              {(expanded || hasSelectionInside(entry)) && (
-                <FileTreeNode
-                  node={entry}
-                  depth={depth + 1}
-                  selectedFile={selectedFile}
-                  openFile={openFile}
-                  openDirs={openDirs}
-                  toggleDir={toggleDir}
-                  hasSelectionInside={hasSelectionInside}
-                  filterActive={filterActive}
-                />
-              )}
-            </li>
-          );
-        }
-        const file = entry.file;
-        const active = selectedFile === file.path;
-        return (
-          <li key={file.path} role="none">
-            <button
-              type="button"
-              role="treeitem"
-              aria-selected={active}
-              className={`file-tree-row file-tree-file${active ? ' is-active' : ''}`}
-              style={{ '--tree-depth': depth }}
-              onClick={() => openFile(file.path)}
-            >
-              <span className="file-tree-leaf-spacer" aria-hidden="true" />
-              {file.isMain || file.path.endsWith('.md') ? <FileText size={13} /> : <FileCode2 size={13} />}
-              <span>{file.name}</span>
-              <small>{Math.max(1, Math.round(file.size / 1024))} KB</small>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
 
 function readSkillDraft(skillId) {
   try {
@@ -147,9 +59,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   const [detailError, setDetailError] = useState('');
   const [fileError, setFileError] = useState('');
   const [copied, setCopied] = useState('');
-  const [openDirs, setOpenDirs] = useState(() => new Set());
-  // D1: 面板宽度/大纲显隐持久化
-  const [fileSidebarWidth, , fileSidebarResizer] = useResizableWidth('file-sidebar-width', { min: 160, max: 480, initial: 240, label: '调整技能文件栏宽度' });
+  // D1: 大纲显隐持久化
   const [showVersions, setShowVersions] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [outlineHidden, setOutlineHidden] = useState(() => {
@@ -162,8 +72,6 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   // 文件栏在滚动区 <640px 时自动收成细条（点击恢复），正文优先
   const [fileBarCollapsed, setFileBarCollapsed] = useState(false);
   const fileBarManualRef = useRef(false); // 用户手动展开过则不再自动收起
-  // A2: 文件树过滤
-  const [fileFilter, setFileFilter] = useState('');
   // B1: 大纲当前高亮索引
   const [activeHeading, setActiveHeading] = useState(0);
   const scrollRef = useRef(null);
@@ -383,36 +291,8 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     };
   }, [headings.length, renderedMarkdown, auxRendered, selectedFile, mode]);
 
-  const treeData = useMemo(() => buildFileTree(fileTree), [fileTree]);
-
-  // A2: 文件树过滤（含路径子串匹配）
-  const filteredTreeData = useMemo(() => {
-    const q = fileFilter.trim().toLowerCase();
-    if (!q) return treeData;
-    const filtered = fileTree.filter((f) => f.path.toLowerCase().includes(q));
-    return buildFileTree(filtered);
-  }, [treeData, fileFilter, fileTree]);
-
   // B5: frontmatter 键值对
   const frontmatterPairs = useMemo(() => parseFrontmatterPairs(documentParts.frontmatter), [documentParts.frontmatter]);
-
-  const toggleDir = (dirPath) => {
-    setOpenDirs((prev) => {
-      const next = new Set(prev);
-      if (next.has(dirPath)) next.delete(dirPath);
-      else next.add(dirPath);
-      return next;
-    });
-  };
-
-  const hasSelectionInside = (node) => {
-    if (!selectedFile) return false;
-    if (node.file && node.file.path === selectedFile) return true;
-    for (const child of node.children.values()) {
-      if (hasSelectionInside(child)) return true;
-    }
-    return false;
-  };
 
   const jumpToHeading = (index) => {
     const container = scrollRef.current;
@@ -606,53 +486,15 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
           }} />
 
       <div className="detail-body">
-        {fileTree.length > 1 && fileBarCollapsed && (
-          <button
-            type="button"
-            className="file-sidebar-rail"
-            onClick={() => { fileBarManualRef.current = true; setFileBarCollapsed(false); }}
-            aria-label={`展开技能文件（${fileTree.length} 个）`}
-            title="展开技能文件"
-          >
-            <span className="rail-count">{fileTree.length}</span>
-            <span className="rail-label">文件</span>
-          </button>
-        )}
-        {fileTree.length > 1 && !fileBarCollapsed && (
-          <aside className="file-sidebar" aria-label="技能文件" style={{ '--file-sidebar-w': `${fileSidebarWidth}px` }}>
-            <div className="attachment-heading">
-              <h3 id="attachments-heading">技能文件</h3>
-              <span>{fileTree.length} 个</span>
-              <button type="button" className="icon-button" onClick={() => { fileBarManualRef.current = false; setFileBarCollapsed(true); }} aria-label="收起技能文件" title="收起技能文件">
-                <PanelLeftClose size={13} />
-              </button>
-            </div>
-            <div className="file-filter">
-              <input
-                type="search"
-                value={fileFilter}
-                onChange={(event) => setFileFilter(event.target.value)}
-                placeholder="过滤文件…"
-                aria-label="过滤技能文件"
-              />
-            </div>
-            <div className="file-sidebar-scroll">
-              <FileTreeNode
-                node={filteredTreeData}
-                depth={0}
-                selectedFile={selectedFile}
-                openFile={openFile}
-                openDirs={openDirs}
-                toggleDir={toggleDir}
-                hasSelectionInside={hasSelectionInside}
-                filterActive={Boolean(fileFilter.trim())}
-              />
-              {fileFilter.trim() && filteredTreeData.children.size === 0 && (
-                <p className="file-filter-empty">没有匹配「{fileFilter.trim()}」的文件</p>
-              )}
-            </div>
-            <div {...fileSidebarResizer} />
-          </aside>
+        {fileTree.length > 1 && (
+          <FileTreeSidebar
+            files={fileTree}
+            selectedFile={selectedFile}
+            onOpenFile={openFile}
+            collapsed={fileBarCollapsed}
+            onCollapse={() => { fileBarManualRef.current = false; setFileBarCollapsed(true); }}
+            onExpand={() => { fileBarManualRef.current = true; setFileBarCollapsed(false); }}
+          />
         )}
 
         <div className={`detail-scroll${mode === 'preview' && !outlineHidden && outlineFits && headings.length > 1 ? ' has-outline' : ''}`} ref={scrollRef}>
