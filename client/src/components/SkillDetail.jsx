@@ -2,21 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { VersionHistoryModal } from './Modals';
 import ReviewPanel from './ReviewPanel';
 import DetailToolbar from './detail/DetailToolbar';
+import DocOutline from './detail/DocOutline';
 import FileTreeSidebar from './detail/FileTreeSidebar';
 import { showToast } from './toastBus';
 import { requestJson } from '../utils/requestJson';
 import { extractHeadings, parseFrontmatterPairs, slugifyHeading, splitFrontmatter } from '../utils/markdownDoc';
+import useDocOutline, { HEADING_SELECTOR } from '../hooks/useDocOutline';
 import { cachedRender, highlightCode, languageForPath, renderMarkdown, splitHighlightedLines } from '../utils/highlight';
-import {
-  EyeOff,
-  FileCode2,
-  List,
-} from 'lucide-react';
-
-// 悬浮大纲的视口阈值：与 index.css 的 .doc-outline 收窄断点保持一致
-const OUTLINE_MIN_VIEWPORT = '(min-width: 1280px)';
-
-const HEADING_SELECTOR = '.markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4';
+import { FileCode2 } from 'lucide-react';
 
 function readSkillDraft(skillId) {
   try {
@@ -49,29 +42,11 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   const [detailError, setDetailError] = useState('');
   const [fileError, setFileError] = useState('');
   const [copied, setCopied] = useState('');
-  // D1: 大纲显隐持久化
   const [showVersions, setShowVersions] = useState(false);
-  const [outlineHidden, setOutlineHidden] = useState(() => {
-    try { return window.localStorage.getItem('ash:outline-hidden') === '1'; }
-    catch { return false; }
-  });
-  // 大纲按「视口宽度」判定，而不是滚动区宽度：滚动区永远是视口减去左两栏，
-  // 用它做阈值会让大纲在 1684px 以下的视口里永远不出现。
-  const [outlineFits, setOutlineFits] = useState(() => window.matchMedia(OUTLINE_MIN_VIEWPORT).matches);
   // 文件栏在滚动区 <640px 时自动收成细条（点击恢复），正文优先
   const [fileBarCollapsed, setFileBarCollapsed] = useState(false);
   const fileBarManualRef = useRef(false); // 用户手动展开过则不再自动收起
-  // B1: 大纲当前高亮索引
-  const [activeHeading, setActiveHeading] = useState(0);
   const scrollRef = useRef(null);
-
-  useEffect(() => {
-    const query = window.matchMedia(OUTLINE_MIN_VIEWPORT);
-    const sync = () => setOutlineFits(query.matches);
-    sync();
-    query.addEventListener('change', sync);
-    return () => query.removeEventListener('change', sync);
-  }, []);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -82,11 +57,6 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    try { window.localStorage.setItem('ash:outline-hidden', outlineHidden ? '1' : '0'); }
-    catch { /* 存储不可用时仍可在当前会话切换大纲 */ }
-  }, [outlineHidden]);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,83 +187,10 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
     return undefined;
   }, [renderedMarkdown, auxRendered, selectedFile, mode]);
 
-  // B1: 大纲跟随滚动高亮（scroll-spy）
-  // 原实现每帧 querySelectorAll + 逐标题 getBoundingClientRect——每次滚动都强制同步布局。
-  // 改成：标题位置只在内容/尺寸变化时量一次，滚动中只比 scrollTop，零 rect 读取。
-  const headingOffsetsRef = useRef([]);
-  useEffect(() => {
-    const container = scrollRef.current;
-    if (!container || headings.length < 2) return undefined;
-
-    const measure = () => {
-      const containerTop = container.getBoundingClientRect().top;
-      headingOffsetsRef.current = [...container.querySelectorAll(HEADING_SELECTOR)]
-        .map((node) => node.getBoundingClientRect().top - containerTop + container.scrollTop);
-    };
-
-    let ticking = false;
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      window.requestAnimationFrame(() => {
-        ticking = false;
-        const offsets = headingOffsetsRef.current;
-        if (!offsets.length) return;
-        const line = container.scrollTop + 60;
-        let current = 0;
-        for (let i = 0; i < offsets.length; i += 1) {
-          if (offsets[i] <= line) current = i;
-        }
-        // 滚动到底时高亮最后一个标题（末尾内容不足一屏时永远差一点）
-        if (container.scrollTop + container.clientHeight >= container.scrollHeight - 4) {
-          current = offsets.length - 1;
-        }
-        setActiveHeading(current);
-      });
-    };
-
-    measure();
-    onScroll();
-    container.addEventListener('scroll', onScroll, { passive: true });
-    // 字体/图片加载或面板改宽都会挪动标题：重量一次，仍然不碰滚动路径
-    const content = container.querySelector('.detail-content');
-    const observer = content && typeof ResizeObserver !== 'undefined'
-      ? new ResizeObserver(() => { measure(); onScroll(); })
-      : null;
-    if (observer && content) observer.observe(content);
-    return () => {
-      container.removeEventListener('scroll', onScroll);
-      observer?.disconnect();
-    };
-  }, [headings.length, renderedMarkdown, auxRendered, selectedFile, mode]);
+  const outline = useDocOutline({ scrollRef, headings, mode, renderedMarkdown, auxRendered, selectedFile });
 
   // B5: frontmatter 键值对
   const frontmatterPairs = useMemo(() => parseFrontmatterPairs(documentParts.frontmatter), [documentParts.frontmatter]);
-
-  const jumpToHeading = (index) => {
-    const container = scrollRef.current;
-    if (!container) return;
-    const nodes = container.querySelectorAll(HEADING_SELECTOR);
-    const target = nodes[index];
-    if (!target) return;
-    // offsetTop 的参照系是 offsetParent（.app-detail），不是滚动容器；
-    // 用 rect 相对差值计算真实滚动位置
-    const delta = target.getBoundingClientRect().top - container.getBoundingClientRect().top;
-    // 末尾标题补位：确保即使内容不足也能把标题滚到视口上部
-    const needed = container.scrollTop + delta - 12;
-    const maxScroll = container.scrollHeight - container.clientHeight;
-    if (needed > maxScroll) {
-      // 动态撑高底部 padding，让最后标题可达
-      const content = container.querySelector('.detail-content');
-      if (content) {
-        const extra = needed - maxScroll;
-        content.style.paddingBottom = `${Math.round(extra + 3 * 16)}px`;
-        window.requestAnimationFrame(() => container.scrollTo({ top: needed, behavior: 'smooth' }));
-        return;
-      }
-    }
-    container.scrollTo({ top: container.scrollTop + delta - 12, behavior: 'smooth' });
-  };
 
   const copyToClipboard = async (text, type, toastLabel) => {
     try {
@@ -400,42 +297,16 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
           />
         )}
 
-        <div className={`detail-scroll${mode === 'preview' && !outlineHidden && outlineFits && headings.length > 1 ? ' has-outline' : ''}`} ref={scrollRef}>
-          {mode === 'preview' && !outlineHidden && outlineFits && headings.length > 1 && (
-            <nav className="doc-outline" aria-label="文档大纲">
-              <div className="doc-outline-header">
-                <span>大纲</span>
-                <button
-                  type="button"
-                  className="doc-outline-toggle"
-                  onClick={() => setOutlineHidden(true)}
-                  aria-label="隐藏大纲"
-                  title="隐藏大纲"
-                >
-                  <EyeOff size={13} />
-                </button>
-              </div>
-              <ul>
-                {headings.map((heading, index) => (
-                  <li key={heading.id} className={index === activeHeading ? 'is-active' : ''} style={{ '--outline-level': heading.level - 1 }}>
-                    <button type="button" onClick={() => jumpToHeading(index)} title={heading.text}>
-                      {heading.text}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          )}
-          {mode === 'preview' && outlineHidden && outlineFits && headings.length > 1 && (
-            <button
-              type="button"
-              className="doc-outline-restore"
-              onClick={() => setOutlineHidden(false)}
-              aria-label="显示大纲"
-              title="显示大纲"
-            >
-              <List size={14} />
-            </button>
+        <div className={`detail-scroll${outline.visible && !outline.hidden ? ' has-outline' : ''}`} ref={scrollRef}>
+          {outline.visible && (
+            <DocOutline
+              headings={headings}
+              activeIndex={outline.activeHeading}
+              hidden={outline.hidden}
+              onJump={outline.jumpToHeading}
+              onHide={() => outline.setHidden(true)}
+              onShow={() => outline.setHidden(false)}
+            />
           )}
           <div className={`detail-content${isWideFileView ? ' is-wide-file' : ''}`}>
             <div className="sr-only" aria-live="polite">{copied ? '内容已复制' : ''}</div>
