@@ -21,8 +21,9 @@ test('App wires every interactive component callback to an implementation', asyn
 
 test('detail breadcrumb navigates to the folder instead of moving the skill into it', async () => {
   const detail = await source('src/components/SkillDetail.jsx');
-  assert.ok(!detail.includes('onMoveFolder'), 'breadcrumb must not trigger a move mutation');
-  assert.match(detail, /crumb-link[\s\S]{0,80}?onSelectFolder\?\.\(arr\.slice\(0, i \+ 1\)\.join\('\/'\)\)/, 'each crumb segment navigates to its own path prefix');
+  const toolbar = await source('src/components/detail/DetailToolbar.jsx');
+  assert.ok(!detail.includes('onMoveFolder') && !toolbar.includes('onMoveFolder'), 'breadcrumb must not trigger a move mutation');
+  assert.match(toolbar, /crumb-link[\s\S]{0,80}?onSelectFolder\?\.\(arr\.slice\(0, i \+ 1\)\.join\('\/'\)\)/, 'each crumb segment navigates to its own path prefix');
 });
 
 test('detail always fetches the full record so file_tree stays available', async () => {
