@@ -79,18 +79,18 @@ const server = require('http').createServer((req, res) => {
   if (req.url === '/calls') return res.end(String(calls));
   let body = '';
   req.on('data', (c) => { body += c; });
-  req.on('end', () => {
+  req.on('end', () => setTimeout(() => {
     calls += 1;
     const { input } = JSON.parse(body || '{}');
     const vectors = (Array.isArray(input) ? input : [input]).map((t) => [...CONCEPTS.map((re) => (String(t).match(re) || []).length), 0.3]);
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ embeddings: vectors }));
-  });
+  }, Number(process.env.DELAY_MS || 0)));
 });
 server.listen(0, '127.0.0.1', () => console.log(server.address().port));
 `;
-async function startFakeEmbeddings() {
-  const child = spawn(process.execPath, ['-e', FAKE_EMBEDDINGS], { stdio: ['ignore', 'pipe', 'inherit'] });
+async function startFakeEmbeddings({ delayMs = 0 } = {}) {
+  const child = spawn(process.execPath, ['-e', FAKE_EMBEDDINGS], { stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, DELAY_MS: String(delayMs) } });
   const port = await new Promise((resolve) => child.stdout.once('data', (d) => resolve(Number(String(d).trim()))));
   const url = `http://127.0.0.1:${port}`;
   return {
@@ -216,4 +216,26 @@ test('semantic layer, pins, multi-agent installs and ash doctor end to end', asy
     assert.match(out, /db-rollback\n.*缺少英文描述/);
     assert.doesNotMatch(out, /pin-old|历史版本/);
   });
+});
+
+// 线上实测：繁忙服务器的 CPU 上 bge-m3 每条要好几秒。后台补齐不能因为「整批超时」永远补不上，
+// 找技能也不能被慢模型拖住
+test('a slow embedding model still gets every vector, and never slows down suggest', async (t) => {
+  const fake = await startFakeEmbeddings({ delayMs: 800 });
+  const server = await startServer({ ASH_EMBED_URL: fake.url, ASH_EMBED_MODEL: 'fake', ASH_EMBED_TIMEOUT_MS: '300', ASH_EMBED_QUERY_TIMEOUT_MS: '300' });
+  t.after(async () => { await server.stop(); await fake.close(); });
+  const detail = await (await fetch(`${server.origin}/api/skills/systematic-debugging`)).json();
+  assert.ok(detail.id);
+  const Database = require('better-sqlite3');
+  const count = () => {
+    const db = new Database(path.join(server.env.DATA_DIR, 'another-skillhub.db'), { readonly: true });
+    try { return db.prepare('SELECT COUNT(*) AS n FROM skill_embeddings').get().n; } finally { db.close(); }
+  };
+  for (let i = 0; i < 40 && count() < 3; i += 1) await new Promise((r) => setTimeout(r, 250));
+  assert.equal(count(), 3, 'batches get a per-text allowance instead of the short request timeout');
+  const started = Date.now();
+  const res = await fetch(`${server.origin}/api/agent/suggest?q=${encodeURIComponent('测试失败找根因')}&format=text`);
+  assert.equal(res.status, 200);
+  assert.match(await res.text(), /systematic-debugging/, 'falls back to text matching');
+  assert.ok(Date.now() - started < 700, `suggest does not wait for the slow model (${Date.now() - started}ms)`);
 });
