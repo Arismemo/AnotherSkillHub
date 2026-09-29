@@ -115,6 +115,8 @@ Self-host with Docker — full runbook (build gate, DB backup, image roll-out, r
 | `DATA_DIR` | `./data` | SQLite location |
 | `STORAGE_DIR` | `./data/skills_files` | Skill files on disk |
 | `ASH_REQUIRE_REVIEW` | `1` | `0` publishes agent pushes directly (high-risk security hits are still held for review) |
+| `ASH_EMBED_URL` | — | Optional semantic layer: an Ollama URL (e.g. `http://127.0.0.1:11434`) or an OpenAI-compatible `/v1` endpoint. Finds duplicates and matches tasks across languages |
+| `ASH_EMBED_MODEL` | `bge-m3` | Embedding model (use a multilingual one); `ASH_EMBED_KEY` for OpenAI-compatible APIs |
 | `ASH_REGISTRATION` | `open` | `closed` disables self-service sign-up (create accounts with `npm run user:create`) |
 | `ASH_TRUST_PROXY` | `loopback, linklocal, uniquelocal` | Express `trust proxy` — which hops may set `X-Forwarded-*` (client IP for login rate limiting, `https` for `Secure` cookies) |
 | `ASH_SEED` | `1` | `0` skips the example skills given to each new account |

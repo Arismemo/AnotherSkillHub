@@ -5,6 +5,13 @@ import { showToast } from './toastBus';
 import { folderLabels } from '../utils/systemFolders';
 import './Review.css';
 import { formatShortDate } from '../utils/date';
+
+const HEALTH_CHIP = {
+  failing: 'chip-danger', broken_ref: 'chip-danger', duplicate: 'chip-warning', copies_meta: 'chip-warning',
+  extractable: 'chip-warning', meta_contract: 'chip-warning', unused: 'chip-muted', stale: 'chip-muted',
+};
+// 平时只标需要尽快处理的；「需关注」视图里全部列出
+const ALWAYS_SHOWN = ['failing', 'broken_ref', 'duplicate'];
 import {
   ArrowDownAZ,
   Check,
@@ -70,6 +77,7 @@ export default function SkillList({
   onCollapse,
 }) {
   const isTrash = currentFolder === 'trash';
+  const isAttention = currentFolder === 'attention';
   const listTitle = currentTag ? `标签：${currentTag}` : folderLabels[currentFolder] || currentFolder;
   // 选到只剩 1 项时批量条不该消失：以「是否处于多选模式」为准，而不是 size > 1
   const multiCount = multiSelectMode ? selectedIds.size : 0;
@@ -252,9 +260,9 @@ export default function SkillList({
         ) : skills.length === 0 ? (
           <div className="list-state">
             <div className="empty-icon" aria-hidden="true">{searchQuery ? <Search size={20} /> : isTrash ? <Trash2 size={20} /> : <Inbox size={20} />}</div>
-            <strong>{searchQuery ? '没有匹配的技能' : isTrash ? '废纸篓为空' : '这里还没有技能'}</strong>
-            <span>{searchQuery ? '尝试缩短关键词或清除筛选。' : isTrash ? '移入废纸篓的技能会显示在这里。' : '创建技能后即可开始整理。'}</span>
-            {!isTrash && !searchQuery && <button type="button" onClick={onNewSkill}><Plus size={14} />新建技能</button>}
+            <strong>{searchQuery ? '没有匹配的技能' : isTrash ? '废纸篓为空' : isAttention ? '没有需要关注的技能' : '这里还没有技能'}</strong>
+            <span>{searchQuery ? '尝试缩短关键词或清除筛选。' : isTrash ? '移入废纸篓的技能会显示在这里。' : isAttention ? '常失败、从未使用、长期未用或疑似重复的技能会出现在这里。' : '创建技能后即可开始整理。'}</span>
+            {!isTrash && !isAttention && !searchQuery && <button type="button" onClick={onNewSkill}><Plus size={14} />新建技能</button>}
           </div>
         ) : (
           <ul className="skill-list" role="listbox" aria-label={listTitle}>
@@ -303,6 +311,9 @@ export default function SkillList({
                         {skill.status === 'pending' && <span className="chip chip-pending" title="Agent 推送的新技能，通过审核后其他 Agent 才能拉取">待审</span>}
                         {skill.has_pending_update && <span className="chip chip-pending" title="Agent 提交了更新，等待采纳">有更新</span>}
                         {skill.warning_count > 0 && <span className="chip chip-danger" title="安全扫描命中可疑模式，详情页查看">⚠ {skill.warning_count}</span>}
+                        {(skill.health || []).filter((h) => isAttention || ALWAYS_SHOWN.includes(h.code)).map((h) => (
+                          <span key={h.code} className={`chip ${HEALTH_CHIP[h.code] || 'chip-muted'}`} title={h.detail}>{h.label}</span>
+                        ))}
                         {skill.version && <span className="chip row-version" title={`版本 ${skill.version}`}>v{skill.version}</span>}
                         {(skill.tags || []).slice(0, 2).map((tag) => (
                           <button

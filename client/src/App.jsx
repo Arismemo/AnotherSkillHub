@@ -799,6 +799,7 @@ export default function App() {
               onSelectTag={handleSelectTag}
               onCopySkill={handleCopySkill}
               onChanged={refreshAll}
+              onOpenSkill={handleRevealSkill}
               apiRef={detailApiRef}
             />
           </Suspense>

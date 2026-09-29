@@ -62,6 +62,43 @@ skill_roots() {
   } | awk '!seen[$0]++'
 }
 
+# 本机各个 Agent 加载技能的目录（与服务端生成的多 Agent 安装脚本共用一份定义）
+__AGENT_ROOTS_FN__
+
+# 某个目录是哪个 Agent 在加载；没有 Agent 从这里加载时输出空
+root_agent() {
+  case "$1" in
+    "$HOME/.claude/skills") echo "Claude Code" ;;
+    "$HOME/.agents/skills") echo "Codex" ;;
+    "$HOME/.hermes/skills"|"$HOME"/.hermes/profiles/*/skills) echo "Hermes" ;;
+    "$HOME/.dsh/skills") echo "dsh" ;;
+    */.claude/skills) echo "Claude Code（项目）" ;;
+    */.agents/skills) echo "Codex（项目）" ;;
+    *) echo "" ;;
+  esac
+}
+
+# 已装技能引用的技能（每行一个 slug 或 slug@版本，跨账号的 @owner/slug 不算）。
+# 新装的技能记在 .ash 的 deps 里；更早装的从 SKILL.md 的 depends_on: [a, b] 读
+deps_of() {
+  local dir="$1" deps
+  if grep -q '^deps=' "$dir/.ash" 2>/dev/null; then deps="$(meta "$dir" deps)"
+  else deps="$(sed -n '1,/^---$/s/^depends_on: *\[\(.*\)\].*/\1/p' "$dir/SKILL.md" 2>/dev/null | tr -d " \"'")"; fi
+  printf '%s\n' "$deps" | tr ',' '\n' | while IFS= read -r spec; do
+    case "$spec" in ''|@*) continue ;; esac
+    echo "$spec"
+  done
+}
+
+# 引用了、但同一目录里没有的技能：本地 Agent 顺着 ../<slug>/SKILL.md 找不到它
+missing_deps() {
+  local dir="$1" root spec
+  root="$(dirname "$dir")"
+  deps_of "$dir" | while IFS= read -r spec; do
+    if [ ! -f "$root/${spec%%@*}/SKILL.md" ]; then echo "$spec"; fi
+  done
+}
+
 # 已由 ash 安装的技能目录（含 .ash 元数据），每行一个目录
 installed_dirs() {
   local root f
@@ -91,6 +128,12 @@ skill_state() {
   line="$(printf '%s\n' "$revs" | awk -F'\t' -v s="$slug" '$1 == s { print; exit }')"
   rstatus="$(printf '%s' "$line" | cut -f2)"; rrev="$(printf '%s' "$line" | cut -f3)"; rver="$(printf '%s' "$line" | cut -f4)"
   if [ "$(meta "$dir" fingerprint)" != "$(ash_fingerprint "$dir")" ]; then modified=1; fi
+  # 固定版本的技能不跟着库里更新走：ash pull --all 跳过，ash outdated 不列
+  if [ -n "$(meta "$dir" pinned)" ]; then
+    if [ "$modified" = 1 ]; then printf 'modified\t固定在 v%s · 本地有修改\n' "$(meta "$dir" pinned)"
+    else printf 'pinned\t固定在 v%s（库里当前 v%s）\n' "$(meta "$dir" pinned)" "$rver"; fi
+    return
+  fi
   case "$rstatus" in
     missing) printf 'missing\t远端已删除\n'; return ;;
     trashed) printf 'trashed\t远端在废纸篓\n'; return ;;
@@ -163,24 +206,32 @@ show_help() {
 AnotherSkillHub CLI · 服务地址: $SERVER_URL
 
 查找
-  ash search <关键词…> [--tag T] [--folder F] [--json]   搜索已发布技能（多个关键词需同时命中）
+  ash suggest "<任务描述>" [--limit N] [--json]           按任务描述找相关技能（接到任务时先用它）
+  ash search <关键词…> [--tag T] [--folder F] [--json]   搜索已发布技能（多个关键词需同时命中；都不命中时给出相关候选）
   ash list [--tag T] [--folder F] [--json]               列出已发布技能
   ash info <slug>                 描述、依赖、文件清单、版本与安装命令
-  ash show <slug> [--version ID] [--pending]             直接输出 SKILL.md（不安装）
+  ash show <slug>[@版本] [--version ID] [--pending]       直接输出 SKILL.md（不安装）；@版本 取那一版
   ash versions <slug>             历史版本列表
+  ash lint [slug] [--only CODE] [--json]  技能检查：双语描述、引用、元技能契约、重复的步骤、能否被 Agent 调用
+                                  --only bilingual 只看缺双语描述的（批量补齐时用；只改双语字段的更新无需审核）
 
 技能组合
   ash bundles [--json]            列出全部组合
   ash bundle <标识或名称>          查看组合成员
 
 安装与本地管理
-  ash pull <slug> [--agent claude|codex|hermes|dsh] [--dir PATH] [--pending] [--force] [--no-deps]
+  ash pull <slug>[@版本] [--agent claude|codex|hermes|dsh|all] [--dir PATH] [--pending] [--force] [--no-deps]
                                   安装技能及其依赖；本地改过的同名目录先备份到 ~/.ash/backups（--force 不备份）
+                                  --agent all 装进本机每个 Agent 的目录；slug@1.2.0 安装历史里的那一版并固定
   ash pull bundle:<标识或名称>     一次安装整个技能组合
   ash pull --all [--dir PATH] [--force]   更新所有过期的已装技能（本地改过的跳过，除非 --force）
   ash installed [--dir PATH]      本机已装技能及状态（最新 / 有更新 / 本地有修改 / 远端已删除）
   ash outdated [--dir PATH]       只列出需要处理的已装技能
   ash remove <slug> [--dir PATH] [--force] 卸载；本地改过的先备份（--force 直接删除）
+  ash doctor [--fix] [--dir PATH]  检查本机各 Agent 能不能用上已装的技能：引用的技能在不在旁边、装的目录有没有 Agent 加载；--fix 自动补装
+
+反馈
+  ash feedback <slug> ok|fail ["说明"] [--dir PATH]   用完技能后回报结果；失败时写一句哪一步、为什么没走通
 
 推送与审核
   ash push <技能目录|SKILL.md> [--update] [--folder PATH] [--json]
@@ -199,7 +250,7 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash update                      更新 ash 自身
 
 完整文档：$SERVER_URL/docs
-环境变量：ASH_SERVER_URL 服务地址；ASH_TOKEN API token（默认读 ~/.ash/token）；ASH_SKILLS_DIR 默认安装目录；ASH_BIN_DIR ash 安装位置；ASH_TERMINAL 推送来源名（默认 hostname）
+环境变量：ASH_AGENT 默认安装到哪个 Agent（claude|codex|hermes|dsh|all）；ASH_SERVER_URL 服务地址；ASH_TOKEN API token（默认读 ~/.ash/token）；ASH_SKILLS_DIR 默认安装目录（在 Claude Code 里运行时默认 ~/.claude/skills）；ASH_BIN_DIR ash 安装位置；ASH_TERMINAL 推送来源名（默认 hostname）
 EOF
 }
 
@@ -224,10 +275,10 @@ case "$cmd" in
   pull)
     [ -n "${1:-}" ] || die "请提供技能标识 (slug)、组合 (bundle:<标识或名称>) 或 --all"
     target="$1"; shift
-    args=(); dir=""; force=0
+    args=(); dir=""; force=0; agent=""
     while [ "$#" -gt 0 ]; do
       case "$1" in
-        --agent) [ -n "${2:-}" ] || die "--agent 需要参数"; args+=(--data-urlencode "agent=$2"); shift 2 ;;
+        --agent) [ -n "${2:-}" ] || die "--agent 需要参数"; agent="$2"; args+=(--data-urlencode "agent=$2"); shift 2 ;;
         --dir) [ -n "${2:-}" ] || die "--dir 需要参数"; dir="$2"; args+=(--data-urlencode "dir=$2"); shift 2 ;;
         --pending) args+=(--data-urlencode "pending=1"); shift ;;
         --force) force=1; args+=(--data-urlencode "force=1"); shift ;;
@@ -235,6 +286,11 @@ case "$cmd" in
         *) die "未知参数: $1" ;;
       esac
     done
+    # 没指定 --agent / --dir / ASH_SKILLS_DIR 时用 ASH_AGENT（例如 all：一台机器上同时用 Claude Code、Codex、Hermes）。
+    # ash pull --all 更新时总是装回原来的目录，不受它影响
+    if [ -z "$agent" ] && [ -z "$dir" ] && [ -z "${ASH_SKILLS_DIR:-}" ] && [ -n "${ASH_AGENT:-}" ] && [ "$target" != "--all" ]; then
+      args+=(--data-urlencode "agent=$ASH_AGENT")
+    fi
     if [ "$target" = "--all" ]; then
       dirs="$(installed_dirs "$dir")"
       [ -n "$dirs" ] || { echo "本机没有通过 ash 安装的技能"; exit 0; }
@@ -243,7 +299,7 @@ case "$cmd" in
       while IFS= read -r d; do
         slug="$(meta "$d" slug)"
         state="$(skill_state "$d" "$revs")"; code="${state%%$'\t'*}"; note="${state#*$'\t'}"
-        extra=()
+        extra=(--data-urlencode "reason=update")
         if [ "$force" = 1 ]; then extra+=(--data-urlencode "force=1"); fi
         if [ "$(meta "$d" pending)" = 1 ]; then extra+=(--data-urlencode "pending=1"); fi
         case "$code" in
@@ -254,7 +310,7 @@ case "$cmd" in
           *) continue ;;
         esac
         # 装回原来的目录：把它的上级目录作为安装根目录
-        if ASH_SKILLS_DIR="$(dirname "$d")" run_install "$SERVER_URL/s/$slug/install.sh" "${extra[@]+"${extra[@]}"}"; then updated=$((updated + 1)); else failed=$((failed + 1)); fi
+        if ASH_SKILLS_DIR="$(dirname "$d")" run_install "$SERVER_URL/s/$slug/install.sh" "${extra[@]}"; then updated=$((updated + 1)); else failed=$((failed + 1)); fi
       done <<EOF
 $dirs
 EOF
@@ -263,6 +319,8 @@ EOF
     elif [ "${target#bundle:}" != "$target" ]; then
       run_install "$SERVER_URL/s/bundle/$(urlencode "${target#bundle:}")/install.sh" "${args[@]+"${args[@]}"}"
     else
+      # slug@1.2.0：安装历史里的那一版，并记为固定版本
+      case "$target" in *@*) args+=(--data-urlencode "pin=${target#*@}"); target="${target%%@*}" ;; esac
       valid_slug "$target"
       run_install "$SERVER_URL/s/$target/install.sh" "${args[@]+"${args[@]}"}"
     fi
@@ -281,8 +339,10 @@ EOF
     shown=0
     while IFS= read -r d; do
       state="$(skill_state "$d" "$revs")"; code="${state%%$'\t'*}"; note="${state#*$'\t'}"
-      if [ "$cmd" = "outdated" ] && [ "$code" = "ok" ]; then continue; fi
+      if [ "$cmd" = "outdated" ] && { [ "$code" = "ok" ] || [ "$code" = "pinned" ]; }; then continue; fi
       printf '%s  ·  v%s  ·  %s  ·  %s\n' "$(meta "$d" slug)" "$(meta "$d" version)" "$note" "$d"
+      miss="$(missing_deps "$d" | tr '\n' ' ')"
+      if [ -n "${miss// /}" ]; then printf '   ↳ 引用的技能不在旁边：%s（ash doctor --fix 补装）\n' "$miss"; fi
       shown=$((shown + 1))
     done <<EOF
 $dirs
@@ -319,6 +379,63 @@ $(installed_dirs "$dir")
 EOF
     [ "$removed" -gt 0 ] || die "没有找到由 ash 安装的 ${slug}（不是 ash 安装的目录不会被删除）"
     ;;
+  doctor)
+    fix=0; dir=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --fix) fix=1; shift ;;
+        --dir) [ -n "${2:-}" ] || die "--dir 需要参数"; dir="$2"; shift 2 ;;
+        *) die "未知参数: $1" ;;
+      esac
+    done
+    problems=0; total=0
+    while IFS= read -r root; do
+      [ -n "$root" ] || continue
+      n=0
+      for f in "$root"/*/.ash; do if [ -f "$f" ]; then n=$((n + 1)); fi; done
+      [ "$n" -gt 0 ] || continue
+      who="$(root_agent "$root")"
+      echo "$root（${who:-没有 Agent 从这里加载}）：$n 个 ash 安装的技能"
+      if [ -z "$who" ]; then echo "  ⚠️  没有 Agent 会从这个目录加载技能：ash pull <slug> --agent <agent|all> 装到 Agent 的目录"; problems=$((problems + 1)); fi
+      for f in "$root"/*/.ash; do
+        [ -f "$f" ] || continue
+        d="$(dirname "$f")"; slug="$(meta "$d" slug)"; total=$((total + 1))
+        while IFS= read -r spec; do
+          [ -n "$spec" ] || continue
+          dep="${spec%%@*}"
+          if [ -f "$root/$dep/SKILL.md" ]; then
+            if sed -n '1,/^---$/p' "$root/$dep/SKILL.md" | grep -qiE '^disable-model-invocation: *(true|yes|on|1)'; then
+              echo "  ⚠️  $slug 引用的 $dep 设置了 disable-model-invocation：Claude Code 里调用不到它（仍可读 ../$dep/SKILL.md）"
+              problems=$((problems + 1))
+            fi
+            continue
+          fi
+          if [ "$fix" = 1 ]; then
+            extra=(--data-urlencode "reason=dependency")
+            case "$spec" in *@*) extra+=(--data-urlencode "pin=${spec#*@}") ;; esac
+            if ASH_SKILLS_DIR="$root" run_install "$SERVER_URL/s/$dep/install.sh" "${extra[@]}" >/dev/null 2>&1; then
+              echo "  ✓ 已把 $slug 引用的 $dep 装到旁边"
+            else
+              echo "  ✗ $slug 引用的 $dep 安装失败（库里没有、未发布或网络错误）"; problems=$((problems + 1))
+            fi
+          else
+            echo "  ✗ $slug 引用的 $dep 不在同一目录，本地 Agent 找不到它（ash doctor --fix 自动补装）"; problems=$((problems + 1))
+          fi
+        done <<EOF2
+$(deps_of "$d")
+EOF2
+      done
+    done <<EOF
+$(skill_roots "$dir")
+EOF
+    if [ "$total" = 0 ]; then echo "本机没有通过 ash 安装的技能"; exit 0; fi
+    # 当前在 Claude Code 里，技能却都装在别的 Agent 的目录：Claude Code 看不到它们
+    if [ "${CLAUDECODE:-}" = "1" ] && [ -z "$dir" ] && ! ls "$HOME"/.claude/skills/*/.ash >/dev/null 2>&1; then
+      echo "⚠️  当前在 Claude Code 里，但 ~/.claude/skills 没有 ash 装的技能：Claude Code 只从那里加载（ash pull <slug> --agent claude，或 --agent all）"
+      problems=$((problems + 1))
+    fi
+    if [ "$problems" = 0 ]; then echo "✅ 没有发现问题"; else echo "发现 $problems 个问题"; exit 1; fi
+    ;;
   list)
     parse_filters "$@"
     http "${filter_args[@]}" "$SERVER_URL/api/skills"
@@ -328,13 +445,50 @@ EOF
     [ "${#words[@]}" -gt 0 ] || die "请提供搜索关键词"
     http "${filter_args[@]}" --data-urlencode "search=${words[*]}" "$SERVER_URL/api/skills"
     ;;
+  suggest)
+    args=(-G); json=0; words=()
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --json) json=1; shift ;;
+        --limit) [ -n "${2:-}" ] || die "--limit 需要参数"; args+=(--data-urlencode "limit=$2"); shift 2 ;;
+        *) words+=("$1"); shift ;;
+      esac
+    done
+    [ "${#words[@]}" -gt 0 ] || die '请描述要做的任务，例如 ash suggest "把感知回放结果叠到原图上验证"'
+    if [ "$json" = 0 ]; then args+=(--data-urlencode "format=text"); fi
+    http "${args[@]}" --data-urlencode "q=${words[*]}" "$SERVER_URL/api/agent/suggest"
+    ;;
+  feedback)
+    [ -n "${1:-}" ] && [ -n "${2:-}" ] || die '用法: ash feedback <slug> ok|fail ["说明"]'
+    slug="$1"; outcome="$2"; shift 2; valid_slug "$slug"
+    case "$outcome" in ok|fail) ;; *) die "结果只能是 ok 或 fail" ;; esac
+    dir=""; note=()
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --dir) [ -n "${2:-}" ] || die "--dir 需要参数"; dir="$2"; shift 2 ;;
+        *) note+=("$1"); shift ;;
+      esac
+    done
+    # 反馈对应本机已装的版本：从 .ash 取修订号（没装过、只用 ash show 读过时由服务端按当前版本算）
+    revision=""
+    while IFS= read -r d; do
+      [ -n "$d" ] || continue
+      if [ "$(meta "$d" slug)" = "$slug" ]; then revision="$(meta "$d" revision)"; break; fi
+    done <<EOF
+$(installed_dirs "$dir")
+EOF
+    http -X POST --data-urlencode "slug=$slug" --data-urlencode "outcome=$outcome" --data-urlencode "note=${note[*]+"${note[*]}"}" \
+      --data-urlencode "revision=$revision" --data-urlencode "terminal=$TERMINAL" "$SERVER_URL/api/agent/feedback"
+    ;;
   info)
     [ -n "${1:-}" ] || die "请提供技能标识 (slug)"; valid_slug "$1"
     http "$SERVER_URL/s/$1/info"
     ;;
   show)
-    [ -n "${1:-}" ] || die "请提供技能标识 (slug)"; slug="$1"; shift; valid_slug "$slug"
-    args=(-G)
+    [ -n "${1:-}" ] || die "请提供技能标识 (slug)"; slug="$1"; shift
+    args=(-G --data-urlencode "terminal=$TERMINAL")
+    case "$slug" in *@*) args+=(--data-urlencode "pin=${slug#*@}"); slug="${slug%%@*}" ;; esac
+    valid_slug "$slug"
     while [ "$#" -gt 0 ]; do
       case "$1" in
         --pending) args+=(--data-urlencode "pending=1"); shift ;;
@@ -347,6 +501,19 @@ EOF
   versions)
     [ -n "${1:-}" ] || die "请提供技能标识 (slug)"; valid_slug "$1"
     http "$SERVER_URL/s/$1/versions"
+    ;;
+  lint)
+    args=(-G); json=0
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --json) json=1; shift ;;
+        --only) [ -n "${2:-}" ] || die "--only 需要参数（例如 bilingual）"; args+=(--data-urlencode "code=$2"); shift 2 ;;
+        -*) die "未知参数: $1" ;;
+        *) valid_slug "$1"; args+=(--data-urlencode "slug=$1"); shift ;;
+      esac
+    done
+    if [ "$json" = 0 ]; then args+=(--data-urlencode "format=text"); fi
+    http "${args[@]}" "$SERVER_URL/api/agent/lint"
     ;;
   bundles)
     if [ "${1:-}" = "--json" ]; then http "$SERVER_URL/api/bundles"

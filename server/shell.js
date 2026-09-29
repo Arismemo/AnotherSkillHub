@@ -24,4 +24,19 @@ const SCRIPT_TOKEN_PRELUDE = [
   'export ASH_TOKEN',
 ].join('\n');
 
-module.exports = { shQuote, getBaseUrl, curlPipeCommand, SCRIPT_TOKEN_PRELUDE };
+// 本机各个 Agent 各自从哪里加载技能（按 Agent 的主目录是否存在判断装没装这个 Agent）：
+//   Claude Code  ~/.claude/skills          Codex  ~/.agents/skills（官方的用户级目录）
+//   Hermes       唯一的 ~/.hermes/profiles/*/skills，否则 ~/.hermes/skills
+//   dsh          ~/.dsh/skills
+// 生成的多 Agent 安装脚本与 ash CLI 共用这一份定义
+const AGENT_ROOTS_FN = `agent_roots() {
+  if [ -d "$HOME/.claude" ]; then echo "$HOME/.claude/skills"; fi
+  if [ -d "$HOME/.codex" ] || [ -d "$HOME/.agents" ]; then echo "$HOME/.agents/skills"; fi
+  if [ -d "$HOME/.hermes" ]; then
+    set -- "$HOME"/.hermes/profiles/*/skills
+    if [ "$#" -eq 1 ] && [ -d "$1" ]; then echo "$1"; else echo "$HOME/.hermes/skills"; fi
+  fi
+  if [ -d "$HOME/.dsh" ]; then echo "$HOME/.dsh/skills"; fi
+}`;
+
+module.exports = { shQuote, getBaseUrl, curlPipeCommand, SCRIPT_TOKEN_PRELUDE, AGENT_ROOTS_FN };

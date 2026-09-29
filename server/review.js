@@ -13,8 +13,8 @@ function parseJson(value, fallback) {
 
 function snapshotSkillVersion(skill, source) {
   try {
-    db.prepare('INSERT INTO skill_versions (skill_id, content, files, name, description, source) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(skill.id, skill.content, skill.files, skill.name, skill.description, source || 'web');
+    db.prepare('INSERT INTO skill_versions (skill_id, content, files, name, description, source, version) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(skill.id, skill.content, skill.files, skill.name, skill.description, source || 'web', skill.version || null);
   } catch (e) {
     console.error('snapshot failed:', e.message);
   }
@@ -28,6 +28,16 @@ function skillRevision(skill) {
 function recordReview(skillId, action, kind, source) {
   db.prepare("UPDATE skills SET last_review = ? WHERE id = ?")
     .run(JSON.stringify({ action, kind, source: source || null, at: new Date().toISOString() }), skillId);
+}
+
+// 固定版本（slug@1.2.0）对应的内容：当前版本就是它时取当前，否则取历史里该版本号最近的一份快照。
+// 同一版本号改过多次（作者没有升版本号）时取最后一次——版本号是作者给的承诺，不升就视为同一版。
+// 返回 { content, files(JSON 字符串), version, source: current | history } 或 null
+function resolvePinned(skill, pin) {
+  if (!pin || String(skill.version) === String(pin)) return { content: skill.content, files: skill.files || '[]', version: skill.version, source: 'current' };
+  const row = db.prepare('SELECT content, files, version FROM skill_versions WHERE skill_id = ? AND version = ? ORDER BY created_at DESC, id DESC LIMIT 1')
+    .get(skill.id, String(pin));
+  return row ? { content: row.content, files: row.files || '[]', version: row.version, source: 'history' } : null;
 }
 
 // Agent 拉取可见：未删除且已发布；显式 pending=1 时允许待审核的新技能（推送者自用）
@@ -78,4 +88,4 @@ function warningsFor(content, files) {
   return scanSkill(content, files);
 }
 
-module.exports = { reviewRequired, parseJson, snapshotSkillVersion, isVisibleToAgents, approveSkill, rejectSkill, warningsFor, skillRevision };
+module.exports = { reviewRequired, parseJson, snapshotSkillVersion, isVisibleToAgents, approveSkill, rejectSkill, warningsFor, skillRevision, resolvePinned };

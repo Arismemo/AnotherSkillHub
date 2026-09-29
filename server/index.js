@@ -8,7 +8,7 @@ const skillsRoutes = require('./routes/skills');
 const foldersRoutes = require('./routes/folders');
 const agentRoutes = require('./routes/agent');
 const { render } = require('./templates');
-const { shQuote, getBaseUrl } = require('./shell');
+const { shQuote, getBaseUrl, AGENT_ROOTS_FN } = require('./shell');
 
 const app = express();
 const PORT = process.env.PORT || 9444;
@@ -32,7 +32,7 @@ app.use('/api/agent', requireAuth, agentRoutes.apiRouter);
 
 // CLI 安装/本体（/setup.sh 与 /cli.sh 是同一个脚本：管道执行时安装，安装后作为 ash 本体）
 app.get(['/setup.sh', '/cli.sh'], (req, res) => {
-  res.type('text/plain').send(render('cli.sh', { SERVER_URL: shQuote(getBaseUrl(req)) }));
+  res.type('text/plain').send(render('cli.sh', { SERVER_URL: shQuote(getBaseUrl(req)), AGENT_ROOTS_FN }));
 });
 
 // Agent 使用指南：引导语只指向这里，改指南不必给每台机器重发提示词
@@ -77,4 +77,14 @@ if (fs.existsSync(clientDist)) {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 AnotherSkillHub Server listening on http://0.0.0.0:${PORT}`);
+  // 可选语义层：启动后在后台为各个库补齐向量（逐个库进行，不影响请求）
+  const embeddings = require('./embeddings');
+  if (embeddings.enabled()) {
+    console.log(`语义层已开启：${embeddings.status().model}`);
+    setTimeout(async () => {
+      const { ensureSemanticWithin } = require('./skillIndex');
+      const users = require('./db').prepare('SELECT DISTINCT user_id FROM skills WHERE user_id IS NOT NULL AND is_deleted = 0').all();
+      for (const { user_id: userId } of users) await ensureSemanticWithin(userId, 10 * 60 * 1000);
+    }, 1000);
+  }
 });

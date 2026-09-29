@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Activity,
   Archive,
   ClipboardPaste,
   ChevronDown,
@@ -31,8 +32,10 @@ const navItems = [
   { id: 'all', label: folderLabels.all, icon: Archive },
   { id: 'trash', label: folderLabels.trash, icon: Trash2, droppable: true },
 ];
-// 待审核只在有内容（或正在查看）时出现：关闭审核的部署里不占位
+// 待审核、需关注只在有内容（或正在查看）时出现：没有要处理的事就不占位
 const pendingNavItem = { id: 'pending', label: folderLabels.pending, icon: ShieldCheck };
+// 需关注：由使用数据推出的信号（常失败 / 从未使用 / 长期未用 / 疑似重复），整理技能库从这里开始
+const attentionNavItem = { id: 'attention', label: folderLabels.attention, icon: Activity };
 
 function findNode(nodes, path) {
   for (const node of nodes) {
@@ -74,7 +77,11 @@ export default function FolderTree({
   const [menuOpen, setMenuOpen] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
-  const systemItems = (stats?.pending > 0 || currentFolder === 'pending') ? [pendingNavItem, ...navItems] : navItems;
+  const systemItems = [
+    ...(stats?.pending > 0 || currentFolder === 'pending' ? [pendingNavItem] : []),
+    ...(stats?.attention > 0 || currentFolder === 'attention' ? [attentionNavItem] : []),
+    ...navItems,
+  ];
   const treeRef = useRef(null);
 
   useEffect(() => {

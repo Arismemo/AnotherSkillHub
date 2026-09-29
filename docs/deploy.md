@@ -71,6 +71,15 @@ deploy/cd/install.sh     # 复制脚本到 ~/services/skillhub-cd/bin/ash-cd，�
 | 发布目录 | `/home/liukun/services/skillhub-releases/<sha>/`（每个版本一个目录，含源码和 compose.deploy.yml） |
 | 公网入口 | https://ash.709970.xyz（反向 SSH 隧道 38084→9444，公网网关 Nginx 反代，独立于本流程） |
 | 端口 | 容器 9444，仅绑服务器 127.0.0.1 |
+| 语义层 | 宿主机 Ollama（`bge-m3`，只监听 127.0.0.1:11434）→ systemd 用户服务 `ollama-bridge` 转发到 Docker 网桥 `172.17.0.1:11434` → 容器里 `ASH_EMBED_URL=http://host.docker.internal:11434` |
+
+### 语义层（可选，跨语言查重与找技能）
+
+- 配置在当前发布的 `compose.deploy.yml` 里：`ASH_EMBED_URL`、`ASH_EMBED_MODEL` 两个环境变量，加上 `extra_hosts: ["host.docker.internal:host-gateway"]`。CD 派生新版本的 compose 时原样继承，不需要每次改。
+- Ollama 没有鉴权，所以不改成监听 0.0.0.0；`ollama-bridge`（`~/services/ollama-bridge/forward.py`）只在 Docker 网桥地址上转发，只有本机容器访问得到。
+  - 状态：`systemctl --user status ollama-bridge`；日志：`journalctl --user -u ollama-bridge`
+  - 从容器里自检：`docker exec ash node -e "fetch('http://host.docker.internal:11434/api/tags').then(r=>console.log(r.status))"`
+- 关掉语义层：从 compose 里删掉这两个变量后 `docker compose -p ash -f compose.deploy.yml up -d`。服务端退回纯文本比对，其余不受影响；模型服务临时不可用时也会自动退回。
 
 ## 手动部署五步（CD 的后备）
 

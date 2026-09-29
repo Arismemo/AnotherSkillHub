@@ -2,9 +2,15 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { saveSkillToDisk, replaceSkillOnDisk, moveSkillOnDisk, parseSkillContent, getSkillFileTree, getSkillFileContent, cleanFolderPath } = require('../storage');
-const { normalizeSkillMeta } = require('../skillMeta');
+const { normalizeSkillMeta, stripInstallFooter } = require('../skillMeta');
 const { buildSkillGraph } = require('../skillGraph');
+const { rankSkillsSemantic, similarSkills, ensureSemantic } = require('../skillIndex');
+const { usageSummary, libraryHealth } = require('../usage');
+const { entryFor, lintSkill, lintFor, sharedStepsOf, isLocal, splitBody, pinAvailable } = require('../skillRefs');
 const { parseJson, snapshotSkillVersion, approveSkill, rejectSkill, warningsFor } = require('../review');
+
+// 「需关注」的排序：先修坏的（常失败、引用失效），再合并重复的，再整理结构，最后清理不用的
+const HEALTH_ORDER = ['failing', 'broken_ref', 'duplicate', 'copies_meta', 'extractable', 'meta_contract', 'stale', 'unused'];
 
 // 待审核：Agent 推送的新技能，或已发布技能上挂着 Agent 提交的更新
 const PENDING_WHERE = "(status = 'pending' OR pending_content IS NOT NULL)";
@@ -17,6 +23,37 @@ function findOwnSkill(userId, id) {
 }
 
 const findOwnSkillById = (userId, id) => db.prepare('SELECT * FROM skills WHERE id = ? AND user_id = ?').get(id, userId);
+
+// 引用关系与技能检查（详情页、审核条）：引用了谁、被谁引用、与谁有相同的步骤、检查结果；待审更新另算一份检查
+function relations(user, skill) {
+  const { analysis, entry } = entryFor(user.id, skill);
+  const brief = (e) => ({ id: e.id, slug: e.slug, name: e.name, meta: e.meta });
+  const declared = entry.declared.map((ref) => {
+    const target = isLocal(ref, user.username) ? analysis.bySlug.get(ref.slug) : null;
+    let status = 'ok';
+    if (!isLocal(ref, user.username)) status = 'foreign';
+    else if (!target) status = 'missing';
+    else if (target.status === 'pending') status = 'pending';
+    else if (ref.pin && target.version && ref.pin !== target.version) status = pinAvailable(analysis, ref) ? 'pinned-old' : 'pin-missing';
+    return { ...ref, status, ...(target ? { id: target.id, name: target.name, version: target.version, meta: target.meta } : {}) };
+  });
+  const out = {
+    refs: {
+      meta: entry.meta,
+      declared,
+      undeclared: [...entry.inBody].filter((slug) => !declared.some((d) => d.slug === slug) && analysis.bySlug.has(slug)),
+      dependents: (analysis.dependents.get(skill.slug) || []).map((slug) => brief(analysis.bySlug.get(slug))),
+    },
+    lint: lintSkill(analysis, entry, { username: user.username }),
+    shared_steps: sharedStepsOf(analysis, entry).map(({ others, commands, kind }) => ({ skills: others.map(brief), commands, kind })),
+  };
+  if (skill.pending_content != null) {
+    out.pending_lint = lintFor(user.id, skill, { username: user.username, content: skill.pending_content });
+    // 只改了 frontmatter（例如补双语描述、改依赖声明），正文和附属文件都没动：审核时一眼看出来
+    out.pending_metadata_only = splitBody(skill.pending_content) === splitBody(skill.content) && (skill.pending_files || '[]') === (skill.files || '[]');
+  }
+  return out;
+}
 
 // 获取统计数据 (用于左侧栏 badge)
 router.get('/stats', (req, res) => {
@@ -31,6 +68,7 @@ router.get('/stats', (req, res) => {
 
     res.json({
       pending: pendingCount,
+      attention: libraryHealth(uid).size,
       inbox: inboxCount,
       starred: starredCount,
       all: allCount,
@@ -59,7 +97,7 @@ router.get('/tags', (req, res) => {
 });
 
 // 获取技能列表
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { folder, tag, search, star, format } = req.query;
     const asText = format === 'text';
@@ -80,6 +118,8 @@ router.get('/', (req, res) => {
 
       if (folder === 'pending') {
         query += ` AND ${PENDING_WHERE}`;
+      } else if (folder === 'attention') {
+        // 需关注：由使用数据推出健康信号的技能（常失败 / 从未使用 / 长期未用 / 疑似重复），下面按信号过滤
       } else if (folder === 'starred' || star === '1') {
         query += ` AND is_starred = 1`;
       } else if (folder && folder !== 'all') {
@@ -113,17 +153,35 @@ router.get('/', (req, res) => {
 
     if (asText) {
       const clip = (value, n) => (value.length > n ? `${value.slice(0, n - 1)}…` : value);
-      const lines = skills.map((s) => `${s.slug}  ·  ${s.name}${s.description ? `  ·  ${clip(s.description, 80)}` : ''}  [${s.folder_path}]`);
+      const line = (s) => `${s.slug}  ·  ${s.name}${s.description ? `  ·  ${clip(s.description, 80)}` : ''}  [${s.folder_path}]`;
+      // 关键词要求全部命中，常因为一个词没对上而一无所获：退回到按相关度的候选（与 ash suggest 同一套排序），
+      // 但仍限定在调用方给的目录 / 标签范围内。星标、待审等系统视图不做退回
+      const scoped = !['starred', 'pending', 'trash', 'attention'].includes(folder);
+      if (!skills.length && search && scoped) {
+        const where = (s) => (!folder || folder === 'all' || s.folder_path === folder) && (!tag || s.tags.includes(tag));
+        const ranked = await rankSkillsSemantic(req.user.id, String(search), { limit: 5, where });
+        const fallback = ranked.length
+          ? [`没有同时命中「${search}」全部关键词的技能。按相关度的候选（ash info <slug> 判断是否适用）：`, ...ranked.map((r) => line(r.skill))]
+          : [`没有找到匹配「${search}」的技能。可以用一两句话描述任务再试：ash suggest "<任务描述>"`];
+        return res.type('text/plain').send(`${fallback.join('\n')}\n`);
+      }
       const header = skills.length
         ? `共 ${skills.length} 个技能（ash info <slug> 看详情，ash pull <slug> 安装）`
         : (search ? `没有找到匹配「${search}」的技能，换个关键词试试` : '技能库为空');
-      return res.type('text/plain').send(`${[header, ...lines].join('\n')}\n`);
+      return res.type('text/plain').send(`${[header, ...skills.map(line)].join('\n')}\n`);
     }
 
+    const health = libraryHealth(req.user.id);
+    if (folder === 'attention') {
+      // 需关注按严重程度排：先修常失败的，再合并重复的，最后清理不用的
+      const rank = (s) => Math.min(...health.get(s.id).map((h) => HEALTH_ORDER.indexOf(h.code)));
+      skills = skills.filter((s) => health.has(s.id)).sort((a, b) => rank(a) - rank(b));
+    }
     res.json(skills.map(s => ({
       ...s,
       has_pending_update: Boolean(s.has_pending_update),
-      tags: JSON.parse(s.tags || '[]')
+      tags: JSON.parse(s.tags || '[]'),
+      health: health.get(s.id) || [],
     })));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -149,6 +207,16 @@ router.get('/:id', (req, res) => {
       return res.status(404).json({ error: 'Skill not found' });
     }
 
+    // 使用情况与相似技能：审核时判断「有没有必要单独成为一个技能」、整理时发现重复，都靠这两项。
+    // 要在下面把 files / tags 解析成数组之前算——修订号按库里的原始 JSON 计算
+    if (!skill.is_deleted) {
+      ensureSemantic(req.user.id);
+      skill.usage = usageSummary(skill);
+      skill.similar = similarSkills(req.user.id, skill, { limit: 5 }).map((m) => ({
+        ...m.skill, similarity: Number(m.similarity.toFixed(2)), duplicate: m.high, semantic: m.semantic,
+      }));
+      Object.assign(skill, relations(req.user, skill));
+    }
     skill.tags = JSON.parse(skill.tags || '[]');
     skill.files = JSON.parse(skill.files || '[]');
     skill.security_warnings = parseJson(skill.security_warnings, []);
@@ -207,7 +275,8 @@ router.post('/parse', (req, res) => {
 router.post('/', (req, res) => {
   try {
     let { folder_path, content, files, terminal_source } = req.body;
-    const meta = normalizeSkillMeta(content || '', {
+    content = stripInstallFooter(content || '');
+    const meta = normalizeSkillMeta(content, {
       slug: req.body.slug,
       name: req.body.name,
       description: req.body.description,

@@ -14,6 +14,8 @@
 
 .chip-pending { color: var(--accent); border-color: var(--accent-border); background: var(--accent-muted); }
 .chip-danger { color: var(--danger-text); border-color: var(--danger-border); background: var(--danger-muted); }
+.chip-warning { color: var(--text-body); border-color: color-mix(in srgb, var(--warning) 45%, transparent); background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.chip-muted { color: var(--text-muted); border-color: var(--border-muted); background: transparent; }
 
 .diff-view { display: grid; gap: .6rem; min-width: 0; }
 .diff-summary { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; color: var(--text-muted); font-size: var(--fs-xs); }

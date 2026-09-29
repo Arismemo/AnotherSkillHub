@@ -1,0 +1,43 @@
+/* 使用情况、反馈与相似技能：全部取主题 token，明暗主题自动跟随 */
+.usage-panel { display: grid; gap: .5rem; max-width: var(--measure); margin: 0 auto 1.25rem; padding: .7rem 1rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface); font-size: var(--fs-sm); }
+.usage-panel header { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .55rem; color: var(--text-body); }
+.usage-panel header > svg { flex: none; color: var(--accent); }
+.usage-panel header strong { color: var(--text); font-weight: 600; }
+.usage-stats { color: var(--text-muted); font-size: var(--fs-xs); }
+.usage-health { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.usage-health-detail { color: var(--text-muted); font-size: var(--fs-xs); }
+.usage-section summary { cursor: pointer; color: var(--text-muted); font-size: var(--fs-xs); user-select: none; }
+.usage-section summary:hover { color: var(--text); }
+.usage-section[open] summary { margin-bottom: .35rem; }
+.usage-empty { margin: 0; color: var(--text-muted); font-size: var(--fs-xs); }
+
+.feedback-list, .similar-list { display: grid; gap: .3rem; margin: 0; padding: 0; list-style: none; }
+.feedback-list li { display: grid; grid-template-columns: auto 1fr; gap: .1rem .45rem; align-items: baseline; }
+.feedback-list li > svg { align-self: center; }
+.feedback-list li.is-ok > svg { color: var(--success); }
+.feedback-list li.is-fail > svg { color: var(--danger-text); }
+.feedback-note { min-width: 0; color: var(--text-body); overflow-wrap: anywhere; }
+.feedback-meta { grid-column: 2; color: var(--text-subtle); font-size: var(--fs-xs); }
+
+.similar-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.similar-link { display: inline-flex; min-width: 0; align-items: center; gap: .35rem; padding: 0; border: 0; background: none; color: var(--text-body); font: inherit; text-align: left; cursor: pointer; }
+.similar-link:hover .similar-name, .similar-link:focus-visible .similar-name { color: var(--accent); text-decoration: underline; }
+.similar-link > svg { flex: none; color: var(--text-subtle); }
+.similar-link code { color: var(--text-subtle); font-family: var(--mono); font-size: var(--fs-xs); }
+
+/* 审核条里的判断依据：相似技能、当前版本的失败反馈 */
+.review-evidence { flex-basis: 100%; display: grid; gap: .35rem; padding-top: .45rem; border-top: 1px dashed var(--accent-border); }
+.review-evidence h4 { margin: 0; color: var(--text-muted); font-size: var(--fs-xs); font-weight: 600; }
+
+/* 引用关系、技能检查、相同的步骤 */
+.relations-row { display: grid; grid-template-columns: 5.5rem 1fr; gap: .45rem; align-items: start; }
+.relations-label { color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.9; }
+.lint-list { display: grid; gap: .3rem; margin: 0; padding: 0; list-style: none; }
+.lint-list li { display: grid; grid-template-columns: auto 1fr; gap: .45rem; align-items: baseline; color: var(--text-body); font-size: var(--fs-xs); line-height: 1.55; }
+.lint-list li > svg { position: relative; top: .1rem; }
+.lint-list li.is-warn > svg { color: var(--warning); }
+.lint-list li.is-info > svg { color: var(--text-subtle); }
+.shared-steps { display: grid; gap: .55rem; margin: 0; padding: 0; list-style: none; }
+.shared-steps-with { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; color: var(--text-muted); font-size: var(--fs-xs); }
+.shared-steps pre { margin: .3rem 0 0; padding: .45rem .6rem; overflow-x: auto; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface-code); color: var(--text-body); font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.5; }
+.shared-steps-prose { margin: .3rem 0 0; padding: .45rem .6rem .45rem 1.8rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); color: var(--text-body); font-size: var(--fs-xs); line-height: 1.55; }
