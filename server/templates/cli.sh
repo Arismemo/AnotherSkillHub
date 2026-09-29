@@ -163,11 +163,13 @@ show_help() {
 AnotherSkillHub CLI · 服务地址: $SERVER_URL
 
 查找
-  ash search <关键词…> [--tag T] [--folder F] [--json]   搜索已发布技能（多个关键词需同时命中）
+  ash suggest "<任务描述>" [--limit N] [--json]           按任务描述找相关技能（接到任务时先用它）
+  ash search <关键词…> [--tag T] [--folder F] [--json]   搜索已发布技能（多个关键词需同时命中；都不命中时给出相关候选）
   ash list [--tag T] [--folder F] [--json]               列出已发布技能
   ash info <slug>                 描述、依赖、文件清单、版本与安装命令
   ash show <slug> [--version ID] [--pending]             直接输出 SKILL.md（不安装）
   ash versions <slug>             历史版本列表
+  ash lint [slug] [--json]        技能检查：双语描述、引用是否写对、元技能契约、与其他技能重复的步骤
 
 技能组合
   ash bundles [--json]            列出全部组合
@@ -181,6 +183,9 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash installed [--dir PATH]      本机已装技能及状态（最新 / 有更新 / 本地有修改 / 远端已删除）
   ash outdated [--dir PATH]       只列出需要处理的已装技能
   ash remove <slug> [--dir PATH] [--force] 卸载；本地改过的先备份（--force 直接删除）
+
+反馈
+  ash feedback <slug> ok|fail ["说明"] [--dir PATH]   用完技能后回报结果；失败时写一句哪一步、为什么没走通
 
 推送与审核
   ash push <技能目录|SKILL.md> [--update] [--folder PATH] [--json]
@@ -199,7 +204,7 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash update                      更新 ash 自身
 
 完整文档：$SERVER_URL/docs
-环境变量：ASH_SERVER_URL 服务地址；ASH_TOKEN API token（默认读 ~/.ash/token）；ASH_SKILLS_DIR 默认安装目录；ASH_BIN_DIR ash 安装位置；ASH_TERMINAL 推送来源名（默认 hostname）
+环境变量：ASH_SERVER_URL 服务地址；ASH_TOKEN API token（默认读 ~/.ash/token）；ASH_SKILLS_DIR 默认安装目录（在 Claude Code 里运行时默认 ~/.claude/skills）；ASH_BIN_DIR ash 安装位置；ASH_TERMINAL 推送来源名（默认 hostname）
 EOF
 }
 
@@ -243,7 +248,7 @@ case "$cmd" in
       while IFS= read -r d; do
         slug="$(meta "$d" slug)"
         state="$(skill_state "$d" "$revs")"; code="${state%%$'\t'*}"; note="${state#*$'\t'}"
-        extra=()
+        extra=(--data-urlencode "reason=update")
         if [ "$force" = 1 ]; then extra+=(--data-urlencode "force=1"); fi
         if [ "$(meta "$d" pending)" = 1 ]; then extra+=(--data-urlencode "pending=1"); fi
         case "$code" in
@@ -254,7 +259,7 @@ case "$cmd" in
           *) continue ;;
         esac
         # 装回原来的目录：把它的上级目录作为安装根目录
-        if ASH_SKILLS_DIR="$(dirname "$d")" run_install "$SERVER_URL/s/$slug/install.sh" "${extra[@]+"${extra[@]}"}"; then updated=$((updated + 1)); else failed=$((failed + 1)); fi
+        if ASH_SKILLS_DIR="$(dirname "$d")" run_install "$SERVER_URL/s/$slug/install.sh" "${extra[@]}"; then updated=$((updated + 1)); else failed=$((failed + 1)); fi
       done <<EOF
 $dirs
 EOF
@@ -328,13 +333,48 @@ EOF
     [ "${#words[@]}" -gt 0 ] || die "请提供搜索关键词"
     http "${filter_args[@]}" --data-urlencode "search=${words[*]}" "$SERVER_URL/api/skills"
     ;;
+  suggest)
+    args=(-G); json=0; words=()
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --json) json=1; shift ;;
+        --limit) [ -n "${2:-}" ] || die "--limit 需要参数"; args+=(--data-urlencode "limit=$2"); shift 2 ;;
+        *) words+=("$1"); shift ;;
+      esac
+    done
+    [ "${#words[@]}" -gt 0 ] || die '请描述要做的任务，例如 ash suggest "把感知回放结果叠到原图上验证"'
+    if [ "$json" = 0 ]; then args+=(--data-urlencode "format=text"); fi
+    http "${args[@]}" --data-urlencode "q=${words[*]}" "$SERVER_URL/api/agent/suggest"
+    ;;
+  feedback)
+    [ -n "${1:-}" ] && [ -n "${2:-}" ] || die '用法: ash feedback <slug> ok|fail ["说明"]'
+    slug="$1"; outcome="$2"; shift 2; valid_slug "$slug"
+    case "$outcome" in ok|fail) ;; *) die "结果只能是 ok 或 fail" ;; esac
+    dir=""; note=()
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --dir) [ -n "${2:-}" ] || die "--dir 需要参数"; dir="$2"; shift 2 ;;
+        *) note+=("$1"); shift ;;
+      esac
+    done
+    # 反馈对应本机已装的版本：从 .ash 取修订号（没装过、只用 ash show 读过时由服务端按当前版本算）
+    revision=""
+    while IFS= read -r d; do
+      [ -n "$d" ] || continue
+      if [ "$(meta "$d" slug)" = "$slug" ]; then revision="$(meta "$d" revision)"; break; fi
+    done <<EOF
+$(installed_dirs "$dir")
+EOF
+    http -X POST --data-urlencode "slug=$slug" --data-urlencode "outcome=$outcome" --data-urlencode "note=${note[*]+"${note[*]}"}" \
+      --data-urlencode "revision=$revision" --data-urlencode "terminal=$TERMINAL" "$SERVER_URL/api/agent/feedback"
+    ;;
   info)
     [ -n "${1:-}" ] || die "请提供技能标识 (slug)"; valid_slug "$1"
     http "$SERVER_URL/s/$1/info"
     ;;
   show)
     [ -n "${1:-}" ] || die "请提供技能标识 (slug)"; slug="$1"; shift; valid_slug "$slug"
-    args=(-G)
+    args=(-G --data-urlencode "terminal=$TERMINAL")
     while [ "$#" -gt 0 ]; do
       case "$1" in
         --pending) args+=(--data-urlencode "pending=1"); shift ;;
@@ -347,6 +387,18 @@ EOF
   versions)
     [ -n "${1:-}" ] || die "请提供技能标识 (slug)"; valid_slug "$1"
     http "$SERVER_URL/s/$1/versions"
+    ;;
+  lint)
+    args=(-G); json=0
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --json) json=1; shift ;;
+        -*) die "未知参数: $1" ;;
+        *) valid_slug "$1"; args+=(--data-urlencode "slug=$1"); shift ;;
+      esac
+    done
+    if [ "$json" = 0 ]; then args+=(--data-urlencode "format=text"); fi
+    http "${args[@]}" "$SERVER_URL/api/agent/lint"
     ;;
   bundles)
     if [ "${1:-}" = "--json" ]; then http "$SERVER_URL/api/bundles"

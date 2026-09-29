@@ -15,13 +15,24 @@ token 保存在 `~/.ash/token`，也可以通过环境变量 `ASH_TOKEN` 提供�
 
 ## 什么时候查找技能
 
-- 接到任务时，尤其是**项目特定或不熟悉的流程**（部署、仿真、内部工具、排障手册），先运行 `ash search <关键词>`。一次没搜到就换同义词，中英文都试一下。
-- 可以按标签或目录缩小范围：`ash search <关键词> --tag ops`、`ash list --folder DevOps`。
+- 接到任务时，尤其是**项目特定或不熟悉的流程**（部署、仿真、内部工具、排障手册），先用一两句话描述任务：`ash suggest "<任务描述>"`。它按相关度给出候选并标明「相关 / 可能相关」，没有合适的会直接说没有。
+- 技能库中英混写：描述里**中英文关键名词都写上**更容易命中，例如 `ash suggest "测试挂了找根因 test failure root cause"`。
+- 知道确切关键词时用 `ash search <关键词…>`（多个关键词需同时命中；都不命中时会给出相关候选）。可以按标签或目录缩小范围：`ash search <关键词> --tag ops`、`ash list --folder DevOps`。
 - 搜到相关技能后，先用 `ash info <slug>` 看描述、依赖和文件清单，判断是否适用。
 - 只需要阅读说明：`ash show <slug>`。
 - 需要执行技能里的脚本：`ash pull <slug>` 安装（会一并安装 `depends_on` 声明的依赖），然后阅读安装目录下的 `SKILL.md` 并按步骤执行。`SKILL.md` 里的相对路径（例如 `scripts/run.sh`）都相对于该目录。
 - 一类任务要用到一组技能时，看看有没有现成的组合：`ash bundles`、`ash bundle <标识或名称>`，然后 `ash pull bundle:<标识或名称>`。
 - 没搜到合适的技能就按常规方式完成任务，不要硬套不相关的技能。
+
+## 用完回报结果
+
+每次按一个来自本库的技能完成（或没能完成）任务后，回报一次结果。这是技能库知道哪些技能好用、哪些该修的唯一途径：
+
+- 走通了：`ash feedback <slug> ok`
+- 没走通：`ash feedback <slug> fail "哪一步、为什么没走通"`——一句具体的原因比一个 fail 有用得多。
+- 已经找到了正确做法：修改本地技能目录后 `ash push <目录> --update`，把修正交回库里。
+
+通过 ash 安装的技能，`SKILL.md` 末尾有一行同样的提示。说明里不要写密钥、token 或个人隐私。
 
 ## 管理本机已装的技能
 
@@ -37,7 +48,10 @@ token 保存在 `~/.ash/token`，也可以通过环境变量 `ASH_TOKEN` 提供�
 
 推送前：
 
-1. 先用 `ash search` 查重。如果已有相近技能，先 `ash pull <slug>` 拉到本地，在原版基础上修改，再运行 `ash push <目录> --update`。
+1. 先查重：`ash suggest "<这个新技能要解决的问题>"`。如果已有相近技能，先 `ash pull <slug>` 拉到本地，在原版基础上修改，再运行 `ash push <目录> --update`。
+   - 新技能里有些步骤已经是别的技能（尤其是元技能）的内容时，不要复制那些步骤，改为引用（见下文「技能之间的引用」）。
+   - 推送结果里提示「库中已有相近技能」或「与元技能相同的命令」时，认真判断：是补充就改为更新已有技能，确实不同就在 description 里写清楚区别。
+   - 推送前运行 `ash lint <slug>`（已在库里的技能）自查：双语描述、引用写法、元技能契约。
 2. 不加 `--update` 时，如果同名 slug 已存在，推送会被拒绝（409），不会覆盖别人的版本。
 3. 新技能和对已有技能的更新都会进入「待审核」，人工采纳后其他 Agent 才能拉到。你自己需要立刻使用新技能时，可以运行 `ash pull <slug> --pending`。
 4. 推送后把服务端返回的结果（是否待审核、有无警告）如实告诉用户。
@@ -51,9 +65,10 @@ token 保存在 `~/.ash/token`，也可以通过环境变量 `ASH_TOKEN` 提供�
 ---
 name: my-skill              # 必填。英文 slug，只含小写字母/数字/-/_，也是安装目录名
 description: 一句话说明「什么时候应该使用这个技能」，Agent 靠它判断是否调用
+description_en: Use when …  # 另一种语言的描述（description 是英文时写 description_zh）
 tags: [ops, debugging]
 version: 1.0.0
-depends_on: [other-skill]   # 可选，依赖的其他技能 slug
+depends_on: [other-skill]   # 可选，引用的其他技能，写法见下文
 ---
 
 # 人类可读的标题
@@ -69,18 +84,60 @@ depends_on: [other-skill]   # 可选，依赖的其他技能 slug
 怎样确认完成，以及常见失败的处理办法。
 ```
 
+- **描述要中英双语**：`description` 用你习惯的语言写，再用 `description_en` 或 `description_zh` 补另一种（主描述本身中英混写也可以）。中文任务和英文任务才都能找到它，查重也才能跨语言对上。正文不用写两份：两份正文要同步维护、迟早不一致，而读正文的 Agent 中英文都懂。
+- frontmatter 是 YAML：值里含有「: 」时要用引号括起来（`description_en: "Use when: …"`），否则整段 frontmatter 解析失败，名称、描述、依赖全部丢失。
 - 脚本放在 `scripts/`，参考资料放在 `references/`，正文里用相对路径引用。
 - 只能包含文本文件（.md .sh .py .js .json .yaml 等）。单个文件不超过 512KB，总量不超过 4MB，文件数不超过 200 个；超出限制的文件会被跳过，并在推送结果中提示。
 - 推送时服务端会做安全扫描。命中高危模式（反弹 shell、混淆的 eval 等）的技能一律进入人工审核。
 
+## 技能之间的引用
+
+一段操作已经有技能（尤其是元技能）负责时，引用它，不要把它的步骤抄进来——抄过来的两份会漂移，一个坑就要修两处。
+
+**怎么写**（两处都要写）：
+
+1. frontmatter 的 `depends_on` 声明它。`ash pull` 据此把它一并装在本技能旁边；没声明的引用在别的机器上找不到。
+2. 正文在用到它的地方写「用元技能 `<slug>`」，后面只写本技能特有的参数和坑：
+
+```markdown
+## 编译
+> 用元技能 `dev-container-build`
+> - target: `//app:main`
+> - **本技能特有**：必须加 `--build_tag_filters=sim`，否则会静默用旧二进制
+```
+
+也可以写成链接 `[dev-container-build](../dev-container-build/SKILL.md)`。**不要写绝对路径**（`~/.claude/skills/...`），换一台机器或换一个 Agent 就找不到了。
+
+**本地 Agent 怎么找到被引用的技能**：`ash pull` 把引用的技能装在同一个目录下，并在已装的 `SKILL.md` 末尾列出它们的相对路径 `../<slug>/SKILL.md`——需要时直接读那个文件。在 Claude Code 里运行 `ash pull` 时默认装到 `~/.claude/skills`（Claude Code 只从这里加载技能），装好的技能和它引用的技能都可以按名字直接调用。
+
+**引用写法**：`slug`（本库）、`@账号/slug`（指定账号，为团队库 / 技能广场预留，目前只能指向自己的账号）、`slug@1.2.0`（固定版本：库里版本变了会提示你确认）。
+
+**引用的代价**：每多一层引用，Agent 就要多读一个文件、多一个可能断的地方。引用链不要超过两层；一小段、只有一两处用到的步骤，留在原地比抽出去好。
+
+### 什么时候提炼元技能
+
+元技能是被别的技能在流程中引用的基础动作：调用方只说「要做什么」，元技能负责「怎么做」。五条都满足才抽：
+
+1. 已经有 **≥3 个技能**在重复它（真去数，不是「将来可能有」）——第 1 次写在原地，第 2 次忍住，第 3 次才抽；
+2. 与业务无关，换个项目也成立；
+3. 输入输出一句话说得清；
+4. 不含业务判断（「怎么编译」是元技能，「编译结果对不对」不是）；
+5. 改一处，所有调用方都受益。
+
+`ash lint` 和推送结果会提示「有 N 条命令与 a、b 相同」，那是候选；抽完要**立刻把调用方改成引用它**，否则只是多了一个没人用的技能。
+
+元技能的写法：description 以「【元技能】」开头，写明被引用和被直接要求两种触发场景；正文必须有 **`## 契约`**（输入 / 输出 / 前置 / 失败）和 **`## 被谁引用`** 两节；不要加 `disable-model-invocation: true`（那会让别的技能引用不到它）。
+
 ## 命令速查
 
 ```
+ash suggest "<任务描述>" [--limit N] [--json]
 ash search <关键词…> [--tag T] [--folder F] [--json]
 ash list [--tag T] [--folder F] [--json]
 ash info <slug>
 ash show <slug> [--version ID] [--pending]
 ash versions <slug>
+ash lint [slug] [--json]
 ash bundles | ash bundle <标识或名称>
 ash pull <slug> [--agent claude|codex|hermes|dsh] [--dir PATH] [--pending] [--force] [--no-deps]
 ash pull bundle:<标识或名称>
@@ -89,10 +146,11 @@ ash installed | ash outdated [--dir PATH]
 ash remove <slug> [--dir PATH] [--force]
 ash push <技能目录|SKILL.md> [--update] [--folder PATH] [--json]
 ash mine | ash withdraw <slug>
+ash feedback <slug> ok|fail ["说明"]
 ash guide
 ```
 
-默认安装目录是自动探测的：`$ASH_SKILLS_DIR`，否则依次尝试唯一的 `~/.hermes/profiles/*/skills`、`~/.hermes/skills`、`~/.agents/skills`、`~/.claude/skills`、`~/.dsh/skills`。
+默认安装目录是自动探测的：`$ASH_SKILLS_DIR`；在 Claude Code 里运行时是 `~/.claude/skills`；否则依次尝试唯一的 `~/.hermes/profiles/*/skills`、`~/.hermes/skills`、`~/.agents/skills`、`~/.claude/skills`、`~/.dsh/skills`。
 
 ## 没有 ash 时的 HTTP 接口
 
@@ -100,6 +158,7 @@ ash guide
 `curl -fsSL -H "Authorization: Bearer $ASH_TOKEN" __BASE_URL__/s/<slug>/install.sh | bash`
 
 ```
+GET  __BASE_URL__/api/agent/suggest?q=<任务描述>&format=text           按任务描述找技能（不带 format 返回 JSON）
 GET  __BASE_URL__/api/skills?search=<关键词>&tag=&folder=&format=text   搜索（纯文本，每行一个技能）
 GET  __BASE_URL__/s/<slug>/info                             技能信息、依赖与文件清单
 GET  __BASE_URL__/s/<slug>.md                               SKILL.md（多文件技能末尾附文件清单；?version=<id> 取历史版本）
@@ -113,4 +172,6 @@ POST __BASE_URL__/api/agent/push                            multipart：file=<ta
 GET  __BASE_URL__/api/agent/mine?terminal=<来源>              我的推送及审核状态
 POST __BASE_URL__/api/agent/withdraw                        撤回待审推送：slug=<slug>&terminal=<来源>
 GET  __BASE_URL__/api/agent/revisions?slug=a&slug=b         已装技能比对：每行 slug、状态、修订号、版本
+GET  __BASE_URL__/api/agent/lint?slug=<slug>&format=text     技能检查（不带 slug 列出全库有问题的技能）
+POST __BASE_URL__/api/agent/feedback                        用完回报：slug=<slug>&outcome=ok|fail&note=<说明>&terminal=<来源>
 ```

@@ -40,3 +40,13 @@ test('security scan is stable across repeated calls (no global-regex lastIndex s
   }
   assert.deepEqual(securityScan('plain text'), []);
 });
+
+test('install footer is removed exactly, keeping anything an agent appended after it', () => {
+  const { stripInstallFooter } = require('../skillMeta');
+  const original = '---\nname: a\n---\n\n# A\n';
+  const hint = '> 本技能由 AnotherSkillHub 安装。用完运行 `ash feedback a ok`。';
+  assert.equal(stripInstallFooter(`${original}\n<!-- ash:installed -->\n${hint}\n`), original);
+  assert.equal(stripInstallFooter(`${original}\n<!-- ash:installed -->\n${hint}`), original);
+  assert.equal(stripInstallFooter(`${original}\n<!-- ash:installed -->\n${hint}\n\n## 已知问题\n\n先换算坐标。\n`), `${original}\n## 已知问题\n\n先换算坐标。\n`);
+  assert.equal(stripInstallFooter(original), original);
+});

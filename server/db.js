@@ -229,6 +229,30 @@ if (db.pragma('user_version', { simple: true }) < 1) {
   })();
 }
 
+// ——— 使用记录：安装、阅读、Agent 反馈 ———
+// actor_id 是触发者（token / 会话所属用户）。个人库里就是技能主人；以后团队库、技能广场里会是别人。
+// revision 是事件发生时对应的修订号（反馈为本机已装版本），技能更新后旧版本的失败不再算在当前版本头上。
+// 建在 v1 迁移之后：迁移会重建 skills 表，外键不能先指向旧表。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS skill_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    skill_id INTEGER NOT NULL,
+    actor_id INTEGER,
+    kind TEXT NOT NULL,              -- install | dependency | update | view | feedback
+    outcome TEXT,                    -- feedback: ok | fail
+    note TEXT,
+    terminal TEXT,
+    revision TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_skill_events_skill ON skill_events(skill_id, created_at);
+
+  CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);
+  -- 开始记录使用的时间：在此之前没有数据，「从未使用 / 长期未用」只能从这里起算
+  INSERT OR IGNORE INTO app_meta (key, value) VALUES ('usage_tracking_since', strftime('%Y-%m-%d %H:%M:%S', 'now'));
+`);
+
 // 新用户（注册或认领时）的内置目录
 function ensureUserDefaults(userId) {
   db.prepare('INSERT OR IGNORE INTO folders (user_id, path, name, parent_path) VALUES (?, ?, ?, ?)').run(userId, 'inbox', '收件箱 (Inbox)', '');

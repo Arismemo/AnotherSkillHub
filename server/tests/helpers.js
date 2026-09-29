@@ -6,6 +6,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 
+// 在 Claude Code 里跑测试时会继承 CLAUDECODE=1，安装目录会被自动改到 ~/.claude/skills；
+// 测试一律从「普通终端」出发，需要 Claude Code 行为的用例自己显式设置
+delete process.env.CLAUDECODE;
+
 // 服务全部需要登录：startServer 会注册一个测试账号，之后发往该服务的 fetch 自动带上它的 token，
 // 并写入 ASH_TOKEN，让测试里启动的 ash CLI / 安装脚本继承。要测未登录的行为，用 rawFetch。
 const rawFetch = globalThis.fetch;

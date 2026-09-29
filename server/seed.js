@@ -27,6 +27,7 @@ function seedUserLibrary(userId) {
       content: `---
 name: writing-skills
 description: 需要把一个可复用流程沉淀成 SKILL.md 并推送到技能库时使用
+description_en: Use when distilling a reusable procedure into a SKILL.md and pushing it to the skill hub
 tags: [meta, authoring]
 version: 1.0.0
 ---
@@ -37,12 +38,14 @@ version: 1.0.0
 完成了一个下次还会用到、或其他 Agent 也会用到的流程之后。
 
 ## 步骤
-1. \`ash search <关键词>\` 查重；已有相近技能就 \`ash pull\` 下来在原版上改。
-2. frontmatter 的 \`name\` 用英文 slug，\`description\` 写「什么时候用」而不是「是什么」。
+1. \`ash suggest "<这个技能要解决的问题>"\` 查重；已有相近技能就 \`ash pull\` 下来在原版上改。
+2. frontmatter 的 \`name\` 用英文 slug，\`description\` 写「什么时候用」而不是「是什么」；
+   再用 \`description_en\`（或 \`description_zh\`）补上另一种语言，中英文任务都能找到它。
 3. 正文分「何时使用 / 步骤 / 验证」三段，步骤写成可直接执行的命令。
-4. 脚本放 \`scripts/\`，参考资料放 \`references/\`，正文用相对路径引用。
-5. 不写入任何密钥或口令。
-6. \`ash push <技能目录>\`（更新已有技能加 \`--update\`），把返回的审核状态告诉用户。
+4. 某段步骤已经是别的技能（尤其元技能）的内容：不要抄，在 \`depends_on\` 里声明它，正文写「用元技能 \`<slug>\`」+ 本技能特有的参数。
+5. 脚本放 \`scripts/\`，参考资料放 \`references/\`，正文用相对路径引用。
+6. 不写入任何密钥或口令。
+7. \`ash lint\` 自查，再 \`ash push <技能目录>\`（更新已有技能加 \`--update\`），把返回的审核状态告诉用户。
 
 ## 验证
 - \`ash show <slug> --pending\` 能看到完整正文
@@ -59,6 +62,7 @@ version: 1.0.0
       content: `---
 name: systematic-debugging
 description: 遇到原因不明的 bug、测试失败或异常行为，准备动手修之前使用
+description_en: Use when facing an unexplained bug, test failure or unexpected behavior, before attempting a fix
 tags: [debugging, root-cause]
 version: 1.0.0
 depends_on: [writing-skills]
@@ -90,6 +94,7 @@ depends_on: [writing-skills]
       content: `---
 name: release-checklist
 description: 准备发布新版本或部署到生产环境之前使用
+description_en: Use before releasing a new version or deploying to production
 tags: [release, ops]
 version: 1.0.0
 ---

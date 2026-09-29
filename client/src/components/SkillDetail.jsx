@@ -21,6 +21,8 @@ import xml from 'highlight.js/lib/languages/xml';
 import yaml from 'highlight.js/lib/languages/yaml';
 import { VersionHistoryModal } from './Modals';
 import ReviewPanel from './ReviewPanel';
+import UsagePanel from './UsagePanel';
+import RelationsPanel from './RelationsPanel';
 import { installCommand, skillPrompt } from '../utils/agentPrompts';
 import { showToast } from './toastBus';
 import useResizableWidth from '../hooks/useResizableWidth';
@@ -326,7 +328,7 @@ function readSkillDraft(skillId) {
   return null;
 }
 
-export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag, onCopySkill, onChanged, apiRef }) {
+export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag, onCopySkill, onChanged, onOpenSkill, apiRef }) {
   const [mode, setMode] = useState('preview');
   const [content, setContent] = useState('');
   // 列表接口不再回传 content，详情接口是唯一来源；savedContent 是「服务端上那一份」，用来判 dirty
@@ -897,7 +899,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
           <div className={`detail-content${isWideFileView ? ' is-wide-file' : ''}`}>
             <div className="sr-only" aria-live="polite">{copied ? '内容已复制' : ''}</div>
             {detailError && <div className="inline-error" role="alert">{detailError}</div>}
-            <ReviewPanel detail={reviewDetail} onChanged={async () => { setReloadKey((k) => k + 1); await onChanged?.(); }} />
+            <ReviewPanel detail={reviewDetail} onOpenSkill={onOpenSkill} onChanged={async () => { setReloadKey((k) => k + 1); await onChanged?.(); }} />
 
             {mode === 'preview' ? (
               <>
@@ -953,6 +955,9 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
                         )}
                       </section>
                     )}
+
+                    <UsagePanel detail={reviewDetail} onOpenSkill={onOpenSkill} />
+                    <RelationsPanel detail={reviewDetail} onOpenSkill={onOpenSkill} />
 
                     {loadingDetail && !content ? (
                       <div className="content-skeleton" role="status"><span>正在载入技能详情…</span><i /><i /><i /><i /></div>

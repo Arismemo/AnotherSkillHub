@@ -9,7 +9,7 @@ import { SiteFooter, SiteHeader } from './SiteChrome';
 
 const TOC = [
   { group: '入门', items: [['overview', '概览'], ['quickstart', '快速开始'], ['accounts', '账号与 token']] },
-  { group: '技能', items: [['skill-format', '技能格式'], ['cli', 'ash 命令行'], ['local', '安装与本地管理'], ['push-review', '推送与审核'], ['versions', '版本历史'], ['bundles', '技能组合'], ['graph', '依赖图']] },
+  { group: '技能', items: [['skill-format', '技能格式'], ['cli', 'ash 命令行'], ['local', '安装与本地管理'], ['push-review', '推送与审核'], ['versions', '版本历史'], ['references', '技能之间的引用'], ['bundles', '技能组合'], ['graph', '依赖图']] },
   { group: '使用', items: [['web', '网页端'], ['agents', '接入 Agent'], ['http', 'HTTP 接口']] },
   { group: '运维', items: [['self-host', '自托管与配置'], ['security', '安全模型'], ['faq', '常见问题']] },
 ];
@@ -156,7 +156,7 @@ export default function Docs({ user, registration }) {
               </li>
               <li>
                 <h3>查找并安装技能</h3>
-                <CodeBlock>{'ash search 部署\nash info <slug>\nash pull <slug>'}</CodeBlock>
+                <CodeBlock>{'ash suggest "把服务部署到测试环境"\nash info <slug>\nash pull <slug>'}</CodeBlock>
               </li>
               <li>
                 <h3>让 Agent 用起来</h3>
@@ -190,9 +190,10 @@ export default function Docs({ user, registration }) {
             <CodeBlock>{`---
 name: my-skill              # 英文标识符 slug，也是安装目录名
 description: 一句话说明「什么时候应该使用这个技能」，Agent 靠它判断是否调用
+description_en: Use when …  # 另一种语言的描述（description 是英文时写 description_zh）
 tags: [ops, debugging]
 version: 1.0.0
-depends_on: [other-skill]   # 可选，依赖的其他技能 slug
+depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之间的引用」
 ---
 
 # 人类可读的标题
@@ -211,10 +212,13 @@ depends_on: [other-skill]   # 可选，依赖的其他技能 slug
               ['slug', <>显式传入 → frontmatter <C>name</C> → 文件名 → 正文第一个 <C># 标题</C>，取第一个能转成英文标识符的（只保留小写字母、数字、<C>-</C>、<C>_</C>）。纯中文得不到 slug，会报错。</>],
               ['显示名称', <>显式传入 → 正文第一个 <C># 标题</C> → frontmatter <C>name</C> → 文件名</>],
               ['description', '显式传入 → frontmatter description。缺少时会提示：写清「何时使用」，Agent 靠它判断。'],
+              ['双语描述', <><C>description_en</C> / <C>description_zh</C>（也认 <C>metadata</C> 里的同名键），补上 description 缺的那种语言；<C>title_en</C> / <C>title_zh</C> 可选。缺一种语言时会提示。</>],
               ['tags', '数组或逗号分隔的字符串都可以'],
               ['version', <>默认 <C>1.0.0</C></>],
-              ['依赖', <><C>depends_on</C>、<C>dependencies</C>、<C>requires</C> 或 <C>metadata.depends_on</C></>],
+              ['依赖', <><C>depends_on</C>、<C>dependencies</C>、<C>requires</C> 或 <C>metadata.depends_on</C>（metadata 里写成逗号分隔的字符串）</>],
             ]} />
+            <h3>为什么要双语描述</h3>
+            <p>技能库常是中英混写的。只有一种语言的描述时，用另一种语言描述的任务找不到它，内容相同、语言不同的两个技能也查不出重复。补一句另一种语言的 description 就够了：检索和查重都会用上它，以后网页做双语界面也直接用它。正文不用写两份——两份正文要同步维护、迟早不一致，而读正文的 Agent 中英文都懂。</p>
             <h3>附属文件限制</h3>
             <ul>
               <li>只收文本类文件（.md .sh .py .js .ts .json .yaml .toml .sql .csv .svg 等）；二进制、压缩包、密钥文件（.pem .key .env）会被跳过。服务端可用 <C>ASH_ALLOWED_EXTS</C> 调整白名单。</li>
@@ -233,9 +237,10 @@ depends_on: [other-skill]   # 可选，依赖的其他技能 slug
             <h3>命令参考</h3>
             <Table head={['命令', '作用']} rows={[
               [<C>ash login [--token T]</C>, '登录；ash whoami 查看账号，ash logout 删除本机 token'],
-              [<C>ash search &lt;关键词…&gt; [--tag T] [--folder F] [--json]</C>, '搜索已发布技能，多个关键词需同时命中（名称、slug、描述、正文）'],
+              [<C>ash suggest "&lt;任务描述&gt;" [--limit N] [--json]</C>, '按任务描述找相关技能，标明「相关 / 可能相关」；没有合适的会直接说没有'],
+              [<C>ash search &lt;关键词…&gt; [--tag T] [--folder F] [--json]</C>, '搜索已发布技能，多个关键词需同时命中（名称、slug、描述、正文）；都不命中时给出相关候选'],
               [<C>ash list [--tag T] [--folder F] [--json]</C>, '列出已发布技能'],
-              [<C>ash info &lt;slug&gt;</C>, '描述、依赖（含缺失的依赖）、文件清单、版本、修订号和安装命令'],
+              [<C>ash info &lt;slug&gt;</C>, '描述、依赖（含缺失的依赖）、使用情况与健康信号、文件清单、版本、修订号和安装命令'],
               [<C>ash show &lt;slug&gt; [--version ID] [--pending]</C>, '直接输出 SKILL.md，不安装'],
               [<C>ash versions &lt;slug&gt;</C>, '历史版本列表'],
               [<C>ash pull &lt;slug&gt; [选项]</C>, <>安装技能及其依赖。选项：<C>--agent claude|codex|hermes|dsh</C>、<C>--dir PATH</C>、<C>--pending</C>、<C>--force</C>、<C>--no-deps</C></>],
@@ -247,6 +252,8 @@ depends_on: [other-skill]   # 可选，依赖的其他技能 slug
               [<C>ash push &lt;目录|SKILL.md&gt; [--update] [--folder PATH]</C>, '推送技能；同名已存在时必须加 --update'],
               [<C>ash mine</C>, '本机推送过的技能及审核结果'],
               [<C>ash withdraw &lt;slug&gt;</C>, '撤回自己仍在待审核的推送'],
+              [<C>ash feedback &lt;slug&gt; ok|fail ["说明"] [--dir PATH]</C>, '用完技能后回报结果，自动对应本机已装的版本'],
+              [<C>ash lint [slug] [--json]</C>, '技能检查：双语描述、引用写法、元技能契约、与其他技能相同的步骤；不带 slug 列出全库有问题的技能'],
               [<C>ash guide</C>, '输出 Agent 使用指南'],
               [<C>ash open</C>, '在浏览器打开应用'],
               [<C>ash update</C>, '更新 ash 自身'],
@@ -255,21 +262,23 @@ depends_on: [other-skill]   # 可选，依赖的其他技能 slug
             <Table head={['变量', '作用']} rows={[
               [<C>ASH_SERVER_URL</C>, '服务地址（默认是安装时的地址）'],
               [<C>ASH_TOKEN</C>, <>API token，优先于 <C>~/.ash/token</C></>],
-              [<C>ASH_SKILLS_DIR</C>, '默认安装目录'],
+              [<C>ASH_SKILLS_DIR</C>, '默认安装目录（未设置时在 Claude Code 里默认 ~/.claude/skills）'],
               [<C>ASH_TERMINAL</C>, '推送时记录的来源名，默认是主机名；ash mine / withdraw 按它识别「本机的推送」'],
               [<C>ASH_BIN_DIR</C>, 'ash 自身的安装位置'],
+              [<C>ASH_FEEDBACK_HINT</C>, <>设为 <C>0</C> 时安装不在 SKILL.md 末尾附加反馈提示</>],
             ]} />
           </Section>
 
           <Section id="local" title="安装与本地管理">
             <h3>装到哪里</h3>
-            <p>默认自动探测：<C>$ASH_SKILLS_DIR</C> → 唯一的 <C>~/.hermes/profiles/*/skills</C> → <C>~/.hermes/skills</C> → <C>~/.agents/skills</C> → <C>~/.claude/skills</C> → <C>~/.dsh/skills</C>，都不存在时用 <C>~/.agents/skills</C>。<C>--agent</C> 指定 Agent 的标准目录，<C>--dir</C> 指定任意目录。</p>
+            <p>默认自动探测：<C>$ASH_SKILLS_DIR</C> → 在 Claude Code 里运行时 <C>~/.claude/skills</C>（它只从这里加载技能）→ 唯一的 <C>~/.hermes/profiles/*/skills</C> → <C>~/.hermes/skills</C> → <C>~/.agents/skills</C> → <C>~/.claude/skills</C> → <C>~/.dsh/skills</C>，都不存在时用 <C>~/.agents/skills</C>。<C>--agent</C> 指定 Agent 的标准目录，<C>--dir</C> 指定任意目录。</p>
             <h3>安装做了什么</h3>
             <ul>
               <li>下载完整技能包，先解压到同级的临时目录，成功后整体替换，所以上游删掉的文件本地也会消失。</li>
               <li>在技能目录里写一个 <C>.ash</C> 文件，记录来源服务、修订号、版本和内容指纹。<strong>不要编辑或删除它</strong>，推送时会自动排除。</li>
               <li>同名目录本地改过、或不是 ash 装的，会先备份到 <C>~/.ash/backups/</C> 再覆盖；<C>--force</C> 跳过备份。</li>
               <li>依赖装到同一个目录；已经装过的不动，循环依赖不会死循环，缺失的依赖给出警告。<C>--no-deps</C> 不装依赖。</li>
+              <li>在 <C>SKILL.md</C> 末尾附一段说明：引用的技能在本机的相对路径、用完怎么 <C>ash feedback</C>。推送回库时这段会自动去掉，写在它后面的修改照常保留；<C>ASH_FEEDBACK_HINT=0</C> 可不附加。</li>
             </ul>
             <h3>状态</h3>
             <Table head={['状态', '含义', '怎么处理']} rows={[
@@ -286,7 +295,8 @@ depends_on: [other-skill]   # 可选，依赖的其他技能 slug
             <h3>推送</h3>
             <CodeBlock>{'ash push ./my-skill/            # 推送整个目录（推荐，含附属文件）\nash push ./my-skill/ --update   # 更新已有技能\nash push ./SKILL.md             # 只推送一个文件\nash push ./my-skill/ --folder Ops/Deploy   # 新技能放进指定文件夹'}</CodeBlock>
             <ul>
-              <li>先 <C>ash search</C> 查重。已有相近技能时，<C>ash pull</C> 下来在原版上改，再 <C>--update</C> 推送。</li>
+              <li>先 <C>ash suggest "&lt;新技能要解决的问题&gt;"</C> 查重。已有相近技能时，<C>ash pull</C> 下来在原版上改，再 <C>--update</C> 推送；部分步骤已经是别的技能（尤其元技能）的内容时，用 <C>depends_on</C> 引用它，不要复制。</li>
+              <li>推送新技能时，服务端会比对库里名称、描述、标签和标题相近的技能，在推送结果里提示「库中已有相近技能」（相似度 40% 以上标为疑似重复）。</li>
               <li>不加 <C>--update</C> 时，同名 slug 已存在会被拒绝（409），不会覆盖已有版本；废纸篓里的同名技能要先在网页上恢复或彻底删除。</li>
               <li>内容没有变化的推送不会产生新版本。更新时名称、标签、所在文件夹保留网页上维护的值，只替换内容、描述和版本。</li>
             </ul>
@@ -295,9 +305,20 @@ depends_on: [other-skill]   # 可选，依赖的其他技能 slug
               <li>推送的<strong>新技能</strong>状态为「待审核」：Agent 默认拉不到，推送者自己要用时加 <C>--pending</C>。</li>
               <li>对已发布技能的<strong>更新</strong>挂在原技能上等待审核，采纳前 Agent 拉到的仍是当前发布版本。</li>
               <li>在应用的「待审核」里查看内容、与当前版本的差异和安全提醒，然后采纳或拒绝。拒绝新技能会移入废纸篓（可恢复），拒绝更新直接丢弃。</li>
+              <li>审核条会给出判断依据：新技能列出<strong>相似的已有技能</strong>（有没有必要单独成为一个技能），更新列出<strong>当前版本收到的失败反馈</strong>（这次更新在修什么）。</li>
               <li>推送者用 <C>ash mine</C> 查看结果，用 <C>ash withdraw</C> 撤回仍在待审的推送（只能撤回本机推送的）。</li>
               <li>服务端设置 <C>ASH_REQUIRE_REVIEW=0</C> 可以关闭审核，但命中高危规则的推送仍然强制待审。</li>
             </ul>
+            <h3>使用情况与反馈</h3>
+            <p>技能装到本地后由 Agent 直接读取，服务端看不到「使用」本身，所以靠三种信号：安装（记下装到了哪台机器）、阅读（<C>ash show</C>）和反馈（<C>ash feedback</C>）。通过 ash 安装的 SKILL.md 末尾会附一行提示，请 Agent 用完回报结果；推送回库时这一行会被自动去掉，写在它后面的修改照常保留。</p>
+            <p>反馈记在 Agent 本机所装的版本上：技能更新之后，旧版本收到的失败不再算在新版本头上。由此得出的健康信号：</p>
+            <Table head={['信号', '含义']} rows={[
+              ['常失败', '当前版本至少 2 次失败，且失败不少于成功'],
+              ['疑似重复', '与另一个已发布技能的名称、描述、标签和标题高度相似（40% 以上）'],
+              ['长期未用', '最近 60 天没有安装、阅读或反馈'],
+              ['从未使用', '发布 14 天以上从没有被安装、阅读或反馈（从开始记录使用时算起）'],
+            ]} />
+            <p>这些技能汇总在应用的「需关注」视图里，按上面的顺序排列：先修常失败的，再合并重复的，最后清理不用的。详情页的「使用情况」列出最近的反馈和相似技能。</p>
             <h3>安全扫描</h3>
             <p>SKILL.md 和所有附属文件都会被扫描。结果随技能保存、在详情页显示，只提示不拦截；高危项强制进入人工审核。</p>
             <Table head={['规则', '级别']} rows={[
@@ -326,19 +347,59 @@ depends_on: [other-skill]   # 可选，依赖的其他技能 slug
             <CodeBlock>{'ash bundles\nash bundle 感知工具箱\nash pull bundle:感知工具箱'}</CodeBlock>
           </Section>
 
+          <Section id="references" title="技能之间的引用">
+            <p>一段操作已经有技能（尤其是元技能）负责时，引用它，而不是把步骤抄进来：抄过来的两份会漂移，一个坑就要修两处。</p>
+            <h3>怎么写</h3>
+            <ol>
+              <li>frontmatter 的 <C>depends_on</C> 声明它：<C>ash pull</C> 据此把它一并装在本技能旁边。</li>
+              <li>正文在用到它的地方写「用元技能 <C>&lt;slug&gt;</C>」，后面只写本技能特有的参数和坑；也可以写成相对链接 <C>../&lt;slug&gt;/SKILL.md</C>。不要写绝对路径。</li>
+            </ol>
+            <CodeBlock copy={false}>{'## 编译\n> 用元技能 `dev-container-build`\n> - target: `//app:main`\n> - **本技能特有**：必须加 `--build_tag_filters=sim`'}</CodeBlock>
+            <Table head={['写法', '含义']} rows={[
+              [<C>slug</C>, '本库里的技能'],
+              [<C>@账号/slug</C>, '指定账号的技能。为团队库、技能广场预留，目前只能指向自己的账号，指向别人会提示'],
+              [<C>slug@1.2.0</C>, '固定版本。库里的版本变了会在检查里提示确认（安装的仍是当前版本）'],
+            ]} />
+            <h3>本地 Agent 怎么找到被引用的技能</h3>
+            <p>各家 Agent（Claude Code、Codex 等）的技能格式都没有「依赖」字段：它们看到的只是技能的名称、描述和正文。所以引用要靠三件事落地：</p>
+            <ul>
+              <li><strong>装在一起</strong>：<C>ash pull</C> 把 <C>depends_on</C> 里的技能装在同一个目录下，<C>../&lt;slug&gt;/SKILL.md</C> 一定对得上。</li>
+              <li><strong>告诉它在哪</strong>：已装的 <C>SKILL.md</C> 末尾会列出引用的技能及其相对路径，任何能读文件的 Agent 都能顺着找到（推送回库时这段会自动去掉）。</li>
+              <li><strong>装对位置</strong>：Claude Code 只从 <C>~/.claude/skills</C> 和项目的 <C>.claude/skills</C> 加载技能。在 Claude Code 里运行 <C>ash pull</C> 时默认就装到 <C>~/.claude/skills</C>，技能和它引用的技能都能按名字直接调用；其他 Agent 用 <C>--agent</C> 或 <C>ASH_SKILLS_DIR</C> 指定。</li>
+            </ul>
+            <h3>元技能</h3>
+            <p>元技能是被别的技能在流程中引用的基础动作：调用方只说「要做什么」，元技能负责「怎么做」。已经有 3 个以上技能在重复同一段操作、它与业务无关、输入输出说得清时才值得抽——第 1 次写在原地，第 2 次忍住，第 3 次才抽。写法：</p>
+            <ul>
+              <li>description 以「【元技能】」开头，写明「被其他技能引用」和「被直接要求」两种触发场景。</li>
+              <li>正文必须有 <C>## 契约</C>（输入 / 输出 / 前置 / 失败）和 <C>## 被谁引用</C> 两节。</li>
+              <li>不要加 <C>disable-model-invocation: true</C>，否则别的技能引用不到它。</li>
+            </ul>
+            <p>每多一层引用，Agent 就多读一个文件、多一个可能断的地方。引用链超过两层时检查会提醒；一小段、只有一两处用到的步骤，留在原地比抽出去好。</p>
+            <h3>自动检查</h3>
+            <p><C>ash lint [slug]</C>、推送结果、网页详情页的「引用关系」和审核条都会给出同一套检查：</p>
+            <Table head={['检查', '说明']} rows={[
+              ['双语描述', '缺中文或英文描述'],
+              ['引用写法', '写法不对、引用的技能不在库里或还在待审核、正文引用了却没写进 depends_on、用了绝对路径、固定的版本与库里不符'],
+              ['引用链', '超过两层，或引用成环'],
+              ['元技能', '缺「## 契约」、缺「## 被谁引用」或与实际不符、调用方少于 2 个'],
+              ['相同的步骤', <>从 shell 代码块里抽出命令、归一化后比对：与元技能有 3 条以上相同命令，提示改为引用；与另外 2 个以上技能相同，提示可以提炼元技能</>],
+            ]} />
+            <p>其中引用失效、抄了元技能步骤、可提炼元技能、元技能缺契约也会出现在「需关注」视图里。</p>
+          </Section>
+
           <Section id="graph" title="依赖图">
             <p>应用侧栏的「依赖图」把技能之间的关系画成一张图。只认明确的信号，正文里随口提到某个技能名不算：</p>
             <ul>
               <li><strong>依赖</strong>：frontmatter 里声明的 <C>depends_on</C> 等字段。指向库里不存在的技能会标为未解析。</li>
               <li><strong>引用</strong>：正文里指向其他技能 <C>SKILL.md</C> 的相对链接（如 <C>../verification-discipline/SKILL.md</C>），以及同一行里既出现「元技能 / meta-skill」、又出现某个元技能完整 slug 的写法。代码块里的示例不算。</li>
-              <li>图中只画出指向<strong>元技能</strong>的边。元技能的判定：frontmatter <C>type: meta</C>、标签含 <C>meta</C> / <C>meta-skill</C> / <C>元技能</C>、描述以「【元技能】」开头，或放在名为「元技能」的文件夹里。</li>
+              <li>图中只画出指向<strong>元技能</strong>的边。元技能的判定：frontmatter <C>type: meta</C>、标签含 <C>meta-skill</C> / <C>元技能</C>、描述以「【元技能】」开头，或放在名为「元技能」的文件夹里。单独的 <C>meta</C> 标签不算（它常指「关于技能本身」的技能）。</li>
             </ul>
           </Section>
 
           <Section id="web" title="网页端">
             <ul>
               <li><strong>三栏布局</strong>：文件夹 / 技能列表 / 详情，三栏宽度可拖动并会记住；侧栏和列表都可以折叠。</li>
-              <li><strong>系统视图</strong>：收件箱（新技能默认放这里）、收藏、最近浏览、待审核、全部、废纸篓。</li>
+              <li><strong>系统视图</strong>：收件箱（新技能默认放这里）、收藏、最近浏览、待审核、需关注、全部、废纸篓。待审核和需关注只在有内容时出现。</li>
               <li><strong>整理</strong>：拖拽技能到文件夹、收藏、多选批量操作、右键菜单；文件夹可以多级嵌套、重命名和删除（删除时里面的技能移回收件箱）。</li>
               <li><strong>编辑</strong>：新建技能、粘贴整份 SKILL.md 导入（实时预览识别出的 slug、标签和冲突），详情页里直接编辑名称、描述和 SKILL.md 正文（附属文件随推送更新）。</li>
               <li><strong>分享</strong>：地址栏的 <C>/app?skill=&lt;slug&gt;</C> 可以直接定位到某个技能；浏览器打开 <C>/s/&lt;slug&gt;</C> 也会跳到这里。详情页可以一键复制给 Agent 的指令。</li>
@@ -365,7 +426,8 @@ depends_on: [other-skill]   # 可选，依赖的其他技能 slug
             <CodeBlock>{onboardingPrompt(origin)}</CodeBlock>
             <p>约定的要点：</p>
             <ul>
-              <li>接到项目特定或不熟悉的任务时，先 <C>ash search</C>，中英文同义词都试；搜不到就按常规方式做，不硬套。</li>
+              <li>接到项目特定或不熟悉的任务时，先 <C>ash suggest "&lt;任务描述&gt;"</C>，中英文关键名词都写上；没有合适的就按常规方式做，不硬套。</li>
+              <li>按技能完成（或没能完成）任务后，用 <C>ash feedback</C> 回报一次结果；失败时写一句哪一步、为什么。</li>
               <li>需要执行脚本的技能用 <C>ash pull</C> 安装后按 SKILL.md 执行；只读说明用 <C>ash show</C>。</li>
               <li>做完可复用的流程再推送；一次性记录、会话相关内容和任何密钥、口令、隐私都不推送。</li>
               <li>提示未登录时，Agent 应该请你运行 <C>ash login</C>，而不是自己去要或输入密码。</li>

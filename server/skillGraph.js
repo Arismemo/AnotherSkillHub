@@ -1,5 +1,6 @@
 const matter = require('gray-matter');
-const { declaredDependencies } = require('./skillMeta');
+const { declaredDependencies, parseReference } = require('./skillMeta');
+const { isMetaSkill } = require('./skillRefs');
 
 const META_WORD = /元技能|meta[- ]skill/i;
 const slugPatterns = new Map();
@@ -11,22 +12,13 @@ function slugPattern(slug) {
   return slugPatterns.get(slug);
 }
 
-function list(value) {
-  return Array.isArray(value) ? value.filter((item) => typeof item === 'string') : typeof value === 'string' ? [value] : [];
-}
-
 // Relationships come only from explicit signals: declared metadata, local SKILL.md links, and lines that
 // name a meta skill by its exact slug on the same line as the word 元技能 / meta-skill. Bare prose mentions never count.
 function buildSkillGraph(skills) {
   const parsed = skills.filter((skill) => !skill.is_deleted).map((skill) => {
     let data = {}, body = skill.content || '', warning = false;
-    try { const result = matter(body); data = result.data; body = result.content; } catch { warning = true; }
-    let tags = skill.tags;
-    if (typeof tags === 'string') { try { tags = JSON.parse(tags); } catch { tags = []; } }
-    const meta = data.type === 'meta' || data.kind === 'meta' || data.metadata?.type === 'meta'
-      || data.is_meta === true || list(tags).some((tag) => ['meta', 'meta-skill', '元技能'].includes(tag))
-      || /^【元技能[·】]/.test(skill.description || '') || /(?:^|\/)元技能(?:\/|$)/.test(skill.folder_path || '');
-    return { skill, data, body, warning, meta };
+    try { const result = matter(body, {}); data = result.data; body = result.content; } catch { warning = true; }
+    return { skill, data, body, warning, meta: isMetaSkill(skill, data) };
   });
   const bySlug = new Map(parsed.map((item) => [item.skill.slug, item]));
   const metaSlugs = parsed.filter((item) => item.meta).map((item) => item.skill.slug);
@@ -40,7 +32,8 @@ function buildSkillGraph(skills) {
       if (!target) { if (kind === 'dependency') unresolved.push({ source: skill.id, target: slug }); return; }
       if (target.meta) edges.push({ source: skill.id, target: target.skill.id, kind });
     };
-    declaredDependencies(data).forEach((slug) => add(slug, 'dependency'));
+    // 声明的依赖：@账号/slug 指向别的库，不在本库的图里；slug@版本 取 slug
+    declaredDependencies(data).map(parseReference).filter((ref) => ref && !ref.owner).forEach((ref) => add(ref.slug, 'dependency'));
     // Local links such as ../verification-discipline/SKILL.md. Ignore fenced examples and remote URLs.
     const prose = body.replace(/^(`{3,}|~{3,}).*\n[\s\S]*?^\1[^\n]*$/gm, '');
     for (const match of prose.matchAll(/\[[^\]]*\]\(<?([^\s)>]+)(?:>?(?:\s+"[^"]*")?)\)/g)) {

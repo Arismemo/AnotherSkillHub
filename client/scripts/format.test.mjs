@@ -4,8 +4,8 @@ import { formatShortDate, parseTimestamp, relativeTime } from '../src/utils/date
 import { folderLabels, targetFolderForView } from '../src/utils/systemFolders.js';
 
 test('system views select inbox as the creation target; real folders are retained', () => {
-  assert.deepEqual(Object.keys(folderLabels).sort(), ['all', 'inbox', 'pending', 'recent', 'starred', 'trash']);
-  for (const view of ['all', 'starred', 'trash', 'recent', 'pending']) {
+  assert.deepEqual(Object.keys(folderLabels).sort(), ['all', 'attention', 'inbox', 'pending', 'recent', 'starred', 'trash']);
+  for (const view of ['all', 'starred', 'trash', 'recent', 'pending', 'attention']) {
     assert.equal(targetFolderForView(view), 'inbox');
   }
   assert.equal(targetFolderForView('inbox'), 'inbox');

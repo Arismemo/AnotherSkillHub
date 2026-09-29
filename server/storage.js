@@ -89,7 +89,7 @@ function moveSkillOnDisk(userId, oldFolder, newFolder, slug) {
 // 解析 Markdown Frontmatter
 function parseSkillContent(rawContent) {
   try {
-    const parsed = matter(rawContent);
+    const parsed = matter(rawContent, {});  // options 对象绕过 gray-matter 的内置缓存（见 skillMeta.parseFrontmatter）
     return {
       data: parsed.data || {},
       content: parsed.content || rawContent,
