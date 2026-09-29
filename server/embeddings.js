@@ -5,6 +5,10 @@
 //   ASH_EMBED_URL    Ollama 地址（如 http://127.0.0.1:11434），或 OpenAI 兼容接口（以 /v1 结尾）
 //   ASH_EMBED_MODEL  模型名，默认 bge-m3（多语言；Ollama 上 ollama pull bge-m3）
 //   ASH_EMBED_KEY    OpenAI 兼容接口的 API key（可选）
+//   ASH_EMBED_QUERY_TIMEOUT_MS  查询向量（ash suggest）最多等多久，默认 8000；超时就只用文本比对
+//
+// 模型可能跑在繁忙服务器的 CPU 上（实测 seed-SER9 上 bge-m3 每条约 3.5 秒）：后台补齐按小批次进行、
+// 超时随批次大小放宽，新技能优先；查询向量单独设较短的超时，找技能不会被慢模型拖住。
 //
 // 语义分数只在文本比对看不见的地方补位（见 skillIndex）：同语言的同系列技能语义上很像却不是重复，
 // 所以相似度只对主语言不同的两个技能用语义；按任务找技能时取文本、语义两者较高的相关度。
@@ -17,9 +21,11 @@ const config = () => ({
   model: process.env.ASH_EMBED_MODEL || 'bge-m3',
   key: process.env.ASH_EMBED_KEY || '',
   timeout: Number(process.env.ASH_EMBED_TIMEOUT_MS) || 15000,
+  queryTimeout: Number(process.env.ASH_EMBED_QUERY_TIMEOUT_MS) || 8000,
 });
 const enabled = () => Boolean(config().url);
-const BATCH = 16;
+const BATCH = 4;
+const PER_TEXT_MS = 30000;   // 后台补齐时每条文本最多给这么久（慢 CPU 上一条要好几秒）
 
 let lastError = null;
 let lastErrorLogged = 0;
@@ -48,8 +54,8 @@ function cosine(a, b) {
   return dot;
 }
 
-async function embed(texts) {
-  const { url, model, key, timeout } = config();
+async function embed(texts, timeout = config().timeout) {
+  const { url, model, key } = config();
   const openai = /\/v1$/.test(url);
   const res = await fetch(openai ? `${url}/embeddings` : `${url}/api/embed`, {
     method: 'POST',
@@ -90,7 +96,8 @@ function ensureVectors(userId, docs) {
     // 留下一个永远不清除的已完成标记，后来的调用会无限地「等它结束再查一遍」
     await null;
     const have = vectorsFor(docs);
-    const missing = docs.filter((d) => !have.has(d.skill.id));
+    // 新技能优先：刚推送的技能要先有向量，才能参与查重
+    const missing = docs.filter((d) => !have.has(d.skill.id)).sort((a, b) => b.skill.id - a.skill.id);
     const upsert = db.prepare(`
       INSERT INTO skill_embeddings (skill_id, text_hash, vector, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(skill_id) DO UPDATE SET text_hash = excluded.text_hash, vector = excluded.vector, updated_at = CURRENT_TIMESTAMP
@@ -98,7 +105,7 @@ function ensureVectors(userId, docs) {
     try {
       for (let i = 0; i < missing.length; i += BATCH) {
         const batch = missing.slice(i, i + BATCH);
-        const vectors = await embed(batch.map((d) => d.embedText));
+        const vectors = await embed(batch.map((d) => d.embedText), Math.max(config().timeout, PER_TEXT_MS * batch.length));
         db.transaction(() => batch.forEach((d, j) => {
           // 算向量期间技能可能被删了：外键约束会拒绝写入，跳过即可
           try { upsert.run(d.skill.id, textHash(d.embedText), toBlob(vectors[j])); } catch { /* 已删除 */ }
@@ -134,7 +141,7 @@ async function embedQuery(text) {
   const key = textHash(text);
   if (queryCache.has(key)) return queryCache.get(key);
   try {
-    const [vec] = await embed([text]);
+    const [vec] = await embed([text], config().queryTimeout);
     queryCache.set(key, vec);
     if (queryCache.size > 200) queryCache.delete(queryCache.keys().next().value);
     return vec;
