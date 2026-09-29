@@ -12,6 +12,7 @@ NODEPS=__NODEPS__
 REVISION=__REVISION__
 VERSION=__VERSION__
 REASON=__REASON__
+PIN=__PIN__
 FOOTER_MARK=__FOOTER_MARK__
 FOOTER=__FOOTER__
 DEPS=(__DEPS__)
@@ -69,12 +70,13 @@ trap 'rm -rf "$STAGING" "$TMP_ARCHIVE"' EXIT
 # 归档顶层带 <slug>/ 目录，--strip-components=1 去掉
 # reason / terminal 让服务端记下「装到了哪台机器上」（安装、依赖、更新分开统计）
 if curl -fsSL -G ${AUTH[@]+"${AUTH[@]}"} --data-urlencode "pending=$PENDING" --data-urlencode "reason=$REASON" \
-  --data-urlencode "terminal=$TERMINAL" "$BASE_URL/s/$SKILL_NAME/archive.tar.gz" -o "$TMP_ARCHIVE"; then
+  --data-urlencode "terminal=$TERMINAL" --data-urlencode "pin=$PIN" "$BASE_URL/s/$SKILL_NAME/archive.tar.gz" -o "$TMP_ARCHIVE"; then
   tar -xzf "$TMP_ARCHIVE" -C "$STAGING" --strip-components=1
   echo "✓ 完整技能包下载成功"
 else
   echo "⚠️  完整技能包下载失败，改为只拉取 SKILL.md" >&2
-  curl -fsSL ${AUTH[@]+"${AUTH[@]}"} "$BASE_URL/s/$SKILL_NAME.md?raw=1&pending=$PENDING" -o "$STAGING/SKILL.md"
+  curl -fsSL -G ${AUTH[@]+"${AUTH[@]}"} --data-urlencode "raw=1" --data-urlencode "pending=$PENDING" --data-urlencode "pin=$PIN" \
+    "$BASE_URL/s/$SKILL_NAME.md" -o "$STAGING/SKILL.md"
 fi
 rm -f "$STAGING/.ash"
 if [ -d "$STAGING/scripts" ]; then
@@ -111,6 +113,9 @@ mv "$STAGING" "$INSTALL_DIR"
   printf 'revision=%s\n' "$REVISION"
   printf 'version=%s\n' "$VERSION"
   printf 'pending=%s\n' "$PENDING"
+  printf 'pinned=%s\n' "$PIN"
+  # 引用的技能（ash doctor 据此检查它们是否都在同一目录）
+  printf 'deps=%s\n' "$(IFS=,; echo "${DEPS[*]+"${DEPS[*]}"}")"
   printf 'fingerprint=%s\n' "$(ash_fingerprint "$INSTALL_DIR")"
   printf 'installed_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$INSTALL_DIR/.ash"
@@ -120,14 +125,22 @@ echo "✅ 技能 [$SKILL_NAME] v$VERSION 已安装到 $INSTALL_DIR"
 # 依赖：装到同一目录；已安装的不动；ASH_DEPS_SEEN 防止循环依赖
 if [ "$NODEPS" != "1" ] && [ "${#DEPS[@]}" -gt 0 ]; then
   export ASH_DEPS_SEEN="${ASH_DEPS_SEEN:-},$SKILL_NAME,"
-  for dep in "${DEPS[@]}"; do
+  for spec in "${DEPS[@]}"; do
+    # 依赖可以固定版本：slug@1.2.0
+    dep="${spec%%@*}"; dep_pin=""
+    case "$spec" in *@*) dep_pin="${spec#*@}" ;; esac
     case "$ASH_DEPS_SEEN" in *",$dep,"*) continue ;; esac
     if [ -f "$SKILLS_ROOT/$dep/.ash" ]; then
-      echo "↳ 依赖 $dep 已安装，跳过"
+      have="$(sed -n 's/^version=//p' "$SKILLS_ROOT/$dep/.ash")"
+      if [ -n "$dep_pin" ] && [ "$have" != "$dep_pin" ]; then
+        echo "⚠️  依赖 $dep 已安装 v$have，本技能固定要求 v$dep_pin，没有覆盖（需要时 ash pull $dep@$dep_pin）" >&2
+      else
+        echo "↳ 依赖 $dep 已安装，跳过"
+      fi
       continue
     fi
-    echo "↳ 安装依赖 $dep"
-    if ! dep_script="$(curl -fsS -G ${AUTH[@]+"${AUTH[@]}"} --data-urlencode "reason=dependency" "$BASE_URL/s/$dep/install.sh")" \
+    echo "↳ 安装依赖 $spec"
+    if ! dep_script="$(curl -fsS -G ${AUTH[@]+"${AUTH[@]}"} --data-urlencode "reason=dependency" --data-urlencode "pin=$dep_pin" "$BASE_URL/s/$dep/install.sh")" \
       || ! printf '%s\n' "$dep_script" | ASH_SKILLS_DIR="$SKILLS_ROOT" bash; then
       echo "⚠️  依赖 $dep 安装失败（不存在、未发布或网络错误），请手动处理" >&2
     fi

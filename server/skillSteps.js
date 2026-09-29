@@ -1,10 +1,11 @@
-// 重复的操作：从技能的 shell 代码块里抽出命令，归一化后找「几个技能里都有的同一段命令」。
-// 找的是操作而不是文字：两个技能描述完全不同，却都有 ssh → docker exec → bazel build 这同一串命令，
-// 这正是该提炼成元技能（或改为引用已有元技能）的信号。只看 shell 代码块——命令可以可靠地比对，散文步骤不行。
+// 重复的操作：找「几个技能里都有的同一段操作」。两个技能描述完全不同，却都有 ssh → docker exec → bazel build
+// 这同一串命令、或同一串文字步骤，这正是该提炼成元技能（或改为引用已有元技能）的信号。两种来源：
 //
-// 归一化：去掉提示符与注释、合并续行，引号串 / IP / 路径 / 变量 / 数字换成占位符，保留命令名和参数开关。
-// cd、ls、echo 这类不构成操作的命令不参与比对。
+// 命令：shell 代码块里的命令，归一化后精确比对——去掉提示符与注释、合并续行，引号串 / IP / 路径 / 变量 / 数字
+//       换成占位符，保留命令名和参数开关；cd、ls、echo 这类不构成操作的命令不参与比对。
+// 步骤：编号列表、复选框列表里的文字步骤，切词后按重合度模糊比对（措辞略有不同也算同一步）。
 const matter = require('gray-matter');
+const { tokenize } = require('./tokenize');
 
 const SHELL_LANGS = new Set(['bash', 'sh', 'shell', 'zsh', 'console', 'shell-session']);
 const TRIVIAL = new Set(['cd', 'ls', 'echo', 'pwd', 'export', 'mkdir', 'sleep', 'clear', 'true', 'set', 'source', 'which', 'printf', 'cat', 'exit', 'then', 'fi', 'done', 'do', 'else', 'esac']);
@@ -110,4 +111,97 @@ function sharedRuns(skills) {
   return kept.sort((a, b) => b.skills.length - a.skills.length || b.commands.length - a.commands.length);
 }
 
-module.exports = { extractCommands, normalizeCommand, sharedRuns, MIN_RUN };
+// ——— 文字步骤 ———
+const STEP_MIN_TOKENS = 4;   // 词太少的步骤（「回放」「验证」）太泛，不参与比对
+const STEP_MATCH = 0.5;      // 两步的词元重合度（Jaccard）达到这个值算同一步
+
+function cleanMarkdown(text) {
+  return text.replace(/`([^`]*)`/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\*\*|__|~~/g, '').trim();
+}
+
+// 技能 → [{ raw, tokens }]；标题、代码块处插入边界（tokens 为 null），比对时不跨越
+function extractProseSteps(content) {
+  let body = String(content || '');
+  try { body = matter(body, {}).content; } catch { /* frontmatter 坏了就整段当正文 */ }
+  body = body.replace(/^(`{3,}|~{3,}).*\n[\s\S]*?^\1[^\n]*$/gm, '\n#\n');
+  const steps = [];
+  const boundary = () => { if (steps.length && steps[steps.length - 1].tokens) steps.push({ raw: '', tokens: null }); };
+  for (const line of body.split('\n')) {
+    if (/^\s{0,3}#/.test(line)) { boundary(); continue; }
+    const item = /^\s{0,3}(?:\d+[.)、]|[-*+]\s+\[[ xX]\])\s+(.+)$/.exec(line);
+    if (!item) continue;
+    const raw = cleanMarkdown(item[1]);
+    const tokens = new Set(tokenize(raw));
+    steps.push({ raw, tokens: tokens.size >= STEP_MIN_TOKENS ? tokens : new Set() });
+  }
+  return steps;
+}
+
+function jaccard(a, b) {
+  let shared = 0;
+  for (const t of a) if (b.has(t)) shared += 1;
+  return shared / (a.size + b.size - shared);
+}
+
+// 多个技能之间共有的文字步骤段。skills: [{ id, steps }]，返回形状与 sharedRuns 相同：[{ skills, commands }]
+function sharedProseRuns(skills) {
+  // 倒排索引找候选：只比较至少共享 2 个不太常见词元的两步，免得两两全比
+  const postings = new Map();
+  let total = 0;
+  skills.forEach((skill, si) => skill.steps.forEach((step, i) => {
+    if (!step.tokens || !step.tokens.size) return;
+    total += 1;
+    for (const t of step.tokens) { if (!postings.has(t)) postings.set(t, []); postings.get(t).push([si, i]); }
+  }));
+  const common = Math.max(20, total * 0.05);
+  const matches = new Set();
+  const key = (sa, i, sb, j) => `${sa},${i},${sb},${j}`;
+  skills.forEach((skill, sa) => skill.steps.forEach((step, i) => {
+    if (!step.tokens || !step.tokens.size) return;
+    const counts = new Map();
+    for (const t of step.tokens) {
+      const list = postings.get(t);
+      if (list.length > common) continue;
+      for (const [sb, j] of list) {
+        if (sb <= sa) continue;
+        const k = key(sa, i, sb, j);
+        counts.set(k, (counts.get(k) || 0) + 1);
+      }
+    }
+    for (const [k, n] of counts) {
+      if (n < 2) continue;
+      const [, , sb, j] = k.split(',').map(Number);
+      if (jaccard(step.tokens, skills[sb].steps[j].tokens) >= STEP_MATCH) matches.add(k);
+    }
+  }));
+  // 沿对角线串成连续的段（第 i 步配第 j 步、第 i+1 步配第 j+1 步……）
+  const pairRuns = [];
+  for (const k of matches) {
+    const [sa, i, sb, j] = k.split(',').map(Number);
+    if (matches.has(key(sa, i - 1, sb, j - 1))) continue;
+    let len = 1;
+    while (matches.has(key(sa, i + len, sb, j + len))) len += 1;
+    if (len >= MIN_RUN) pairRuns.push({ sa, sb, from: i, to: i + len, fromB: j, toB: j + len });
+  }
+  // 以每个技能为中心，把与它同一段步骤重合的伙伴并成一组：{a,b,c} 都有这几步
+  const groups = new Map();
+  skills.forEach((skill, center) => {
+    const mine = pairRuns.flatMap((r) => (r.sa === center ? [{ partner: r.sb, from: r.from, to: r.to }]
+      : r.sb === center ? [{ partner: r.sa, from: r.fromB, to: r.toB }] : []));
+    for (const run of mine) {
+      const overlapping = mine.filter((o) => Math.min(o.to, run.to) - Math.max(o.from, run.from) >= MIN_RUN);
+      const ids = [...new Set([skill.id, ...overlapping.map((o) => skills[o.partner].id)])].sort((a, b) => a - b);
+      const from = Math.max(...overlapping.map((o) => o.from));
+      const to = Math.min(...overlapping.map((o) => o.to));
+      const groupKey = ids.join(',');
+      const commands = skill.steps.slice(from, to).map((x) => x.raw);
+      if (!groups.has(groupKey) || groups.get(groupKey).commands.length < commands.length) groups.set(groupKey, { skills: ids, commands });
+    }
+  });
+  const results = [...groups.values()];
+  const kept = results.filter((r) => !results.some((o) => o !== r && o.skills.length > r.skills.length
+    && r.skills.every((id) => o.skills.includes(id)) && o.commands.length >= r.commands.length));
+  return kept.sort((a, b) => b.skills.length - a.skills.length || b.commands.length - a.commands.length);
+}
+
+module.exports = { extractCommands, normalizeCommand, sharedRuns, extractProseSteps, sharedProseRuns, MIN_RUN };

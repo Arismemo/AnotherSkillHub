@@ -4,9 +4,9 @@ const db = require('../db');
 const { saveSkillToDisk, replaceSkillOnDisk, moveSkillOnDisk, parseSkillContent, getSkillFileTree, getSkillFileContent, cleanFolderPath } = require('../storage');
 const { normalizeSkillMeta, stripInstallFooter } = require('../skillMeta');
 const { buildSkillGraph } = require('../skillGraph');
-const { rankSkills, similarSkills } = require('../skillIndex');
+const { rankSkillsSemantic, similarSkills, ensureSemantic } = require('../skillIndex');
 const { usageSummary, libraryHealth } = require('../usage');
-const { entryFor, lintSkill, lintFor, sharedStepsOf, isLocal, splitBody } = require('../skillRefs');
+const { entryFor, lintSkill, lintFor, sharedStepsOf, isLocal, splitBody, pinAvailable } = require('../skillRefs');
 const { parseJson, snapshotSkillVersion, approveSkill, rejectSkill, warningsFor } = require('../review');
 
 // 「需关注」的排序：先修坏的（常失败、引用失效），再合并重复的，再整理结构，最后清理不用的
@@ -34,7 +34,7 @@ function relations(user, skill) {
     if (!isLocal(ref, user.username)) status = 'foreign';
     else if (!target) status = 'missing';
     else if (target.status === 'pending') status = 'pending';
-    else if (ref.pin && target.version && ref.pin !== target.version) status = 'pin-mismatch';
+    else if (ref.pin && target.version && ref.pin !== target.version) status = pinAvailable(analysis, ref) ? 'pinned-old' : 'pin-missing';
     return { ...ref, status, ...(target ? { id: target.id, name: target.name, version: target.version, meta: target.meta } : {}) };
   });
   const out = {
@@ -45,7 +45,7 @@ function relations(user, skill) {
       dependents: (analysis.dependents.get(skill.slug) || []).map((slug) => brief(analysis.bySlug.get(slug))),
     },
     lint: lintSkill(analysis, entry, { username: user.username }),
-    shared_steps: sharedStepsOf(analysis, entry).map(({ others, commands }) => ({ skills: others.map(brief), commands })),
+    shared_steps: sharedStepsOf(analysis, entry).map(({ others, commands, kind }) => ({ skills: others.map(brief), commands, kind })),
   };
   if (skill.pending_content != null) {
     out.pending_lint = lintFor(user.id, skill, { username: user.username, content: skill.pending_content });
@@ -97,7 +97,7 @@ router.get('/tags', (req, res) => {
 });
 
 // 获取技能列表
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { folder, tag, search, star, format } = req.query;
     const asText = format === 'text';
@@ -159,7 +159,7 @@ router.get('/', (req, res) => {
       const scoped = !['starred', 'pending', 'trash', 'attention'].includes(folder);
       if (!skills.length && search && scoped) {
         const where = (s) => (!folder || folder === 'all' || s.folder_path === folder) && (!tag || s.tags.includes(tag));
-        const ranked = rankSkills(req.user.id, String(search), { limit: 5, where });
+        const ranked = await rankSkillsSemantic(req.user.id, String(search), { limit: 5, where });
         const fallback = ranked.length
           ? [`没有同时命中「${search}」全部关键词的技能。按相关度的候选（ash info <slug> 判断是否适用）：`, ...ranked.map((r) => line(r.skill))]
           : [`没有找到匹配「${search}」的技能。可以用一两句话描述任务再试：ash suggest "<任务描述>"`];
@@ -210,9 +210,10 @@ router.get('/:id', (req, res) => {
     // 使用情况与相似技能：审核时判断「有没有必要单独成为一个技能」、整理时发现重复，都靠这两项。
     // 要在下面把 files / tags 解析成数组之前算——修订号按库里的原始 JSON 计算
     if (!skill.is_deleted) {
+      ensureSemantic(req.user.id);
       skill.usage = usageSummary(skill);
       skill.similar = similarSkills(req.user.id, skill, { limit: 5 }).map((m) => ({
-        ...m.skill, similarity: Number(m.similarity.toFixed(2)), duplicate: m.high,
+        ...m.skill, similarity: Number(m.similarity.toFixed(2)), duplicate: m.high, semantic: m.semantic,
       }));
       Object.assign(skill, relations(req.user, skill));
     }

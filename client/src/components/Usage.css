@@ -40,3 +40,4 @@
 .shared-steps { display: grid; gap: .55rem; margin: 0; padding: 0; list-style: none; }
 .shared-steps-with { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; color: var(--text-muted); font-size: var(--fs-xs); }
 .shared-steps pre { margin: .3rem 0 0; padding: .45rem .6rem; overflow-x: auto; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface-code); color: var(--text-body); font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.5; }
+.shared-steps-prose { margin: .3rem 0 0; padding: .45rem .6rem .45rem 1.8rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); color: var(--text-body); font-size: var(--fs-xs); line-height: 1.55; }

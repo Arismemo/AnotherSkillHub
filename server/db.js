@@ -95,6 +95,17 @@ if (db.pragma('user_version', { simple: true }) < 1) {
 try {
   const cols = db.prepare('PRAGMA table_info(skill_versions)').all().map((c) => c.name);
   if (!cols.includes('label')) db.exec('ALTER TABLE skill_versions ADD COLUMN label TEXT DEFAULT NULL');
+  // 快照对应的版本号：固定版本的引用（slug@1.2.0）据此从历史里取出那一版来安装
+  if (!cols.includes('version')) {
+    db.exec('ALTER TABLE skill_versions ADD COLUMN version TEXT DEFAULT NULL');
+    const matter = require('gray-matter');
+    const update = db.prepare('UPDATE skill_versions SET version = ? WHERE id = ?');
+    for (const row of db.prepare('SELECT id, content FROM skill_versions').all()) {
+      let version = null;
+      try { version = matter(row.content || '', {}).data.version; } catch { /* 坏掉的 frontmatter 没有版本号 */ }
+      if (version !== undefined && version !== null && String(version).trim()) update.run(String(version).trim(), row.id);
+    }
+  }
 } catch (e) { console.error('migration:', e.message); }
 
 // 审核流：status=pending 的技能只对人可见，Agent 默认拉不到；
@@ -247,6 +258,15 @@ db.exec(`
     FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_skill_events_skill ON skill_events(skill_id, created_at);
+
+  -- 可选语义层的向量缓存（见 embeddings.js）：text_hash = 模型 + 技能意图文本的哈希，文本没变就不重算
+  CREATE TABLE IF NOT EXISTS skill_embeddings (
+    skill_id INTEGER PRIMARY KEY,
+    text_hash TEXT NOT NULL,
+    vector BLOB NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+  );
 
   CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);
   -- 开始记录使用的时间：在此之前没有数据，「从未使用 / 长期未用」只能从这里起算

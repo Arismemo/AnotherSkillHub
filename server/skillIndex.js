@@ -5,85 +5,13 @@
 const matter = require('gray-matter');
 const db = require('./db');
 const { localizedMeta, languagesOf } = require('./skillMeta');
+const { tokenize, queryTerms, CJK } = require('./tokenize');
+const embeddings = require('./embeddings');
 
 const FIELD_WEIGHTS = { name: 3, description: 3, tags: 2, headings: 1.5, body: 0.6 };
 const INTENT_FIELDS = ['name', 'description', 'tags', 'headings'];
 const K1 = 1.2;
 const B = 0.75;
-
-// 查询里常见、却不代表任务内容的词。中文以二元组形式过滤
-const STOP_EN = new Set(('a an and are as at be by can do does for from how i in into is it me my of on or our please should so that '
-  + 'the this to use using want we what when where which with you your need help make get let some any all just').split(' '));
-const STOP_ZH = new Set(['帮我', '一下', '如何', '怎么', '怎样', '我们', '你们', '这个', '那个', '需要', '可以', '进行', '一个', '然后',
-  '现在', '请你', '能否', '是否', '什么', '为什么', '时候', '的时', '我想', '想要', '看看', '使用', '用于', '这些', '里的', '的一', '一份']);
-
-// 中英对照：技能库常是中英混写，Agent 用中文描述任务时要能找到英文写的技能，反之亦然。
-// 只收开发与运维里的高频概念；扩展出来的词按 EXPANSION_WEIGHT 计分，只加分不抬高满分线
-const GLOSSARY = {
-  测试: 'test', 调试: 'debug', 根因: 'root cause debug', 排查: 'troubleshoot debug', 报错: 'error', 错误: 'error', 故障: 'failure incident',
-  部署: 'deploy', 上线: 'deploy release', 发布: 'release publish', 回滚: 'rollback', 构建: 'build', 编译: 'compile build',
-  浏览器: 'browser', 网页: 'web page', 页面: 'page', 网站: 'website site', 登录: 'login', 填表: 'form', 表单: 'form', 截图: 'screenshot',
-  文档: 'doc document', 飞书: 'lark feishu', 代码库: 'codebase repo', 仓库: 'repo repository', 代码: 'code',
-  审查: 'review', 评审: 'review', 审核: 'review', 重构: 'refactor', 性能: 'performance', 优化: 'optimize',
-  设计: 'design', 界面: 'ui interface', 前端: 'frontend', 后端: 'backend', 数据库: 'database', 服务器: 'server',
-  容器: 'docker container', 日志: 'log', 监控: 'monitor', 图表: 'chart', 可视化: 'visualization dataviz',
-  幻灯片: 'slides presentation', 演示: 'presentation slides', 表格: 'spreadsheet sheet', 翻译: 'translate', 写作: 'writing',
-  简洁: 'concise', 总结: 'summary summarize', 摘要: 'summary', 新人: 'onboard onboarding', 新同事: 'onboard onboarding',
-  上手: 'onboard', 入门: 'onboard getting started', 介绍: 'overview explain', 解释: 'explain', 计划: 'plan', 规划: 'plan',
-  需求: 'requirement spec', 提交: 'commit', 合并: 'merge', 分支: 'branch', 安全: 'security', 漏洞: 'vulnerability security',
-  依赖: 'dependency', 升级: 'upgrade', 迁移: 'migrate migration', 自动化: 'automation', 定时: 'schedule cron',
-  图片: 'image', 图像: 'image', 视频: 'video', 生成: 'generate', 技能: 'skill', 验证: 'verify verification', 验收: 'verify acceptance',
-  感知: 'perception', 检测: 'detection detect', 仿真: 'simulation sim', 回放: 'replay', 进度: 'progress status',
-};
-const EXPANSION_WEIGHT = 0.6;
-
-const CJK = /[㐀-鿿豈-﫿]/;
-const RUN = /[㐀-鿿豈-﫿]+|[a-z0-9]+/g;
-
-function stem(word) {
-  if (word.length > 4 && word.endsWith('ies')) return `${word.slice(0, -3)}y`;
-  if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1);
-  return word;
-}
-
-// 切出词元序列；withSpans 时同时给出每个词元在原串中的位置（用于把命中的二元组拼回可读的词）
-function tokenize(text, { withSpans = false } = {}) {
-  const tokens = [];
-  const spans = [];
-  const source = String(text || '').toLowerCase();
-  const push = (token, start, end) => { tokens.push(token); if (withSpans) spans.push({ token, start, end }); };
-  for (const match of source.matchAll(RUN)) {
-    const run = match[0];
-    if (CJK.test(run[0])) {
-      if (run.length === 1) { push(run, match.index, match.index + 1); continue; }
-      for (let i = 0; i < run.length - 1; i += 1) {
-        const bigram = run.slice(i, i + 2);
-        if (!STOP_ZH.has(bigram)) push(bigram, match.index + i, match.index + i + 2);
-      }
-    } else if (run.length >= 2 && !STOP_EN.has(run)) {
-      push(stem(run), match.index, match.index + run.length);
-    }
-  }
-  return withSpans ? { tokens, spans, source } : tokens;
-}
-
-// 反向对照（英文词 → 中文词元），启动时算一次
-const GLOSSARY_EN = new Map();
-for (const [zh, en] of Object.entries(GLOSSARY)) {
-  for (const token of tokenize(en)) GLOSSARY_EN.set(token, [...(GLOSSARY_EN.get(token) || []), ...tokenize(zh)]);
-}
-
-// 查询 → { 词元: 权重 }：原词 1，对照扩展出的词 EXPANSION_WEIGHT
-function queryTerms(query) {
-  const terms = new Map();
-  const original = tokenize(query);
-  for (const token of original) terms.set(token, 1);
-  const expand = (token) => { if (!terms.has(token)) terms.set(token, EXPANSION_WEIGHT); };
-  const lower = String(query || '').toLowerCase();
-  for (const [zh, en] of Object.entries(GLOSSARY)) if (lower.includes(zh)) tokenize(en).forEach(expand);
-  for (const token of original) (GLOSSARY_EN.get(token) || []).forEach(expand);
-  return terms;
-}
 
 function stripFences(markdown) {
   return markdown.replace(/^(`{3,}|~{3,}).*\n[\s\S]*?^\1[^\n]*$/gm, (block) => block.replace(/^(`{3,}|~{3,}).*$/gm, ''));
@@ -122,7 +50,9 @@ function buildIndex(skills) {
   const docs = skills.map((skill) => {
     const text = skillFields(skill);
     const fields = Object.fromEntries(Object.keys(FIELD_WEIGHTS).map((f) => [f, termCounts(text[f])]));
-    return { skill, fields };
+    // 给语义层的文本：名称、描述（含双语描述）、前几个标题——讲的是「这个技能做什么」，不含正文细节
+    const embedText = [text.name, text.description, text.headings.split('\n').slice(0, 12).join(' / ')].join('\n').slice(0, 2000);
+    return { skill, fields, embedText };
   });
   const n = docs.length || 1;
   const avgLength = Object.fromEntries(Object.keys(FIELD_WEIGHTS).map((f) => [f, docs.reduce((sum, d) => sum + d.fields[f].length, 0) / n || 1]));
@@ -268,9 +198,29 @@ function rankSkills(userId, query, options) {
 
 // 默认只看已发布技能（Agent 拉得到的）
 // where(skill) 可进一步限定范围（例如调用方已经按目录、标签筛选过）
-function rankInIndex(index, query, { limit = 5, includePending = false, excludeIds = [], minRelevance = MIN_RELEVANCE, where = null } = {}) {
+// ——— 语义分数换算到文本比对的同一刻度 ———
+// 默认值用 bge-m3 在 139 个真实技能上校准：技能对之间，主语言不同的无关配对 99% 在 0.62 以下，真正的跨语言重复在 0.75 以上；
+// 任务描述对技能，无关查询（「今天天气怎么样」）最高约 0.51，真正命中在 0.6~0.75。换模型时分布不同，用环境变量覆盖：
+//   ASH_EMBED_PAIR_THRESHOLDS="0.68,0.74"   相近、疑似重复
+//   ASH_EMBED_QUERY_THRESHOLDS="0.58,0.68"  可能相关、相关
+function thresholds(name, fallback) {
+  const values = String(process.env[name] || '').split(',').map(Number).filter((x) => x > 0 && x < 1);
+  return values.length === 2 && values[0] < values[1] ? values : fallback;
+}
+function piecewise(x, [low, high], [lowScore, highScore]) {
+  if (x >= high) return highScore + (x - high) / (1 - high) * (1 - highScore);
+  if (x >= low) return lowScore + (x - low) / (high - low) * (highScore - lowScore);
+  const floor = low - (high - low);
+  return x > floor ? (x - floor) / (low - floor) * lowScore : 0;
+}
+const semanticPair = (cos) => piecewise(cos, thresholds('ASH_EMBED_PAIR_THRESHOLDS', [0.68, 0.74]), [SIMILAR_MIN, SIMILAR_HIGH]);
+const semanticQuery = (cos) => piecewise(cos, thresholds('ASH_EMBED_QUERY_THRESHOLDS', [0.58, 0.68]), [MIN_RELEVANCE, STRONG_RELEVANCE]);
+
+// 按任务描述排序。queryVector / vectors 来自语义层（可选）：相关度取文本、语义两者较高的——
+// 文本命中的照旧，中文描述找英文写的技能这类文本比对看不见的，靠语义补上
+function rankInIndex(index, query, { limit = 5, includePending = false, excludeIds = [], minRelevance = MIN_RELEVANCE, where = null, queryVector = null, vectors = null } = {}) {
   const terms = queryTerms(query);
-  if (!terms.size || !index.docs.length) return [];
+  if ((!terms.size && !queryVector) || !index.docs.length) return [];
   let ceiling = 0;
   for (const [token, weight] of terms) if (weight === 1) ceiling += index.idf(token) * FULL_MATCH;
   ceiling = ceiling || 1;
@@ -281,19 +231,41 @@ function rankInIndex(index, query, { limit = 5, includePending = false, excludeI
     if (!includePending && doc.skill.status === 'pending') continue;
     if (where && !where({ ...doc.skill, tags: parseTags(doc.skill.tags) })) continue;
     const { score, matched } = scoreDoc(index, doc, terms);
-    if (score > 0) scored.push({ doc, score, matched, relevance: Math.min(1, score / ceiling) });
+    const lexical = score / ceiling;
+    const vector = queryVector && vectors?.get(doc.skill.id);
+    const semantic = vector ? semanticQuery(embeddings.cosine(queryVector, vector)) : 0;
+    const combined = Math.max(lexical, semantic);
+    if (combined > 0) scored.push({ doc, score, matched, combined, semantic: semantic > lexical });
   }
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort((a, b) => b.combined - a.combined);
   const top = scored[0];
-  if (!top || top.relevance < minRelevance) return [];
+  if (!top || top.combined < minRelevance) return [];
   return scored
-    .filter((r) => r.relevance >= minRelevance && r.score >= top.score * RELATIVE_CUTOFF)
+    .filter((r) => r.combined >= minRelevance && r.combined >= top.combined * RELATIVE_CUTOFF)
     .slice(0, limit)
     .map((r) => ({
-      skill: publicSkill(r.doc.skill), score: r.score, relevance: r.relevance,
-      strong: r.relevance >= STRONG_RELEVANCE, matched: matchedPhrases(query, r.matched),
+      skill: publicSkill(r.doc.skill), score: r.score, relevance: Math.min(1, r.combined),
+      strong: r.combined >= STRONG_RELEVANCE, matched: matchedPhrases(query, r.matched), semantic: r.semantic,
     }));
 }
+
+// 带语义层的按任务排序：向量还没算好的技能先按文本比对，同时在后台补齐
+async function rankSkillsSemantic(userId, query, options = {}) {
+  const index = indexFor(userId);
+  if (!embeddings.enabled()) return rankInIndex(index, query, options);
+  const vectors = embeddings.vectorsFor(index.docs);
+  if (vectors.size < index.docs.length) ensureSemantic(userId);
+  const queryVector = vectors.size ? await embeddings.embedQuery(query) : null;
+  return rankInIndex(index, query, { ...options, queryVector, vectors });
+}
+
+// 在后台补齐这个库缺的向量（不等结果）
+function ensureSemantic(userId) {
+  if (!embeddings.enabled()) return;
+  embeddings.ensureVectors(userId, indexFor(userId).docs).catch(() => {});
+}
+// 等向量补齐，最多等 ms 毫秒
+const ensureSemanticWithin = (userId, ms) => embeddings.ensureVectorsWithin(userId, indexFor(userId).docs, ms);
 
 // 相似度：两个技能意图字段 TF-IDF 向量的余弦（0~1）。
 // SIMILAR_MIN 以上算「相近」，SIMILAR_HIGH 以上提示「疑似重复」（用 139 个真实技能校准：
@@ -301,19 +273,30 @@ function rankInIndex(index, query, { limit = 5, includePending = false, excludeI
 const SIMILAR_MIN = 0.25;
 const SIMILAR_HIGH = 0.4;
 
-function similarSkills(userId, target, options) {
-  return similarInIndex(indexFor(userId), target, options);
+function similarSkills(userId, target, options = {}) {
+  const index = indexFor(userId);
+  return similarInIndex(index, target, { vectors: embeddings.vectorsFor(index.docs), ...options });
 }
 
-function similarInIndex(index, target, { limit = 3, minSimilarity = SIMILAR_MIN, includePending = true } = {}) {
+// 两个技能的相似度：文本比对；主语言不同、且都有向量时，再用语义分数补位（同语言的同系列技能语义上很像却不是重复，不用语义）
+function pairSimilarity(a, b, vectors) {
+  const lexical = intentSimilarity(a, b);
+  if (!vectors || a.primaryLanguage === b.primaryLanguage) return { similarity: lexical, semantic: false };
+  const va = vectors.get(a.skill.id);
+  const vb = vectors.get(b.skill.id);
+  const semantic = va && vb ? semanticPair(embeddings.cosine(va, vb)) : 0;
+  return semantic > lexical ? { similarity: Math.min(1, semantic), semantic: true } : { similarity: lexical, semantic: false };
+}
+
+function similarInIndex(index, target, { limit = 3, minSimilarity = SIMILAR_MIN, includePending = true, vectors = null } = {}) {
   const self = index.docs.find((d) => d.skill.id === target.id);
   if (!self) return [];
   const results = [];
   for (const doc of index.docs) {
     if (doc === self || doc.skill.slug === target.slug) continue;
     if (!includePending && doc.skill.status === 'pending') continue;
-    const similarity = intentSimilarity(self, doc);
-    if (similarity >= minSimilarity) results.push({ skill: publicSkill(doc.skill), similarity, high: similarity >= SIMILAR_HIGH });
+    const { similarity, semantic } = pairSimilarity(self, doc, vectors);
+    if (similarity >= minSimilarity) results.push({ skill: publicSkill(doc.skill), similarity, high: similarity >= SIMILAR_HIGH, semantic });
   }
   return results.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
 }
@@ -321,7 +304,9 @@ function similarInIndex(index, target, { limit = 3, minSimilarity = SIMILAR_MIN,
 // 已发布技能里「疑似重复」的配对：Map(skillId → 最像的那个 { skill, similarity })。
 // 列表、侧栏计数每次都要用，挂在索引上缓存，库变化、索引重建时一并失效
 function duplicateMap(userId) {
-  return libraryCache(userId, 'duplicates', (skills, index) => {
+  const vectors = embeddings.vectorsFor(indexFor(userId).docs);
+  // 向量是后台逐步补齐的：补齐前后结果不同，缓存键带上向量个数
+  return libraryCache(userId, `duplicates:${vectors.size}`, (skills, index) => {
     const docs = index.docs.filter((d) => d.skill.status !== 'pending');
     const best = new Map();
     const keep = (a, b, similarity) => {
@@ -329,7 +314,7 @@ function duplicateMap(userId) {
     };
     for (let i = 0; i < docs.length; i += 1) {
       for (let j = i + 1; j < docs.length; j += 1) {
-        const similarity = intentSimilarity(docs[i], docs[j]);
+        const { similarity } = pairSimilarity(docs[i], docs[j], vectors);
         if (similarity >= SIMILAR_HIGH) { keep(docs[i], docs[j], similarity); keep(docs[j], docs[i], similarity); }
       }
     }
@@ -342,4 +327,7 @@ function publicSkill(skill) {
   return { id, slug, name, description, folder_path, status };
 }
 
-module.exports = { tokenize, queryTerms, buildIndex, rankSkills, rankInIndex, similarSkills, similarInIndex, duplicateMap, libraryCache, matchedPhrases };
+module.exports = {
+  tokenize, queryTerms, buildIndex, rankSkills, rankInIndex, rankSkillsSemantic, similarSkills, similarInIndex, duplicateMap,
+  libraryCache, matchedPhrases, ensureSemantic, ensureSemanticWithin, semanticPair, semanticQuery,
+};

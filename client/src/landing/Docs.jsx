@@ -218,7 +218,7 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
               ['依赖', <><C>depends_on</C>、<C>dependencies</C>、<C>requires</C> 或 <C>metadata.depends_on</C>（metadata 里写成逗号分隔的字符串）</>],
             ]} />
             <h3>为什么要双语描述</h3>
-            <p>技能库常是中英混写的。只有一种语言的描述时，用另一种语言描述的任务找不到它，内容相同、语言不同的两个技能也查不出重复。补一句另一种语言的 description 就够了：检索和查重都会用上它，以后网页做双语界面也直接用它。正文不用写两份——两份正文要同步维护、迟早不一致，而读正文的 Agent 中英文都懂。</p>
+            <p>技能库常是中英混写的。只有一种语言的描述时，用另一种语言描述的任务找不到它，内容相同、语言不同的两个技能也查不出重复。补一句另一种语言的 description 就够了：检索和查重都会用上它，以后网页做双语界面也直接用它。给已有技能补：<C>ash lint --only bilingual</C> 列出缺的；<strong>只改双语字段的更新直接发布，不用审核</strong>（Agent 框架不读这些字段，不影响 Agent 的行为）。配置了语义层时，没有双语描述的技能也能跨语言查重。正文不用写两份——两份正文要同步维护、迟早不一致，而读正文的 Agent 中英文都懂。</p>
             <h3>附属文件限制</h3>
             <ul>
               <li>只收文本类文件（.md .sh .py .js .ts .json .yaml .toml .sql .csv .svg 等）；二进制、压缩包、密钥文件（.pem .key .env）会被跳过。服务端可用 <C>ASH_ALLOWED_EXTS</C> 调整白名单。</li>
@@ -243,7 +243,7 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
               [<C>ash info &lt;slug&gt;</C>, '描述、依赖（含缺失的依赖）、使用情况与健康信号、文件清单、版本、修订号和安装命令'],
               [<C>ash show &lt;slug&gt; [--version ID] [--pending]</C>, '直接输出 SKILL.md，不安装'],
               [<C>ash versions &lt;slug&gt;</C>, '历史版本列表'],
-              [<C>ash pull &lt;slug&gt; [选项]</C>, <>安装技能及其依赖。选项：<C>--agent claude|codex|hermes|dsh</C>、<C>--dir PATH</C>、<C>--pending</C>、<C>--force</C>、<C>--no-deps</C></>],
+              [<C>ash pull &lt;slug&gt;[@版本] [选项]</C>, <>安装技能及其依赖。选项：<C>--agent claude|codex|hermes|dsh|all</C>、<C>--dir PATH</C>、<C>--pending</C>、<C>--force</C>、<C>--no-deps</C>；<C>@版本</C> 安装历史里的那一版并固定</>],
               [<C>ash pull bundle:&lt;标识或名称&gt;</C>, '安装整个技能组合'],
               [<C>ash pull --all [--dir PATH] [--force]</C>, '更新所有过期的已装技能（本地改过的跳过，除非 --force）'],
               [<><C>ash installed</C> / <C>ash outdated</C></>, '本机已装技能及状态 / 只列需要处理的'],
@@ -253,7 +253,8 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
               [<C>ash mine</C>, '本机推送过的技能及审核结果'],
               [<C>ash withdraw &lt;slug&gt;</C>, '撤回自己仍在待审核的推送'],
               [<C>ash feedback &lt;slug&gt; ok|fail ["说明"] [--dir PATH]</C>, '用完技能后回报结果，自动对应本机已装的版本'],
-              [<C>ash lint [slug] [--json]</C>, '技能检查：双语描述、引用写法、元技能契约、与其他技能相同的步骤；不带 slug 列出全库有问题的技能'],
+              [<C>ash lint [slug] [--only CODE] [--json]</C>, <>技能检查：双语描述、引用、元技能契约、相同的步骤、能否被调用；不带 slug 列出全库有问题的技能；<C>--only bilingual</C> 只看缺双语描述的</>],
+              [<C>ash doctor [--fix] [--dir PATH]</C>, '检查本机各 Agent 能不能用上已装的技能：引用的技能在不在旁边、目录有没有 Agent 加载；--fix 自动补装'],
               [<C>ash guide</C>, '输出 Agent 使用指南'],
               [<C>ash open</C>, '在浏览器打开应用'],
               [<C>ash update</C>, '更新 ash 自身'],
@@ -263,6 +264,7 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
               [<C>ASH_SERVER_URL</C>, '服务地址（默认是安装时的地址）'],
               [<C>ASH_TOKEN</C>, <>API token，优先于 <C>~/.ash/token</C></>],
               [<C>ASH_SKILLS_DIR</C>, '默认安装目录（未设置时在 Claude Code 里默认 ~/.claude/skills）'],
+              [<C>ASH_AGENT</C>, <>未指定 <C>--agent</C> / <C>--dir</C> / <C>ASH_SKILLS_DIR</C> 时装到哪个 Agent：claude、codex、hermes、dsh 或 all（每个 Agent 都装）</>],
               [<C>ASH_TERMINAL</C>, '推送时记录的来源名，默认是主机名；ash mine / withdraw 按它识别「本机的推送」'],
               [<C>ASH_BIN_DIR</C>, 'ash 自身的安装位置'],
               [<C>ASH_FEEDBACK_HINT</C>, <>设为 <C>0</C> 时安装不在 SKILL.md 末尾附加反馈提示</>],
@@ -358,14 +360,17 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
             <Table head={['写法', '含义']} rows={[
               [<C>slug</C>, '本库里的技能'],
               [<C>@账号/slug</C>, '指定账号的技能。为团队库、技能广场预留，目前只能指向自己的账号，指向别人会提示'],
-              [<C>slug@1.2.0</C>, '固定版本。库里的版本变了会在检查里提示确认（安装的仍是当前版本）'],
+              [<C>slug@1.2.0</C>, <>固定版本：<C>ash pull</C> 从历史里装那一版，<C>ash pull --all</C> 不会升级它。版本号来自 frontmatter 的 <C>version</C>，改了内容要记得升版本号</>],
             ]} />
             <h3>本地 Agent 怎么找到被引用的技能</h3>
-            <p>各家 Agent（Claude Code、Codex 等）的技能格式都没有「依赖」字段：它们看到的只是技能的名称、描述和正文。所以引用要靠三件事落地：</p>
+            <p>各家 Agent（Claude Code、Codex 等）的技能格式都没有「依赖」字段：它们看到的只是技能的名称、描述和正文，也只从各自的目录加载技能。所以引用要靠这几件事落地：</p>
             <ul>
               <li><strong>装在一起</strong>：<C>ash pull</C> 把 <C>depends_on</C> 里的技能装在同一个目录下，<C>../&lt;slug&gt;/SKILL.md</C> 一定对得上。</li>
               <li><strong>告诉它在哪</strong>：已装的 <C>SKILL.md</C> 末尾会列出引用的技能及其相对路径，任何能读文件的 Agent 都能顺着找到（推送回库时这段会自动去掉）。</li>
-              <li><strong>装对位置</strong>：Claude Code 只从 <C>~/.claude/skills</C> 和项目的 <C>.claude/skills</C> 加载技能。在 Claude Code 里运行 <C>ash pull</C> 时默认就装到 <C>~/.claude/skills</C>，技能和它引用的技能都能按名字直接调用；其他 Agent 用 <C>--agent</C> 或 <C>ASH_SKILLS_DIR</C> 指定。</li>
+              <li><strong>装对位置</strong>：Claude Code 只从 <C>~/.claude/skills</C> 和项目的 <C>.claude/skills</C> 加载技能，Codex 从 <C>~/.agents/skills</C>，Hermes 从 <C>~/.hermes/skills</C>。在 Claude Code 里运行 <C>ash pull</C> 时默认装到 <C>~/.claude/skills</C>；一台机器上同时用几个 Agent 时，<C>ash pull &lt;slug&gt; --agent all</C> 装进每个 Agent 的目录（或设置 <C>ASH_AGENT=all</C>）。</li>
+              <li><strong>告诉 Agent 怎么用</strong>：遇到「用元技能 <C>x</C>」时，Claude Code 直接调用同名技能；其他 Agent 读 <C>../x/SKILL.md</C>；本机没有就 <C>ash pull x</C>。这条规则写在 <a href="/agent.md">/agent.md</a> 里，也写在已装技能末尾的说明里。</li>
+              <li><strong>检查本机</strong>：<C>ash doctor</C> 逐个目录检查引用的技能在不在旁边、装的目录有没有 Agent 加载、被引用的技能能不能被调用；<C>ash doctor --fix</C> 自动补装缺的。</li>
+              <li><strong>让它调用得到</strong>：被引用的技能不要设置 <C>disable-model-invocation: true</C>；<C>name</C> 与 slug 一致、只用小写字母数字和连字符；description 不超过 1024 个字符。<C>ash lint</C> 会检查。</li>
             </ul>
             <h3>元技能</h3>
             <p>元技能是被别的技能在流程中引用的基础动作：调用方只说「要做什么」，元技能负责「怎么做」。已经有 3 个以上技能在重复同一段操作、它与业务无关、输入输出说得清时才值得抽——第 1 次写在原地，第 2 次忍住，第 3 次才抽。写法：</p>
@@ -379,10 +384,11 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
             <p><C>ash lint [slug]</C>、推送结果、网页详情页的「引用关系」和审核条都会给出同一套检查：</p>
             <Table head={['检查', '说明']} rows={[
               ['双语描述', '缺中文或英文描述'],
-              ['引用写法', '写法不对、引用的技能不在库里或还在待审核、正文引用了却没写进 depends_on、用了绝对路径、固定的版本与库里不符'],
+              ['引用写法', '写法不对、引用的技能不在库里或还在待审核、正文引用了却没写进 depends_on、用了绝对路径、固定的版本在历史里不存在'],
+              ['能否被调用', 'frontmatter 解析失败、缺 description 或超过 1024 字符、name 与 slug 不一致或不符合规范、被引用的技能设置了 disable-model-invocation'],
               ['引用链', '超过两层，或引用成环'],
               ['元技能', '缺「## 契约」、缺「## 被谁引用」或与实际不符、调用方少于 2 个'],
-              ['相同的步骤', <>从 shell 代码块里抽出命令、归一化后比对：与元技能有 3 条以上相同命令，提示改为引用；与另外 2 个以上技能相同，提示可以提炼元技能</>],
+              ['相同的步骤', <>两种比对：shell 代码块里的命令归一化后精确比对；编号列表、复选框里的文字步骤按词重合度模糊比对（措辞略有不同也算同一步）。与元技能有 3 条以上相同，提示改为引用；与另外 2 个以上技能相同，提示可以提炼元技能</>],
             ]} />
             <p>其中引用失效、抄了元技能步骤、可提炼元技能、元技能缺契约也会出现在「需关注」视图里。</p>
           </Section>
@@ -471,7 +477,18 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
               [<C>ASH_SEED</C>, <C>1</C>, <><C>0</C> 新账号不带示例技能</>],
               [<C>ASH_ALLOWED_EXTS</C>, '文本类', '附属文件扩展名白名单，逗号分隔'],
               [<C>ASH_TRUST_PROXY</C>, '本机与私网', <>哪些上游可以设置 <C>X-Forwarded-*</C></>],
+              [<C>ASH_EMBED_URL</C>, '不设置', <>可选语义层：Ollama 地址（如 <C>http://127.0.0.1:11434</C>）或以 <C>/v1</C> 结尾的 OpenAI 兼容接口</>],
+              [<C>ASH_EMBED_MODEL</C>, <C>bge-m3</C>, '向量模型（需多语言模型才能跨语言对上）'],
+              [<C>ASH_EMBED_KEY</C>, '不设置', 'OpenAI 兼容接口的 API key'],
+              [<><C>ASH_EMBED_PAIR_THRESHOLDS</C> / <C>ASH_EMBED_QUERY_THRESHOLDS</C></>, <><C>0.68,0.74</C> / <C>0.58,0.68</C></>, '换模型时重新校准：技能之间「相近、疑似重复」、任务描述对技能「可能相关、相关」的余弦阈值'],
             ]} />
+            <h3>语义层（可选）</h3>
+            <p>纯文本比对看不见「中英文写法不同」的同类技能：中文写的技能和英文写的技能没有一个共同的词。配置一个多语言向量模型后，服务端为每个技能的名称、描述和标题算一个向量（存在数据库里，内容不变不重算），用于：</p>
+            <ul>
+              <li><strong>查重</strong>：只对主语言不同的两个技能用语义分数补位。同语言的同系列技能（例如一组飞书技能）语义上很像却不是重复，仍按文本比对。</li>
+              <li><strong>按任务找技能</strong>：相关度取文本、语义两者较高的，中文描述也能找到英文写的技能。</li>
+            </ul>
+            <p>推荐 Ollama + <C>bge-m3</C>（<C>ollama pull bge-m3</C>，约 1.2GB，CPU 即可）。不配置时一切照旧；模型服务不可用时自动退回文本比对。服务端运行在 Docker 里时，Ollama 地址写宿主机地址（如 <C>http://host.docker.internal:11434</C>）。</p>
             <h3>创建账号 / 认领旧数据</h3>
             <CodeBlock>{'npm run user:create -- <用户名> [--admin]\n# Docker：docker exec -it ash npm run user:create -- <用户名> --admin'}</CodeBlock>
             <p>从没有账号体系的旧版本升级时，旧数据会被迁移但不属于任何人（谁都看不到）。先用 <C>ASH_REGISTRATION=closed</C> 部署，再由管理员认领，文件会一并搬到该账号的目录：</p>

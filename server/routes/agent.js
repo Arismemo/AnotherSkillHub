@@ -10,24 +10,34 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const multer = require('multer');
 const db = require('../db');
-const { replaceSkillOnDisk, removeSkillFromDisk, skillDirExists, cleanFolderPath, createSkillArchive, createSkillTarGzArchive, getSkillFileTree, getSkillFileContent } = require('../storage');
-const { normalizeSkillMeta, referencesOf, stripInstallFooter, INSTALL_FOOTER_MARK } = require('../skillMeta');
+const { replaceSkillOnDisk, removeSkillFromDisk, skillDirExists, cleanFolderPath, createSkillArchive, createSkillTarGzArchive, createTarGzFromContent, getSkillFileTree, getSkillFileContent } = require('../storage');
+const { normalizeSkillMeta, referencesOf, onlyLocalizationChanged, stripInstallFooter, INSTALL_FOOTER_MARK } = require('../skillMeta');
 const { libraryAnalysis, lintFor, isLocal } = require('../skillRefs');
 const { findBundle, bundleMembers } = require('../bundleLookup');
 const { scanSkill, hasHighRisk, looksLikeSecret } = require('../security');
-const { rankSkills, similarSkills } = require('../skillIndex');
+const { rankSkillsSemantic, similarSkills, ensureSemanticWithin } = require('../skillIndex');
 const { recordEvent, usageSummary, usageLine, normalizeOutcome } = require('../usage');
-const { reviewRequired, parseJson, snapshotSkillVersion, isVisibleToAgents, skillRevision } = require('../review');
-const { shQuote, getBaseUrl, curlPipeCommand, SCRIPT_TOKEN_PRELUDE } = require('../shell');
+const { reviewRequired, parseJson, snapshotSkillVersion, isVisibleToAgents, skillRevision, resolvePinned } = require('../review');
+const { shQuote, getBaseUrl, curlPipeCommand, SCRIPT_TOKEN_PRELUDE, AGENT_ROOTS_FN } = require('../shell');
 const { render } = require('../templates');
 
 const upload = multer({ limits: { fileSize: 20 * 1024 * 1024 } });
 
-const INSTALL_AGENTS = ['auto', 'hermes', 'codex', 'claude', 'dsh'];
+const INSTALL_AGENTS = ['auto', 'hermes', 'codex', 'claude', 'dsh', 'all'];
 const truthy = (value) => ['1', 'true', 'yes'].includes(String(value || '').toLowerCase());
 const wantsText = (req) => req.query.format === 'text' || req.body?.format === 'text';
 const terminalOf = (req) => String(req.query.terminal || req.body?.terminal || '').trim() || null;
 const EVENT_REASONS = ['update', 'dependency'];
+// 固定版本：?pin=1.2.0（与 ?version=<快照 id> 区分开，后者是 ash show --version 用的历史快照编号）
+const pinOf = (req) => (/^[A-Za-z0-9_.+-]{1,40}$/.test(String(req.query.pin || '')) ? String(req.query.pin) : null);
+
+// 按 ?pin= 取对应版本的内容；找不到时给出可操作的原因
+function pinnedLookup(req, skill) {
+  const pin = pinOf(req);
+  const resolved = resolvePinned(skill, pin);
+  if (!resolved) return { error: [404, `技能 ${skill.slug} 没有 ${pin} 版本（ash versions ${skill.slug} 查看历史；当前是 ${skill.version}）`] };
+  return { resolved, pin };
+}
 const feedbackHint = (slug) => `按本技能完成任务后，请运行 \`ash feedback ${slug} ok\`；没走通则运行 \`ash feedback ${slug} fail "一句话原因"\`。`;
 const LINT_ICON = { warn: '⚠️ ', info: 'ℹ️ ' };
 
@@ -176,6 +186,11 @@ router.get('/:slug', (req, res) => {
       if (!ver) return res.status(404).send(`# 错误\n\n版本 ${req.query.version} 不存在\n`);
       return res.send(ver.content);
     }
+    if (pinOf(req)) {
+      const { resolved, error: pinError } = pinnedLookup(req, skill);
+      if (pinError) return res.status(pinError[0]).send(`# 错误\n\n${pinError[1]}\n`);
+      return res.send(resolved.content);
+    }
     if (truthy(req.query.raw)) return res.send(skill.content);
     recordEvent(skill, req.user.id, 'view', { terminal: terminalOf(req) });
 
@@ -208,21 +223,61 @@ router.get('/:slug', (req, res) => {
 });
 
 // 一键安装脚本：/s/:slug/install.sh
-// 查询参数: agent=auto|hermes|codex|claude|dsh；dir=/path 自定义目录；pending=1 安装待审核技能
+// agent=all：装进本机每个 Agent 各自加载技能的目录。一台机器上常同时跑着 Claude Code、Codex、Hermes，
+// 只装进其中一个目录，其他 Agent 既看不到这个技能、也按名字调用不到它引用的技能。
+// 生成的脚本逐个目录调用单目录安装脚本（依赖同样装在每个目录里，相对链接各自对得上）
+function multiAgentScript(req, skill) {
+  const sub = new URLSearchParams();
+  for (const key of ['pending', 'force', 'nodeps', 'pin', 'reason']) {
+    if (typeof req.query[key] === 'string' && req.query[key]) sub.set(key, req.query[key]);
+  }
+  const query = sub.toString() ? `?${sub}` : '';
+  return [
+    '#!/usr/bin/env bash',
+    '# AnotherSkillHub 多 Agent 安装脚本（由服务端生成）：装进本机每个 Agent 各自加载技能的目录',
+    'set -euo pipefail',
+    `BASE_URL=${shQuote(getBaseUrl(req))}`,
+    SCRIPT_TOKEN_PRELUDE,
+    AGENT_ROOTS_FN,
+    'roots="$(agent_roots)"',
+    `if [ -z "$roots" ]; then echo ${shQuote('没有找到任何 Agent 的目录（~/.claude、~/.agents、~/.codex、~/.hermes、~/.dsh）；请用 --agent 或 --dir 指定')} >&2; exit 1; fi`,
+    'status=0',
+    'while IFS= read -r root; do',
+    '  echo "=== $root"',
+    `  curl -fsSL -H "Authorization: Bearer $ASH_TOKEN" "$BASE_URL"${shQuote(`/s/${skill.slug}/install.sh${query}`)} | ASH_SKILLS_DIR="$root" bash || status=1`,
+    'done <<EOF',
+    '$roots',
+    'EOF',
+    'exit $status',
+    '',
+  ].join('\n');
+}
+
+// 查询参数: agent=auto|hermes|codex|claude|dsh|all；dir=/path 自定义目录；pending=1 安装待审核技能；pin=1.2.0 固定版本
 router.get('/:slug/install.sh', (req, res) => {
   try {
-    const { skill, error } = agentLookup(req);
+    const { skill: current, error } = agentLookup(req);
     if (error) return scriptError(res, error[0], error[1]);
+    if (req.query.agent === 'all' && !req.query.dir) return res.type('text/plain').send(multiAgentScript(req, current));
+    const { resolved, pin, error: pinError } = pinnedLookup(req, current);
+    if (pinError) return scriptError(res, pinError[0], pinError[1]);
+    // 固定版本时，内容、修订号、依赖都按那一版来
+    const skill = { ...current, content: resolved.content, files: resolved.files, version: resolved.version };
     const agent = INSTALL_AGENTS.includes(req.query.agent) ? req.query.agent : 'auto';
     const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
     // 依赖只收本库的合法 slug；不存在/未发布的依赖由脚本安装时提示
-    const deps = [...new Set(localReferences(req, skill).map((r) => r.slug))];
+    const depRefs = localReferences(req, skill);
+    const deps = [...new Set(depRefs.map((r) => r.slug))];
+    // 传给脚本的依赖带上固定版本：slug 或 slug@1.2.0
+    const depSpecs = [...new Set(depRefs.map((r) => (r.pin ? `${r.slug}@${r.pin}` : r.slug)))];
     // 附在 SKILL.md 末尾的一段：引用的技能在本机哪里（本地 Agent 顺着链接就能找到）+ 用完怎么反馈
     const footer = [
       '> 本技能由 AnotherSkillHub 安装。',
-      ...(deps.length ? [truthy(req.query.nodeps)
-        ? `> 引用的技能：${referenceLinks(deps)}。本次安装没有一并装上（--no-deps），需要时 ash pull <slug>，会装在本技能旁边。`
-        : `> 引用的技能（ash pull 把它们装在本技能旁边）：${referenceLinks(deps)}。需要时读对应的 SKILL.md；Claude Code 里也可以按名字直接调用。`] : []),
+      // 用到被引用的技能时怎么找到它：Claude Code 按名字调用；其他 Agent 读相对链接；本机没有就现装（装在本技能旁边）
+      ...(deps.length ? [
+        `> 引用的技能：${referenceLinks(deps)}${truthy(req.query.nodeps) ? '（本次安装用了 --no-deps，没有一并装上）' : '（已一并装在本技能旁边）'}。`,
+        '> 用到时：Claude Code 直接调用同名技能；其他 Agent 读链接里的 SKILL.md；本机没有就运行 `ash pull <slug>`，它会装在本技能旁边。',
+      ] : []),
       `> ${feedbackHint(skill.slug)}`,
     ].join('\n');
     const script = render('install.sh', {
@@ -236,9 +291,10 @@ router.get('/:slug/install.sh', (req, res) => {
       REVISION: shQuote(skillRevision(skill)),
       VERSION: shQuote(skill.version || ''),
       REASON: shQuote(EVENT_REASONS.includes(req.query.reason) ? req.query.reason : 'install'),
+      PIN: shQuote(pin || ''),
       FOOTER_MARK: shQuote(INSTALL_FOOTER_MARK),
       FOOTER: shQuote(footer),
-      DEPS: deps.map(shQuote).join(' '),
+      DEPS: depSpecs.map(shQuote).join(' '),
     });
     res.type('text/plain').send(script);
   } catch (err) {
@@ -251,10 +307,15 @@ function sendArchive(req, res, kind) {
   if (error) return res.status(error[0]).type('text/plain').send(`错误: ${error[1]}\n`);
   if (!skillDirExists(skill.user_id, skill.folder_path, skill.slug)) return res.status(404).type('text/plain').send('错误: 技能文件缺失\n');
   if (kind === 'tar') {
+    const { resolved, error: pinError } = pinnedLookup(req, skill);
+    if (pinError) return res.status(pinError[0]).type('text/plain').send(`错误: ${pinError[1]}\n`);
     // 安装脚本下载完整包时带上 reason / terminal：这是「装到了某台机器上」的可靠信号
-    recordEvent(skill, req.user.id, EVENT_REASONS.includes(req.query.reason) ? req.query.reason : 'install', { terminal: terminalOf(req) });
+    recordEvent(skill, req.user.id, EVENT_REASONS.includes(req.query.reason) ? req.query.reason : 'install', {
+      terminal: terminalOf(req), revision: skillRevision({ content: resolved.content, files: resolved.files }),
+    });
     res.attachment(`${skill.slug}.tar.gz`);
-    createSkillTarGzArchive(skill.user_id, skill.folder_path, skill.slug, res);
+    if (resolved.source === 'history') createTarGzFromContent(skill.slug, resolved.content, parseJson(resolved.files, []), res);
+    else createSkillTarGzArchive(skill.user_id, skill.folder_path, skill.slug, res);
   } else {
     res.attachment(`${skill.slug}.zip`);
     createSkillArchive(skill.user_id, skill.folder_path, skill.slug, res);
@@ -406,7 +467,7 @@ function pushSummaryText(r) {
 
 // Agent 一键 Push 上传端点（支持 JSON、单文件 FormData、归档 tar.gz 上传）
 // 同名 slug 已存在时必须显式 update=1；推送结果默认需要人工审核后才对其他 Agent 可见
-api.post('/push', upload.single('file'), (req, res) => {
+api.post('/push', upload.single('file'), async (req, res) => {
   const asText = wantsText(req);
   const fail = (status, message, extra = {}) => (asText
     ? res.status(status).type('text/plain').send(`错误: ${message}\n`)
@@ -457,9 +518,13 @@ api.post('/push', upload.single('file'), (req, res) => {
       const baseline = !isPending && existing.pending_content != null
         ? { content: existing.pending_content, files: parseJson(existing.pending_files, []) }
         : { content: existing.content, files: currentFiles };
+      // 已发布、没有挂着待审更新、这次只改了双语字段：直接发布（见 onlyLocalizationChanged 的说明）
+      const localizationOnly = !isPending && existing.pending_content == null && sameFiles(currentFiles, archiveFiles)
+        && onlyLocalizationChanged(existing.content, content) && !hasHighRisk(securityWarnings);
       if (baseline.content === content && sameFiles(baseline.files, archiveFiles)) {
         result = { ...common, action: 'unchanged', status: existing.status };
-      } else if (isPending || !needsReview) {
+      } else if (isPending || !needsReview || localizationOnly) {
+        if (needsReview && localizationOnly) notices.push('只改了双语描述（Agent 框架不读这些字段，不影响 Agent 行为），已直接发布，无需审核');
         // 从未发布过的待审技能直接原地更新；关闭审核时直接发布。名称/标签/目录保留人工维护的值
         snapshotSkillVersion(existing, 'agent');
         db.prepare(`
@@ -491,11 +556,13 @@ api.post('/push', upload.single('file'), (req, res) => {
         terminalSource, meta.version, status, JSON.stringify(securityWarnings));
       replaceSkillOnDisk(uid, folderPath, slug, content, archiveFiles);
       result = { slug, name: meta.name, folder_path: folderPath, action: 'created', status };
-      // 查重：新技能和库里已有的哪些相近。推送的 Agent 当场就能改为更新或引用，而不是再造一个
+      // 查重：新技能和库里已有的哪些相近。推送的 Agent 当场就能改为更新或引用，而不是再造一个。
+      // 配置了语义层时先等新技能的向量（最多 5 秒），跨语言的重复也能当场查出来
+      await ensureSemanticWithin(uid, 5000);
       const similar = similarSkills(uid, { id: Number(inserted.lastInsertRowid), slug });
       if (similar.length) {
         result.similar = similar.map((m) => ({ slug: m.skill.slug, name: m.skill.name, similarity: Number(m.similarity.toFixed(2)), duplicate: m.high }));
-        notices.push(`库中已有相近技能：${similar.map((m) => `${m.skill.slug}（${m.high ? '疑似重复，' : ''}相似度 ${Math.round(m.similarity * 100)}%）`).join('、')}。`
+        notices.push(`库中已有相近技能：${similar.map((m) => `${m.skill.slug}（${m.high ? '疑似重复，' : ''}${m.semantic ? '语义' : ''}相似度 ${Math.round(m.similarity * 100)}%）`).join('、')}。`
           + '如果新技能只是它们的补充或变体，请改为更新已有技能（ash pull <slug> 修改后 ash push <目录> --update），'
           + '或在 depends_on 里引用它、不再重复它的步骤；确实是不同的技能，请在 description 里写清楚区别');
       }
@@ -601,8 +668,12 @@ api.get('/lint', (req, res) => {
     ? [findSkill(req.user.id, slug)].filter((s) => s && !s.is_deleted)
     : db.prepare('SELECT * FROM skills WHERE user_id = ? AND is_deleted = 0 ORDER BY slug').all(req.user.id);
   if (slug && !rows.length) return res.status(404).type('text/plain').send(`错误: 技能 ${slug} 不存在或已删除\n`);
-  const results = rows.map((skill) => ({ slug: skill.slug, status: skill.status, issues: lintFor(req.user.id, skill, { username: req.user.username }) }))
-    .filter((r) => slug || r.issues.length);
+  // ?code=bilingual 只看某一类问题（例如批量补双语描述时）
+  const only = String(req.query.code || '').split(',').map((c) => c.trim()).filter(Boolean);
+  const results = rows.map((skill) => ({
+    slug: skill.slug, status: skill.status,
+    issues: lintFor(req.user.id, skill, { username: req.user.username }).filter((i) => !only.length || only.includes(i.code)),
+  })).filter((r) => slug || r.issues.length);
   if (!wantsText(req)) return res.json({ results });
   if (!results.length || results.every((r) => !r.issues.length)) {
     return res.type('text/plain').send(slug ? `✅ ${slug} 没有发现问题\n` : '✅ 全库没有发现问题\n');
@@ -638,11 +709,11 @@ api.post('/feedback', (req, res) => {
 });
 
 // 按任务描述找技能：ash suggest "<一两句话描述任务>"
-api.get('/suggest', (req, res) => {
+api.get('/suggest', async (req, res) => {
   const query = String(req.query.q || '').trim();
   const limit = Math.min(Math.max(Number(req.query.limit) || 5, 1), 20);
   if (!query) return res.status(400).type('text/plain').send('错误: 请描述要做的任务，例如 ash suggest "把感知回放结果叠到原图上验证"\n');
-  const results = rankSkills(req.user.id, query, { limit }).map((r) => {
+  const results = (await rankSkillsSemantic(req.user.id, query, { limit })).map((r) => {
     const skill = findSkill(req.user.id, r.skill.slug);
     const usage = usageSummary(skill);
     return { ...r, usage };
@@ -650,9 +721,9 @@ api.get('/suggest', (req, res) => {
   if (!wantsText(req)) {
     return res.json({
       query,
-      results: results.map(({ skill, relevance, strong, matched, usage }) => ({
+      results: results.map(({ skill, relevance, strong, matched, semantic, usage }) => ({
         slug: skill.slug, name: skill.name, description: skill.description, folder_path: skill.folder_path,
-        relevance: Number(relevance.toFixed(3)), strong, matched, health: usage.health,
+        relevance: Number(relevance.toFixed(3)), strong, matched, semantic, health: usage.health,
         feedback: { ok: usage.ok_current, fail: usage.fail_current },
       })),
     });
@@ -662,9 +733,10 @@ api.get('/suggest', (req, res) => {
   }
   const clip = (value, n) => (value.length > n ? `${value.slice(0, n - 1)}…` : value);
   const lines = [`与任务相关的技能（先 ash info <slug> 判断是否适用；都不合适就按常规方式完成）：`];
-  results.forEach(({ skill, strong, matched, usage }, i) => {
+  results.forEach(({ skill, strong, matched, semantic, usage }, i) => {
     lines.push(`${i + 1}. ${skill.slug}  ·  ${skill.name}${skill.description ? `  ·  ${clip(skill.description, 100)}` : ''}`);
-    lines.push(`   ${strong ? '相关' : '可能相关'}${matched.length ? ` · 命中: ${matched.slice(0, 5).join(', ')}` : ''} · ${usageLine(usage)}`);
+    const why = semantic ? ' · 语义相近' : matched.length ? ` · 命中: ${matched.slice(0, 5).join(', ')}` : '';
+    lines.push(`   ${strong ? '相关' : '可能相关'}${why} · ${usageLine(usage)}`);
     usage.health.filter((h) => h.code === 'failing' || h.code === 'duplicate').forEach((h) => lines.push(`   ⚠️  ${h.label}：${h.detail}`));
   });
   res.type('text/plain').send(`${lines.join('\n')}\n`);

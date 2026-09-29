@@ -6,7 +6,8 @@ const REF_STATUS = {
   missing: { label: '库中没有', className: 'chip-danger' },
   pending: { label: '待审核', className: 'chip-pending' },
   foreign: { label: '其他账号', className: 'chip-muted' },
-  'pin-mismatch': { label: '版本不符', className: 'chip-warning' },
+  'pinned-old': { label: '固定在历史版本', className: 'chip-muted' },
+  'pin-missing': { label: '固定的版本不存在', className: 'chip-danger' },
 };
 
 function SkillLink({ skill, onOpenSkill }) {
@@ -45,9 +46,11 @@ export function SharedSteps({ items, onOpenSkill }) {
           <div className="shared-steps-with">
             与 {group.skills.map((s, j) => (
               <span key={s.id}>{j > 0 && '、'}<SkillLink skill={s} onOpenSkill={onOpenSkill} />{s.meta && <span className="chip chip-muted">元技能</span>}</span>
-            ))} 有 {group.commands.length} 条相同的命令
+            ))} 有 {group.commands.length} {group.kind === 'steps' ? '个相同的步骤' : '条相同的命令'}
           </div>
-          <pre>{group.commands.join('\n')}</pre>
+          {group.kind === 'steps'
+            ? <ol className="shared-steps-prose">{group.commands.map((step, j) => <li key={j}>{step}</li>)}</ol>
+            : <pre>{group.commands.join('\n')}</pre>}
         </li>
       ))}
     </ul>

@@ -18,7 +18,7 @@ export function SimilarSkills({ items, onOpenSkill, emptyText = '' }) {
           </button>
           {typeof s.similarity === 'number' && (
             <span className={`chip ${s.duplicate ? 'chip-warning' : 'chip-muted'}`} title="名称、描述、标签与标题的相似度">
-              {s.duplicate ? '疑似重复 · ' : ''}{Math.round(s.similarity * 100)}%
+              {s.duplicate ? '疑似重复 · ' : ''}{s.semantic ? '语义 ' : ''}{Math.round(s.similarity * 100)}%
             </span>
           )}
           {s.status === 'pending' && <span className="chip chip-pending">待审</span>}

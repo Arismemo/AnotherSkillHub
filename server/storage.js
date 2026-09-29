@@ -157,6 +157,37 @@ function createSkillTarGzArchive(userId, folderPath, slug, res) {
   });
 }
 
+// 把一份不在磁盘上的内容（例如历史版本）打包成与 createSkillTarGzArchive 相同布局的 tar.gz：<slug>/SKILL.md + 附属文件
+function createTarGzFromContent(slug, content, files, res) {
+  const os = require('os');
+  const { spawn } = require('child_process');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ash-pinned-'));
+  const cleanup = () => fs.rmSync(tmp, { recursive: true, force: true });
+  try {
+    const dir = resolveInside(tmp, String(slug));
+    if (!dir || String(slug).includes('/')) throw new Error('非法的技能路径');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'SKILL.md'), content, 'utf8');
+    for (const file of Array.isArray(files) ? files : []) {
+      const filePath = file && file.path && file.content !== undefined ? resolveInside(dir, file.path) : null;
+      if (!filePath) continue;
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, file.content, 'utf8');
+    }
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
+  const tar = spawn('tar', ['-czf', '-', '-C', tmp, String(slug)]);
+  tar.stdout.pipe(res);
+  tar.stderr.on('data', (d) => console.error('tar stderr:', d.toString()));
+  tar.on('close', cleanup);
+  tar.on('error', (err) => {
+    cleanup();
+    if (!res.headersSent) res.status(500).send('Tar error: ' + err.message);
+  });
+}
+
 // 打包为 zip 流
 function createSkillArchive(userId, folderPath, slug, res) {
   const targetDir = skillDir(userId, folderPath, slug);
@@ -181,6 +212,7 @@ module.exports = {
   parseSkillContent,
   createSkillArchive,
   createSkillTarGzArchive,
+  createTarGzFromContent,
   getSkillFileTree,
   getSkillFileContent
 };

@@ -100,7 +100,7 @@ test('lint: references, meta-skill contract, copied steps and extraction candida
   assert.match(lint('replay').find((i) => i.code === 'copies-meta').msg, /用元技能 `dev-build`/);
 
   const sloppy = lint('sloppy');
-  for (const code of ['missing-ref', 'foreign-ref', 'pin-mismatch', 'invalid-ref', 'undeclared-ref', 'absolute-link']) {
+  for (const code of ['missing-ref', 'foreign-ref', 'pin-missing', 'invalid-ref', 'undeclared-ref', 'absolute-link']) {
     assert.ok(sloppy.some((i) => i.code === code), `sloppy should report ${code}`);
   }
   assert.ok(!sloppy.some((i) => i.code === 'undeclared-ref' && i.msg.includes('dev-build')), 'a pinned declaration still declares the skill');
@@ -180,7 +180,15 @@ test('references end to end: push hints, ash lint, local resolution after instal
     assert.ok(!d.lint.some((i) => i.code === 'meta-used-by'), '「被谁引用」 matches reality');
     assert.match(ok(['info', 'dev-build']).stdout, /被引用: 1 个技能（replay）/);
 
-    ok(['push', writeSkill(fixed.replace('description_en: Run the replay and verify the results', 'description_en: Run the perception replay and verify results')), '--update']);
+    // 只改双语描述：Agent 框架不读这些字段，直接发布
+    const retitled = fixed.replace('description_en: Run the replay and verify the results', 'description_en: Run the perception replay and verify results');
+    assert.match(ok(['push', writeSkill(retitled), '--update']).stdout, /只改了双语描述.*已直接发布/);
+    const published = await detail('replay');
+    assert.equal(published.pending_update, null);
+    assert.match(published.content, /Run the perception replay/);
+
+    // 改了其他 frontmatter（依赖声明）但没动正文：仍要审核，审核条标出「只改了元数据」
+    ok(['push', writeSkill(retitled.replace('depends_on: [dev-build]', 'depends_on: [dev-build]\ntags: [replay]')), '--update']);
     const pending = await detail('replay');
     assert.equal(pending.pending_metadata_only, true);
     assert.equal((await fetch(`${origin}/api/skills/${pending.id}/reject`, { method: 'POST' })).status, 200);

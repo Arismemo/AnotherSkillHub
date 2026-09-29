@@ -51,7 +51,7 @@ token 保存在 `~/.ash/token`，也可以通过环境变量 `ASH_TOKEN` 提供�
 1. 先查重：`ash suggest "<这个新技能要解决的问题>"`。如果已有相近技能，先 `ash pull <slug>` 拉到本地，在原版基础上修改，再运行 `ash push <目录> --update`。
    - 新技能里有些步骤已经是别的技能（尤其是元技能）的内容时，不要复制那些步骤，改为引用（见下文「技能之间的引用」）。
    - 推送结果里提示「库中已有相近技能」或「与元技能相同的命令」时，认真判断：是补充就改为更新已有技能，确实不同就在 description 里写清楚区别。
-   - 推送前运行 `ash lint <slug>`（已在库里的技能）自查：双语描述、引用写法、元技能契约。
+   - 推送前运行 `ash lint <slug>`（已在库里的技能）自查：双语描述、引用写法、元技能契约、能不能被 Agent 调用。
 2. 不加 `--update` 时，如果同名 slug 已存在，推送会被拒绝（409），不会覆盖别人的版本。
 3. 新技能和对已有技能的更新都会进入「待审核」，人工采纳后其他 Agent 才能拉到。你自己需要立刻使用新技能时，可以运行 `ash pull <slug> --pending`。
 4. 推送后把服务端返回的结果（是否待审核、有无警告）如实告诉用户。
@@ -85,6 +85,7 @@ depends_on: [other-skill]   # 可选，引用的其他技能，写法见下文
 ```
 
 - **描述要中英双语**：`description` 用你习惯的语言写，再用 `description_en` 或 `description_zh` 补另一种（主描述本身中英混写也可以）。中文任务和英文任务才都能找到它，查重也才能跨语言对上。正文不用写两份：两份正文要同步维护、迟早不一致，而读正文的 Agent 中英文都懂。
+  - 给已有技能补双语描述：`ash lint --only bilingual` 列出缺的，逐个 `ash pull` 后加上 `description_en` / `description_zh` 再 `ash push --update`。**只改双语字段的更新直接发布、不用等审核**（Agent 框架不读这些字段，不影响 Agent 的行为）。
 - frontmatter 是 YAML：值里含有「: 」时要用引号括起来（`description_en: "Use when: …"`），否则整段 frontmatter 解析失败，名称、描述、依赖全部丢失。
 - 脚本放在 `scripts/`，参考资料放在 `references/`，正文里用相对路径引用。
 - 只能包含文本文件（.md .sh .py .js .json .yaml 等）。单个文件不超过 512KB，总量不超过 4MB，文件数不超过 200 个；超出限制的文件会被跳过，并在推送结果中提示。
@@ -108,9 +109,19 @@ depends_on: [other-skill]   # 可选，引用的其他技能，写法见下文
 
 也可以写成链接 `[dev-container-build](../dev-container-build/SKILL.md)`。**不要写绝对路径**（`~/.claude/skills/...`），换一台机器或换一个 Agent 就找不到了。
 
-**本地 Agent 怎么找到被引用的技能**：`ash pull` 把引用的技能装在同一个目录下，并在已装的 `SKILL.md` 末尾列出它们的相对路径 `../<slug>/SKILL.md`——需要时直接读那个文件。在 Claude Code 里运行 `ash pull` 时默认装到 `~/.claude/skills`（Claude Code 只从这里加载技能），装好的技能和它引用的技能都可以按名字直接调用。
+**按技能干活时，遇到「用元技能 `x`」或指向 `../x/SKILL.md` 的链接**，按这个顺序找到它：
 
-**引用写法**：`slug`（本库）、`@账号/slug`（指定账号，为团队库 / 技能广场预留，目前只能指向自己的账号）、`slug@1.2.0`（固定版本：库里版本变了会提示你确认）。
+1. 在 Claude Code 里：直接调用名为 `x` 的技能；
+2. 其他 Agent（或 Claude Code 里调用不到时）：读本技能旁边的 `../x/SKILL.md`——`ash pull` 把引用的技能装在同一个目录下，已装的 `SKILL.md` 末尾也列出了这些链接；
+3. 本机没有：运行 `ash pull x`（在 Claude Code 里默认装到 `~/.claude/skills`），再按 1 或 2；只想看内容用 `ash show x`。
+
+读完 `x` 按它的步骤做，再回到本技能继续。
+
+**装到哪里决定了哪个 Agent 看得到**：Claude Code 只从 `~/.claude/skills`（和项目的 `.claude/skills`）加载技能，Codex 从 `~/.agents/skills`，Hermes 从 `~/.hermes/skills`。一台机器上同时用几个 Agent 时，用 `ash pull <slug> --agent all` 装进每个 Agent 的目录（或设置 `ASH_AGENT=all` 作为默认）。`ash doctor` 检查本机：引用的技能在不在旁边、装的目录有没有 Agent 加载；`ash doctor --fix` 自动补装缺的。
+
+**引用写法**：`slug`（本库）、`@账号/slug`（指定账号，为团队库 / 技能广场预留，目前只能指向自己的账号）、`slug@1.2.0`（固定版本：`ash pull` 从历史里装那一版，`ash pull --all` 不会升级它；版本号由 frontmatter 的 `version` 决定，改了内容要记得升版本号）。
+
+**让引用的技能调用得到**：被引用的技能不要设置 `disable-model-invocation: true`（Claude 就不能调用它了）；`name` 与 slug 保持一致、只用小写字母数字和连字符；description 不超过 1024 个字符。`ash lint` 会检查这些。
 
 **引用的代价**：每多一层引用，Agent 就要多读一个文件、多一个可能断的地方。引用链不要超过两层；一小段、只有一两处用到的步骤，留在原地比抽出去好。
 
@@ -124,7 +135,7 @@ depends_on: [other-skill]   # 可选，引用的其他技能，写法见下文
 4. 不含业务判断（「怎么编译」是元技能，「编译结果对不对」不是）；
 5. 改一处，所有调用方都受益。
 
-`ash lint` 和推送结果会提示「有 N 条命令与 a、b 相同」，那是候选；抽完要**立刻把调用方改成引用它**，否则只是多了一个没人用的技能。
+`ash lint` 和推送结果会提示「有 N 条命令（或 N 个步骤）与 a、b 相同」——shell 命令和编号步骤都会比对，那是候选；抽完要**立刻把调用方改成引用它**，否则只是多了一个没人用的技能。
 
 元技能的写法：description 以「【元技能】」开头，写明被引用和被直接要求两种触发场景；正文必须有 **`## 契约`**（输入 / 输出 / 前置 / 失败）和 **`## 被谁引用`** 两节；不要加 `disable-model-invocation: true`（那会让别的技能引用不到它）。
 
@@ -137,20 +148,21 @@ ash list [--tag T] [--folder F] [--json]
 ash info <slug>
 ash show <slug> [--version ID] [--pending]
 ash versions <slug>
-ash lint [slug] [--json]
+ash lint [slug] [--only CODE] [--json]
 ash bundles | ash bundle <标识或名称>
-ash pull <slug> [--agent claude|codex|hermes|dsh] [--dir PATH] [--pending] [--force] [--no-deps]
+ash pull <slug>[@版本] [--agent claude|codex|hermes|dsh|all] [--dir PATH] [--pending] [--force] [--no-deps]
 ash pull bundle:<标识或名称>
 ash pull --all [--dir PATH] [--force]
 ash installed | ash outdated [--dir PATH]
 ash remove <slug> [--dir PATH] [--force]
+ash doctor [--fix] [--dir PATH]
 ash push <技能目录|SKILL.md> [--update] [--folder PATH] [--json]
 ash mine | ash withdraw <slug>
 ash feedback <slug> ok|fail ["说明"]
 ash guide
 ```
 
-默认安装目录是自动探测的：`$ASH_SKILLS_DIR`；在 Claude Code 里运行时是 `~/.claude/skills`；否则依次尝试唯一的 `~/.hermes/profiles/*/skills`、`~/.hermes/skills`、`~/.agents/skills`、`~/.claude/skills`、`~/.dsh/skills`。
+默认安装目录是自动探测的：`$ASH_SKILLS_DIR`；`$ASH_AGENT`（claude / codex / hermes / dsh / all）；在 Claude Code 里运行时是 `~/.claude/skills`；否则依次尝试唯一的 `~/.hermes/profiles/*/skills`、`~/.hermes/skills`、`~/.agents/skills`、`~/.claude/skills`、`~/.dsh/skills`。
 
 ## 没有 ash 时的 HTTP 接口
 

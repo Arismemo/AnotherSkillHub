@@ -86,6 +86,31 @@ function missingLanguages(description, localized = {}) {
   return [!zh && 'zh', !en && 'en'].filter(Boolean);
 }
 
+// 只改了双语字段（description_en / description_zh / title_en / title_zh，含 metadata 里的同名键）：正文与其余 frontmatter 都没动。
+// 这些字段 Claude Code、Codex 等 Agent 框架都不读，改了也不会影响 Agent 的行为，只影响技能库的检索与查重——
+// 所以这类更新可以不经人工审核直接发布，补双语描述才不会变成一大堆待审。以后做团队库 / 技能广场时要重新评估
+const LOCALIZED_KEYS = ['description_en', 'description_zh', 'title_en', 'title_zh'];
+function withoutLocalized(data) {
+  const copy = JSON.parse(JSON.stringify(data || {}));
+  for (const key of LOCALIZED_KEYS) {
+    delete copy[key];
+    if (copy.metadata && typeof copy.metadata === 'object') { delete copy.metadata[key]; delete copy.metadata[key.replace('_', '-')]; }
+  }
+  if (copy.metadata && typeof copy.metadata === 'object' && !Object.keys(copy.metadata).length) delete copy.metadata;
+  return copy;
+}
+const stable = (value) => JSON.stringify(value, (key, v) => (v && typeof v === 'object' && !Array.isArray(v)
+  ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v));
+function onlyLocalizationChanged(before, after) {
+  if (before === after) return false;
+  const bodyOf = (text) => String(text || '').replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n?/, '');
+  if (bodyOf(before) !== bodyOf(after)) return false;
+  const a = parseFrontmatter(before);
+  const b = parseFrontmatter(after);
+  if (a.error || b.error) return false;
+  return stable(withoutLocalized(a.data)) === stable(withoutLocalized(b.data));
+}
+
 const LANGUAGE_HINT = {
   en: '缺少英文描述：请在 frontmatter 加 description_en（英文任务也能找到它，也用于跨语言查重）',
   zh: '缺少中文描述：请在 frontmatter 加 description_zh（中文任务也能找到它，也用于跨语言查重）',
@@ -133,5 +158,5 @@ function stripInstallFooter(content) {
 
 module.exports = {
   slugify, normalizeSkillMeta, normalizeTags, parseFrontmatter, declaredDependencies, parseReference, referencesOf,
-  languagesOf, localizedMeta, missingLanguages, LANGUAGE_HINT, stripInstallFooter, INSTALL_FOOTER_MARK,
+  languagesOf, localizedMeta, missingLanguages, onlyLocalizationChanged, LANGUAGE_HINT, stripInstallFooter, INSTALL_FOOTER_MARK,
 };
