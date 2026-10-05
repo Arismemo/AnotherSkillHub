@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import FolderPicker from './FolderPicker';
 import ContextMenu from './ContextMenu';
+import InsightsBanner from './InsightsBanner';
 import { showToast } from './toastBus';
 import { folderLabels } from '../utils/systemFolders';
 import './Review.css';
@@ -241,6 +242,8 @@ export default function SkillList({
           </button>
         </div>
       )}
+
+      {isAttention && <InsightsBanner />}
 
       <div className="skill-list-scroll">
         {fetching && !loading && <div className="list-progress" role="status" aria-label="正在载入结果" />}

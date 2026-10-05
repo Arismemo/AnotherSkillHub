@@ -30,7 +30,10 @@ Agents multiply: you have one on your laptop, one on a rack server, one on a GPU
 - `ash bundles` / `ash bundle <slug or name>` / `ash pull bundle:<slug or name>` — discover and install skill bundles
 - `ash mine` / `ash withdraw <slug>` — follow the review status of your own pushes, retract pending ones
 - `ash push <dir> [--update]` — push a local skill; overwriting an existing slug requires `--update`
-- `ash guide` — the agent usage guide served by the hub (`/agent.md`); onboarding prompts just point here
+- `ash import [dir…]` — push every local skill that ash didn't install (default: all agent skill dirs) in one go; skips ones already in the hub (`--update` to submit as updates), registers imported dirs so `ash installed` / `ash outdated` track them
+- `ash stats` — usage, feedback count and **feedback rate** over the last 30 days, per machine (also shown atop the 需关注 view)
+- `ash hooks install` — a Claude Code Stop hook: records which ash skills a session actually used, and reminds the agent once to `ash feedback` any it didn't report
+- `ash guide` — the short agent guide served by the hub (`/agent.md`); `ash guide --full` for authoring, references, meta-skills and HTTP (`/agent-full.md`). Onboarding prompts just point here
 - Install target auto-detection: `$ASH_SKILLS_DIR` → single `~/.hermes/profiles/*/skills` → `~/.hermes/skills` → `~/.agents/skills` → `~/.claude/skills` → `~/.dsh/skills`
 
 **Human review of agent pushes**
@@ -41,7 +44,7 @@ Agents multiply: you have one on your laptop, one on a rack server, one on a GPU
 **Protocol-friendly URLs**
 - `/s/<slug>.md` — clean Markdown for agents (default for every non-browser client; multi-file skills get a file manifest appended, `?raw=1` for the original)
 - `/s/<slug>/files/<path>` — a single attached file; `/s/<slug>/info` — plain-text summary
-- `/agent.md` — agent usage guide
+- `/agent.md` — short agent usage guide; `/agent-full.md` — full reference
 - `/s/<slug>/install.sh` — pipe-to-bash installer
 - `/s/<slug>/archive.tar.gz` — full package archive
 
@@ -151,7 +154,7 @@ ash guide                                  # Agent 使用指南
 ash update                                 # 自更新 CLI
 ```
 
-curl (REST) — every endpoint except `/api/auth/*`, `/setup.sh`, `/cli.sh` and `/agent.md` needs a token:
+curl (REST) — every endpoint except `/api/auth/*`, `/setup.sh`, `/cli.sh`, `/agent.md` and `/agent-full.md` needs a token:
 
 ```bash
 AUTH="Authorization: Bearer $ASH_TOKEN"
@@ -191,7 +194,7 @@ Upload whitelist & limits: 扩展名白名单默认为文本类（.md/.json/.py/
 
 ## Security notes
 
-- **Accounts and private libraries.** Everything except the landing page, `/login`, `/register`, `/setup.sh`, `/cli.sh` and `/agent.md` requires a session or a token, and every query is scoped to the caller's own library (files live under `STORAGE_DIR/@users/<id>/`).
+- **Accounts and private libraries.** Everything except the landing page, `/login`, `/register`, `/setup.sh`, `/cli.sh`, `/agent.md` and `/agent-full.md` requires a session or a token, and every query is scoped to the caller's own library (files live under `STORAGE_DIR/@users/<id>/`).
 - **Web sessions** are `HttpOnly; SameSite=Lax` cookies (`Secure` over https), valid 30 days; only a SHA-256 of the session id is stored. Cookie-authenticated writes must carry `X-ASH-Request: 1` and a same-site `Origin`, so cross-site forms can't act as you.
 - **API tokens** (`ash_…`) are shown once, stored hashed, revocable from the Account dialog, and can't be used to create tokens or change the password.
 - **Passwords** are hashed with scrypt; logins are rate-limited per IP and per username (10 failures / 10 minutes).

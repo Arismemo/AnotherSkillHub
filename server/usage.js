@@ -9,9 +9,10 @@ const { skillRevision } = require('./review');
 const { duplicateMap } = require('./skillIndex');
 const { libraryAnalysis, structuralFlags } = require('./skillRefs');
 
-const EVENT_KINDS = ['install', 'dependency', 'update', 'view', 'feedback'];
-// 「使用」：主动安装、作为依赖安装、阅读、反馈。update 是 ash pull --all 顺手刷新，不代表用过
-const USE_KINDS = "('install', 'dependency', 'view', 'feedback')";
+// use：本机 Agent 真正用到了已装技能（Claude Code 的 Stop hook 从会话记录里认出来，见 ash hooks install）
+const EVENT_KINDS = ['install', 'dependency', 'update', 'view', 'use', 'feedback'];
+// 「使用」：主动安装、作为依赖安装、阅读、本地调用、反馈。update 是 ash pull --all 顺手刷新，不代表用过
+const USE_KINDS = "('install', 'dependency', 'view', 'use', 'feedback')";
 
 const UNUSED_AFTER_DAYS = 14;
 const STALE_AFTER_DAYS = 60;
@@ -38,6 +39,7 @@ function usageSummary(skill) {
       COALESCE(SUM(kind IN ('install', 'dependency') AND created_at >= datetime('now', '-30 days')), 0) AS installs_30d,
       COALESCE(SUM(kind IN ('install', 'dependency')), 0) AS installs,
       COALESCE(SUM(kind = 'view' AND created_at >= datetime('now', '-30 days')), 0) AS views_30d,
+      COALESCE(SUM(kind = 'use' AND created_at >= datetime('now', '-30 days')), 0) AS uses_30d,
       COALESCE(SUM(kind = 'feedback' AND outcome = 'ok'), 0) AS ok,
       COALESCE(SUM(kind = 'feedback' AND outcome = 'fail'), 0) AS fail,
       COALESCE(SUM(kind = 'feedback' AND outcome = 'ok' AND revision = @revision), 0) AS ok_current,
@@ -70,7 +72,7 @@ function healthFlags(skill, stats, since = trackingSince()) {
   // 从技能创建或开始记录使用（取较晚者）起算，老技能不会在上线第一天全部变成「从未使用」
   const observedDays = daysSince(String(skill.created_at || '') > since ? skill.created_at : since);
   if (!stats.last_used_at) {
-    if (observedDays >= UNUSED_AFTER_DAYS) flags.push({ code: 'unused', label: '从未使用', detail: `${Math.floor(observedDays)} 天内没有安装、阅读或反馈` });
+    if (observedDays >= UNUSED_AFTER_DAYS) flags.push({ code: 'unused', label: '从未使用', detail: `${Math.floor(observedDays)} 天内没有安装、阅读、Agent 调用或反馈` });
   } else if (daysSince(stats.last_used_at) >= STALE_AFTER_DAYS) {
     flags.push({ code: 'stale', label: '长期未用', detail: `最近一次使用在 ${String(stats.last_used_at).slice(0, 10)}` });
   }
@@ -120,6 +122,7 @@ function usageLine(summary) {
   parts.push(`30 天安装 ${summary.installs_30d} 次`);
   if (summary.machines) parts.push(`装在 ${summary.machines} 台机器上`);
   if (summary.views_30d) parts.push(`阅读 ${summary.views_30d} 次`);
+  if (summary.uses_30d) parts.push(`Agent 调用 ${summary.uses_30d} 次`);
   if (summary.ok || summary.fail) {
     const current = summary.ok_current + summary.fail_current;
     parts.push(`反馈 ${summary.ok} 成功 / ${summary.fail} 失败${current !== summary.ok + summary.fail ? `（当前版本 ${summary.ok_current} / ${summary.fail_current}）` : ''}`);
@@ -129,7 +132,85 @@ function usageLine(summary) {
   return parts.join(' · ');
 }
 
+// 反馈率低于它、且用得够多时提示：健康信号（常失败等）多半不准
+const LOW_FEEDBACK_RATE = 0.3;
+const LOW_FEEDBACK_MIN_USES = 5;
+
+// 整个库的闭环指标（「需关注」视图顶部、ash stats）：最近 N 天技能被拿去用了多少次、其中多少次回报了结果。
+// 「用」= 主动安装、阅读、本地调用；作为依赖装上的不算（不是 Agent 选的），update 也不算。
+// 反馈率 = 反馈次数 ÷ 使用次数（上限 100%）。按来源机器拆开：哪台机器的 Agent 从不回报、哪台装了 hook，一眼看清
+function libraryInsights(userId, { days = 30 } = {}) {
+  const n = Math.max(1, Math.min(365, Math.floor(Number(days)) || 30));
+  const window = `-${n} days`;
+  const rows = db.prepare(`
+    SELECT COALESCE(e.terminal, '') AS terminal,
+      SUM(e.kind IN ('install', 'view', 'use')) AS uses,
+      SUM(e.kind = 'use') AS hook_uses,
+      SUM(e.kind = 'feedback') AS feedback,
+      SUM(e.kind = 'feedback' AND e.outcome = 'ok') AS ok,
+      SUM(e.kind = 'feedback' AND e.outcome = 'fail') AS fail
+    FROM skill_events e JOIN skills s ON s.id = e.skill_id
+    WHERE s.user_id = ? AND e.created_at >= datetime('now', ?)
+    GROUP BY COALESCE(e.terminal, '')
+  `).all(userId, window);
+  const skills = db.prepare(`
+    SELECT COUNT(DISTINCT CASE WHEN e.kind IN ('install', 'view', 'use') THEN e.skill_id END) AS used,
+      COUNT(DISTINCT CASE WHEN e.kind = 'feedback' THEN e.skill_id END) AS with_feedback
+    FROM skill_events e JOIN skills s ON s.id = e.skill_id
+    WHERE s.user_id = ? AND e.created_at >= datetime('now', ?)
+  `).get(userId, window);
+  const rate = (feedback, uses) => (uses > 0 ? Math.min(1, feedback / uses) : null);
+  const sum = (key) => rows.reduce((n, r) => n + Number(r[key] || 0), 0);
+  const uses = sum('uses');
+  const feedback = sum('feedback');
+  const terminals = rows
+    .filter((r) => r.uses || r.feedback)
+    .map((r) => ({
+      terminal: r.terminal || null,
+      uses: Number(r.uses || 0),
+      feedback: Number(r.feedback || 0),
+      feedback_rate: rate(Number(r.feedback || 0), Number(r.uses || 0)),
+      hook: Number(r.hook_uses || 0) > 0,
+    }))
+    .sort((a, b) => b.uses - a.uses);
+  const feedbackRate = rate(feedback, uses);
+  return {
+    days: n,
+    uses,
+    feedback,
+    ok: sum('ok'),
+    fail: sum('fail'),
+    feedback_rate: feedbackRate,
+    skills_used: Number(skills.used || 0),
+    skills_with_feedback: Number(skills.with_feedback || 0),
+    terminals,
+    // 来过、但从没回报过结果的机器：给它们装 hook（ash hooks install）收益最大
+    silent_terminals: terminals.filter((t) => t.terminal && t.uses > 0 && t.feedback === 0).map((t) => t.terminal),
+    low_feedback: feedbackRate !== null && uses >= LOW_FEEDBACK_MIN_USES && feedbackRate < LOW_FEEDBACK_RATE,
+  };
+}
+
+const percent = (value) => (value === null ? '—' : `${Math.round(value * 100)}%`);
+
+// 纯文本：ash stats
+function insightsText(i) {
+  if (!i.uses && !i.feedback) return `近 ${i.days} 天还没有使用记录（安装、阅读、Agent 调用都会被记下）\n`;
+  const lines = [
+    `近 ${i.days} 天：使用 ${i.uses} 次（${i.skills_used} 个技能）· 反馈 ${i.feedback} 次（${i.ok} 成功 / ${i.fail} 失败）· 反馈率 ${percent(i.feedback_rate)}`,
+    '',
+    '按机器：',
+    ...i.terminals.map((t) => `  ${t.terminal || '（未知来源）'}  ·  使用 ${t.uses}  ·  反馈 ${t.feedback}  ·  反馈率 ${percent(t.feedback_rate)}${t.hook ? '  ·  已装 hook' : ''}`),
+  ];
+  if (i.low_feedback) {
+    lines.push('', `⚠️  反馈率低于 ${percent(LOW_FEEDBACK_RATE)}：「常失败」等健康信号可能不准。`
+      + '在跑 Claude Code 的机器上运行 ash hooks install，会话结束时自动提醒 Agent 回报用过的技能');
+  } else if (i.silent_terminals.length) {
+    lines.push('', `ℹ️  这些机器用过技能但从没回报：${i.silent_terminals.join('、')}（在上面运行 ash hooks install）`);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 const OUTCOMES = { ok: 'ok', success: 'ok', good: 'ok', pass: 'ok', fail: 'fail', failure: 'fail', bad: 'fail', error: 'fail' };
 const normalizeOutcome = (value) => OUTCOMES[String(value || '').trim().toLowerCase()] || null;
 
-module.exports = { recordEvent, usageSummary, libraryHealth, usageLine, normalizeOutcome };
+module.exports = { recordEvent, usageSummary, libraryHealth, libraryInsights, insightsText, usageLine, normalizeOutcome };

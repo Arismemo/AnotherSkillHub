@@ -177,7 +177,7 @@ test('usage, feedback and suggestions end to end', async (t) => {
     assert.equal(list[0].slug, 'tl-replay-verify', 'failing skills come first');
     const release = list.find((s) => s.slug === 'release-checklist');
     assert.deepEqual(release.health.map((h) => h.code), ['unused']);
-    assert.match(release.health[0].detail, /^30 天内没有安装、阅读或反馈/, 'a 90-day-old skill is only judged on the 30 tracked days');
+    assert.match(release.health[0].detail, /^30 天内没有安装、阅读、Agent 调用或反馈/, 'a 90-day-old skill is only judged on the 30 tracked days');
     assert.ok(!list.some((s) => s.slug === 'writing-skills'), 'skills created after tracking started get their own grace period');
   });
 

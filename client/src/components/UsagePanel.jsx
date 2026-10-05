@@ -56,6 +56,7 @@ export default function UsagePanel({ detail, onOpenSkill }) {
     `30 天安装 ${usage.installs_30d} 次`,
     usage.machines ? `装在 ${usage.machines} 台机器上` : null,
     usage.views_30d ? `阅读 ${usage.views_30d} 次` : null,
+    usage.uses_30d ? `Agent 调用 ${usage.uses_30d} 次` : null,
     feedbackTotal
       ? `反馈 ${usage.ok} 成功 / ${usage.fail} 失败${currentTotal !== feedbackTotal ? `（当前版本 ${usage.ok_current} / ${usage.fail_current}）` : ''}`
       : '暂无反馈',

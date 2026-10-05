@@ -5,7 +5,7 @@ const { saveSkillToDisk, replaceSkillOnDisk, moveSkillOnDisk, parseSkillContent,
 const { normalizeSkillMeta, stripInstallFooter } = require('../skillMeta');
 const { buildSkillGraph } = require('../skillGraph');
 const { rankSkillsSemantic, similarSkills, ensureSemantic } = require('../skillIndex');
-const { usageSummary, libraryHealth } = require('../usage');
+const { usageSummary, libraryHealth, libraryInsights, insightsText } = require('../usage');
 const { entryFor, lintSkill, lintFor, sharedStepsOf, isLocal, splitBody, pinAvailable } = require('../skillRefs');
 const { parseJson, snapshotSkillVersion, approveSkill, rejectSkill, warningsFor } = require('../review');
 
@@ -74,6 +74,17 @@ router.get('/stats', (req, res) => {
       all: allCount,
       trash: trashCount
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 闭环指标：使用次数、反馈率、按机器拆分（「需关注」视图顶部、ash stats）。必须挂在 /:id 之前
+router.get('/insights', (req, res) => {
+  try {
+    const insights = libraryInsights(req.user.id, { days: req.query.days });
+    if (req.query.format === 'text') return res.type('text/plain').send(insightsText(insights));
+    res.json(insights);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

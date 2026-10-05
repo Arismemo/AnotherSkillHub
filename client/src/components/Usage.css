@@ -41,3 +41,13 @@
 .shared-steps-with { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; color: var(--text-muted); font-size: var(--fs-xs); }
 .shared-steps pre { margin: .3rem 0 0; padding: .45rem .6rem; overflow-x: auto; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface-code); color: var(--text-body); font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.5; }
 .shared-steps-prose { margin: .3rem 0 0; padding: .45rem .6rem .45rem 1.8rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); color: var(--text-body); font-size: var(--fs-xs); line-height: 1.55; }
+
+/* 「需关注」视图顶部的使用与反馈概况 */
+.insights-banner { display: grid; gap: .25rem; margin: 0 .75rem .5rem; padding: .5rem .7rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface); font-size: var(--fs-xs); color: var(--text-muted); }
+.insights-banner p { margin: 0; }
+.insights-banner p:first-child { display: flex; align-items: center; gap: .4rem; }
+.insights-banner p:first-child > svg { flex: none; color: var(--accent); }
+.insights-banner strong { color: var(--text); font-weight: 600; }
+.insights-banner.is-low { border-color: var(--warning); }
+.insights-hint { color: var(--text-body); line-height: 1.5; }
+.insights-hint code { font-family: var(--mono); }

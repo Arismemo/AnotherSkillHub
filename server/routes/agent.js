@@ -708,6 +708,24 @@ api.post('/feedback', (req, res) => {
   res.type('text/plain').send(`${lines.join('\n')}\n`);
 });
 
+// 本机 Agent 用到了已装技能：ash hooks install 装的 Claude Code hook 在会话结束时上报（每个会话每个技能一次）。
+// 服务端本来看不到这一步——技能装到本地后由 Agent 直接读取；有了它，「从未使用 / 长期未用」才准
+api.post('/used', (req, res) => {
+  const body = req.body || {};
+  const slugs = [...new Set([].concat(body.slug || []).map((s) => String(s).trim()).filter((s) => /^[A-Za-z0-9_.-]+$/.test(s)))].slice(0, 50);
+  if (!slugs.length) return res.status(400).type('text/plain').send('错误: 缺少 slug\n');
+  const revisions = [].concat(body.revision || []).map(String);
+  const recorded = [];
+  slugs.forEach((slug, i) => {
+    const skill = findSkill(req.user.id, slug);
+    if (!skill || skill.is_deleted) return;
+    const revision = /^[0-9a-f]{12}$/.test(revisions[i] || '') ? revisions[i] : skillRevision(skill);
+    recordEvent(skill, req.user.id, 'use', { terminal: terminalOf(req), revision });
+    recorded.push(slug);
+  });
+  res.type('text/plain').send(`已记录 ${recorded.length} 个技能的使用${recorded.length ? `：${recorded.join(', ')}` : ''}\n`);
+});
+
 // 按任务描述找技能：ash suggest "<一两句话描述任务>"
 api.get('/suggest', async (req, res) => {
   const query = String(req.query.q || '').trim();

@@ -123,7 +123,7 @@ export default function Docs({ user, registration }) {
           <header className="docs-intro">
             <p className="eyebrow">文档</p>
             <h1>AnotherSkillHub 使用手册</h1>
-            <p className="lede">从第一次登录，到把整个团队的 Agent 接进来，再到自己部署和运维，所有用得到的知识都在这一页。</p>
+            <p className="lede">从第一次登录，到把每台机器上的 Agent 接进来，再到自己部署和运维，所有用得到的知识都在这一页。</p>
           </header>
 
           <Section id="overview" title="概览">
@@ -255,7 +255,10 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
               [<C>ash feedback &lt;slug&gt; ok|fail ["说明"] [--dir PATH]</C>, '用完技能后回报结果，自动对应本机已装的版本'],
               [<C>ash lint [slug] [--only CODE] [--json]</C>, <>技能检查：双语描述、引用、元技能契约、相同的步骤、能否被调用；不带 slug 列出全库有问题的技能；<C>--only bilingual</C> 只看缺双语描述的</>],
               [<C>ash doctor [--fix] [--dir PATH]</C>, '检查本机各 Agent 能不能用上已装的技能：引用的技能在不在旁边、目录有没有 Agent 加载；--fix 自动补装'],
-              [<C>ash guide</C>, '输出 Agent 使用指南'],
+              [<C>ash import [目录…] [--folder PATH] [--update] [--dry-run] [--no-adopt]</C>, <>把本机已有、不是 ash 装的技能一次推送进库（默认扫描各 Agent 的技能目录）。同名已在库里的跳过（<C>--update</C> 提交为更新）；导入的目录登记为 ash 管理，之后 <C>ash installed</C> / <C>ash outdated</C> 能管到它们</>],
+              [<C>ash stats [--days N] [--json]</C>, '最近 N 天（默认 30）的使用次数、反馈次数和反馈率，按机器拆分'],
+              [<C>ash hooks install|uninstall|status</C>, '在 Claude Code 里装一个 Stop hook：用到的技能自动记入库里，用了却没回报的提醒 Agent 回报一次'],
+              [<C>ash guide [--full]</C>, '输出 Agent 使用指南（精简版；--full 完整规范）'],
               [<C>ash open</C>, '在浏览器打开应用'],
               [<C>ash update</C>, '更新 ash 自身'],
             ]} />
@@ -312,13 +315,14 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
               <li>服务端设置 <C>ASH_REQUIRE_REVIEW=0</C> 可以关闭审核，但命中高危规则的推送仍然强制待审。</li>
             </ul>
             <h3>使用情况与反馈</h3>
-            <p>技能装到本地后由 Agent 直接读取，服务端看不到「使用」本身，所以靠三种信号：安装（记下装到了哪台机器）、阅读（<C>ash show</C>）和反馈（<C>ash feedback</C>）。通过 ash 安装的 SKILL.md 末尾会附一行提示，请 Agent 用完回报结果；推送回库时这一行会被自动去掉，写在它后面的修改照常保留。</p>
+            <p>技能装到本地后由 Agent 直接读取，服务端看不到「使用」本身，所以靠这几种信号：安装（记下装到了哪台机器）、阅读（<C>ash show</C>）、反馈（<C>ash feedback</C>），以及装了 hook 的 Claude Code 上报的本地调用。通过 ash 安装的 SKILL.md 末尾会附一行提示，请 Agent 用完回报结果；推送回库时这一行会被自动去掉，写在它后面的修改照常保留。</p>
+            <p>只靠提示，Agent 常常忘记回报，健康信号就不准。「需关注」视图顶部和 <C>ash stats</C> 会显示<strong>反馈率</strong>（反馈次数 ÷ 使用次数），以及哪些机器用过技能却从没回报。在跑 Claude Code 的机器上运行 <C>ash hooks install</C>：每轮结束时 hook 读一遍会话记录，把用到的 ash 技能记入库里；用了却没回报的，提醒 Agent 回报一次（每个技能每个会话只提醒一次，<C>ASH_HOOK_REMIND=0</C> 只记录不提醒）。</p>
             <p>反馈记在 Agent 本机所装的版本上：技能更新之后，旧版本收到的失败不再算在新版本头上。由此得出的健康信号：</p>
             <Table head={['信号', '含义']} rows={[
               ['常失败', '当前版本至少 2 次失败，且失败不少于成功'],
               ['疑似重复', '与另一个已发布技能的名称、描述、标签和标题高度相似（40% 以上）'],
-              ['长期未用', '最近 60 天没有安装、阅读或反馈'],
-              ['从未使用', '发布 14 天以上从没有被安装、阅读或反馈（从开始记录使用时算起）'],
+              ['长期未用', '最近 60 天没有安装、阅读、Agent 调用或反馈'],
+              ['从未使用', '发布 14 天以上从没有被安装、阅读、Agent 调用或反馈（从开始记录使用时算起）'],
             ]} />
             <p>这些技能汇总在应用的「需关注」视图里，按上面的顺序排列：先修常失败的，再合并重复的，最后清理不用的。详情页的「使用情况」列出最近的反馈和相似技能。</p>
             <h3>安全扫描</h3>
@@ -429,6 +433,7 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
 
           <Section id="agents" title="接入 Agent">
             <p>给 Agent 的引导语只有一句，真正的使用约定放在服务端的 <a href="/agent.md">/agent.md</a>（<C>ash guide</C> 输出同样内容）。修改约定时所有 Agent 自动生效，不用重发提示词。</p>
+            <p>指南分两层：<a href="/agent.md">/agent.md</a> 是每次接入都读的精简版，只讲查找、使用、回报、推送；写技能、技能之间的引用、提炼元技能、HTTP 接口等放在 <a href="/agent-full.md">/agent-full.md</a>（<C>ash guide --full</C>），精简版会告诉 Agent 什么时候去读它。</p>
             <CodeBlock>{onboardingPrompt(origin)}</CodeBlock>
             <p>约定的要点：</p>
             <ul>
@@ -457,7 +462,9 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
               [<C>GET /api/agent/mine?terminal=</C>, '某个来源推送的技能及审核状态'],
               [<C>POST /api/agent/withdraw</C>, <>撤回待审推送：<C>slug</C>、<C>terminal</C></>],
               [<C>GET /api/agent/revisions?slug=a&amp;slug=b</C>, '已装技能比对：每行 slug、状态、修订号、版本'],
-              [<>公开：<C>/setup.sh</C> <C>/cli.sh</C> <C>/agent.md</C> <C>/llms.txt</C> <C>/healthz</C></>, '不需要 token'],
+              [<C>POST /api/agent/used</C>, <>本机 Agent 用到了已装技能：<C>slug</C>（可重复）、<C>revision</C>、<C>terminal</C>。ash 的 Claude Code hook 调用它</>],
+              [<C>GET /api/skills/insights?days=30&amp;format=text</C>, '使用次数、反馈率、按机器拆分（ash stats）'],
+              [<>公开：<C>/setup.sh</C> <C>/cli.sh</C> <C>/agent.md</C> <C>/agent-full.md</C> <C>/llms.txt</C> <C>/healthz</C></>, '不需要 token'],
             ]} />
             <p>浏览器会话调用写接口时还必须带 <C>X-ASH-Request: 1</C> 请求头（防跨站伪造），用 token 调用不需要。</p>
           </Section>
