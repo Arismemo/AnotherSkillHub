@@ -40,6 +40,8 @@ function pinnedLookup(req, skill) {
 }
 const feedbackHint = (slug) => `按本技能完成任务后，请运行 \`ash feedback ${slug} ok\`；没走通则运行 \`ash feedback ${slug} fail "一句话原因"\`。`;
 const LINT_ICON = { warn: '⚠️ ', info: 'ℹ️ ' };
+// 写作风格类提示（info）：全库检查时默认不列，见 GET /lint
+const STYLE_CODES = new Set(['desc-zh', 'desc-boundary', 'desc-use-when', 'desc-long', 'hardcoded-host']);
 
 // 本库里可以安装的引用：没写账号或写的是自己的账号；@别人/slug 要等团队库
 function localReferences(req, skill) {
@@ -688,19 +690,45 @@ api.get('/lint', (req, res) => {
   if (slug && !rows.length) return res.status(404).type('text/plain').send(`错误: 技能 ${slug} 不存在或已删除\n`);
   // ?code=bilingual 只看某一类问题（例如批量补双语描述时）
   const only = String(req.query.code || '').split(',').map((c) => c.trim()).filter(Boolean);
+  // 全库检查默认只列 ⚠️（会让技能装不上、调用不到、泄露信息的问题）；写作风格提示太多会淹没它们，
+  // 单个技能、本地草稿和 ?all=1 时才全部列出
+  const everything = Boolean(slug) || only.length > 0 || truthy(req.query.all);
   const results = rows.map((skill) => ({
     slug: skill.slug, status: skill.status,
-    issues: lintFor(req.user.id, skill, { username: req.user.username }).filter((i) => !only.length || only.includes(i.code)),
+    issues: lintFor(req.user.id, skill, { username: req.user.username })
+      .filter((i) => !only.length || only.includes(i.code))
+      .filter((i) => everything || i.level === 'warn' || !STYLE_CODES.has(i.code)),
   })).filter((r) => slug || r.issues.length);
   if (!wantsText(req)) return res.json({ results });
   if (!results.length || results.every((r) => !r.issues.length)) {
-    return res.type('text/plain').send(slug ? `✅ ${slug} 没有发现问题\n` : '✅ 全库没有发现问题\n');
+    return res.type('text/plain').send(slug ? `✅ ${slug} 没有发现问题\n` : `✅ 全库没有发现问题${everything ? '' : '（写作风格提示用 ash lint --all 查看）'}\n`);
   }
   const lines = [`${results.length} 个技能有待处理的问题（修改本地技能目录后 ash push <目录> --update）：`];
   for (const r of results) {
     lines.push('', `${r.slug}${r.status === 'pending' ? '（待审核）' : ''}`);
     r.issues.forEach((i) => lines.push(`  ${LINT_ICON[i.level]} ${i.msg}`));
   }
+  res.type('text/plain').send(`${lines.join('\n')}\n`);
+});
+
+// 推送前自查：POST /api/agent/lint  content=<SKILL.md 全文>。按库里现有技能分析引用与重复，但不写库
+api.post('/lint', (req, res) => {
+  const content = stripInstallFooter(String(req.body?.content || ''));
+  if (!content.trim()) return res.status(400).type('text/plain').send('错误: 缺少 content（SKILL.md 全文）\n');
+  const meta = normalizeSkillMeta(content, {});
+  if (meta.errors.length) return res.status(400).type('text/plain').send(`错误: ${meta.errors.join('；')}\n`);
+  const existing = findSkill(req.user.id, meta.slug);
+  const draft = existing && !existing.is_deleted
+    ? { ...existing, description: meta.description || existing.description }
+    : { id: -1, slug: meta.slug, name: meta.name, description: meta.description, folder_path: String(req.body?.folder || 'inbox'), tags: JSON.stringify(meta.tags), status: 'pending' };
+  const only = String(req.body?.code || '').split(',').map((c) => c.trim()).filter(Boolean);
+  const issues = [
+    ...meta.warnings.filter((w) => !/缺少(中|英)文描述/.test(w)).map((msg) => ({ code: 'meta', level: 'warn', msg })),
+    ...lintFor(req.user.id, draft, { username: req.user.username, content }),
+  ].filter((i) => !only.length || only.includes(i.code));
+  if (!wantsText(req)) return res.json({ slug: meta.slug, issues });
+  if (!issues.length) return res.type('text/plain').send(`✅ ${meta.slug}（本地版本）没有发现问题\n`);
+  const lines = [`${meta.slug}（本地版本，未推送）有 ${issues.length} 条检查意见：`, ...issues.map((i) => `  ${LINT_ICON[i.level]} ${i.msg}`)];
   res.type('text/plain').send(`${lines.join('\n')}\n`);
 });
 

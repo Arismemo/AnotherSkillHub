@@ -170,7 +170,7 @@ test('references end to end: push hints, ash lint, local resolution after instal
   });
 
   await t.test('the fixed version references the meta skill; the update is flagged metadata-only only when the body is unchanged', async () => {
-    const fixed = md('name: replay\ndescription: 跑回放并验证结果\ndescription_en: Run the replay and verify the results\ndepends_on: [dev-build]',
+    const fixed = md('name: replay\ndescription: 跑回放并验证结果。不要用于编译本身（交给 dev-build）\ndescription_en: Run the replay and verify the results\ndepends_on: [dev-build]',
       '# 回放\n\n> 用元技能 `dev-build`\n> - target: //app:main');
     const out = ok(['push', writeSkill(fixed), '--update']).stdout;
     assert.doesNotMatch(out, /相同：引用它/);
@@ -229,7 +229,7 @@ test('references end to end: push hints, ash lint, local resolution after instal
     assert.match(all, /nightly\n.*@bob\/secret 指向其他账号/);
     assert.match(ok(['lint', 'replay']).stdout, /✅ replay 没有发现问题/);
     const json = await (await fetch(`${origin}/api/agent/lint?slug=nightly`)).json();
-    assert.equal(json.results[0].issues[0].code, 'foreign-ref');
+    assert.ok(json.results[0].issues.some((i) => i.code === 'foreign-ref'));
     assert.equal(ash(['lint', 'nope']).status, 1);
   });
 
