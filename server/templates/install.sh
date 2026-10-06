@@ -71,9 +71,9 @@ link_roots() {
   esac
 }
 
-# 技能目录内容指纹（不含 .ash）：判断本地是否改过。与 ash CLI 中的定义保持一致
+# 技能目录内容指纹（不含 .ash，也不含运行脚本时生成的 __pycache__ / *.pyc 和 .DS_Store）：判断本地是否改过。与 ash CLI 中的定义保持一致
 ash_fingerprint() {
-  (cd "$1" && find . -type f ! -name .ash -print | LC_ALL=C sort | while IFS= read -r f; do printf '%s\n' "$f"; cat "$f"; done) | cksum | awk '{print $1 "-" $2}'
+  (cd "$1" && find . -name __pycache__ -prune -o -type f ! -name .ash ! -name '*.pyc' ! -name .DS_Store -print | LC_ALL=C sort | while IFS= read -r f; do printf '%s\n' "$f"; cat "$f"; done) | cksum | awk '{print $1 "-" $2}'
 }
 
 # 备份目录：每次一个新目录，同一秒里备份同名技能也不会互相覆盖

@@ -43,9 +43,9 @@ valid_slug() { [[ "$1" =~ ^[A-Za-z0-9_.-]+$ ]] || die "非法的技能标识符:
 # 路径段编码：逐字节 %XX，支持中文组合名
 urlencode() { printf '%s' "$1" | od -An -tx1 -v | tr -d ' \n' | sed 's/../%&/g'; }
 
-# 技能目录内容指纹（不含 .ash）：与服务端 install.sh 中的定义保持一致
+# 技能目录内容指纹（不含 .ash，也不含运行脚本时生成的 __pycache__ / *.pyc 和 .DS_Store）：与服务端 install.sh 中的定义保持一致
 ash_fingerprint() {
-  (cd "$1" && find . -type f ! -name .ash -print | LC_ALL=C sort | while IFS= read -r f; do printf '%s\n' "$f"; cat "$f"; done) | cksum | awk '{print $1 "-" $2}'
+  (cd "$1" && find . -name __pycache__ -prune -o -type f ! -name .ash ! -name '*.pyc' ! -name .DS_Store -print | LC_ALL=C sort | while IFS= read -r f; do printf '%s\n' "$f"; cat "$f"; done) | cksum | awk '{print $1 "-" $2}'
 }
 
 meta() { sed -n "s/^$2=//p" "$1/.ash" 2>/dev/null | head -n 1; }
