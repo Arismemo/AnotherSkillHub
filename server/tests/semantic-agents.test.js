@@ -292,6 +292,17 @@ test('semantic layer, pins, multi-agent installs and ash doctor end to end', asy
     assert.match(ok(['migrate']).stdout, /没有需要迁移的技能/, 'migrate is idempotent');
   });
 
+  await t.test('revisions accept hundreds of names in a POST body (a long URL is rejected by gateways)', async () => {
+    const names = ['db-rollback', ...Array.from({ length: 400 }, (_, i) => `local-only-skill-${i}`)];
+    const body = new URLSearchParams(names.map((n) => ['slug', n]));
+    const res = await fetch(`${origin}/api/agent/revisions`, { method: 'POST', body });
+    assert.equal(res.status, 200);
+    const lines = (await res.text()).trim().split('\n');
+    assert.equal(lines.length, names.length);
+    assert.match(lines[0], /^db-rollback\tpublished\t/);
+    assert.match(lines[1], /^local-only-skill-0\tmissing/);
+  });
+
   await t.test('a skill renamed after it was installed into the store is relinked under its new name', async () => {
     ok(['push', writeSkill(md('name: rollback-v2\ndescription: 数据库迁移回滚第二版 database rollback v2', '# 回滚 v2'))]);
     await approve('rollback-v2');
