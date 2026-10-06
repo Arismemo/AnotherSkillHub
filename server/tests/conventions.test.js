@@ -130,10 +130,15 @@ test('CLI 把规则递到 Agent 手上：--help 规则块、push --help、ash ne
     assert.doesNotMatch(r.stderr, /推送/, '推送会先在 stderr 打出「→ 推送…」');
   });
 
-  await t.test('ash new 生成符合规范的骨架；非法 slug 与已存在的目录直接失败', () => {
+  await t.test('ash new 生成符合规范的骨架；非法 slug 与已存在的目录直接失败', async () => {
+    // 真实库里有验收纪律的元技能：骨架里若点名它却不声明，就会带着 ⚠️ 出厂
+    ok(['push', writeSkill('---\nname: verification-discipline\ndescription: 【元技能】验收与证据纪律。不要用于领域阈值（交给调用方）。Use when grading evidence.\n---\n\n# 验收\n\n## 契约\n\n- 输入：结论\n- 输出：分级\n')]);
+    await approve('verification-discipline');
     const dir = path.join(work, 'skeleton');
     ok(['new', 'demo-skill', '--dir', dir]);
     assert.match(fs.readFileSync(path.join(dir, 'demo-skill', 'SKILL.md'), 'utf8'), /^name: demo-skill$/m);
+    // 骨架本身不能带 ⚠️：Agent 照模板填写，模板里的坑会被复制到每个新技能
+    assert.doesNotMatch(ok(['lint', path.join(dir, 'demo-skill')]).stdout, /⚠️/, 'a fresh scaffold has no warnings');
 
     const metaDir = path.join(work, 'meta-skeleton');
     ok(['new', 'meta-demo', '--meta', '--dir', metaDir]);

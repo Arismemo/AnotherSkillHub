@@ -818,7 +818,7 @@ EOF
       prefix=""; extra='
 ## 验证
 
-怎样确认完成；结论按元技能 `verification-discipline` 分级（需要时把它加进 depends_on）。
+怎样确认完成、常见失败怎么处理。需要判定证据是否足够时引用验收纪律的元技能，并把它加进 depends_on（ash suggest "验收 证据" 能找到）。
 '
     fi
     cat > "$target/SKILL.md" <<EOF2
@@ -836,7 +836,7 @@ tags: []
 
 ## 步骤
 
-1. 已有元技能负责的动作写「用元技能 \`<slug>\`」+ 本技能特有参数，不要抄它的步骤
+1. 具体、可执行的命令或操作。已有元技能负责的动作只写一行引用它的 slug，加上本技能特有参数，不要抄它的步骤
 ${extra}
 EOF2
     echo "✓ 已生成 $target/SKILL.md"
