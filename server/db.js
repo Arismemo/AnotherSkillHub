@@ -268,6 +268,16 @@ db.exec(`
     FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
   );
 
+  -- 改名 / 合并留下的去向：旧标识符 → 新标识符。已装旧名的机器靠它找到新技能（ash migrate、ash installed），
+  -- 按旧名拉取也会落到新技能上。旧名重新被一个技能占用时，以那个技能为准
+  CREATE TABLE IF NOT EXISTS skill_redirects (
+    user_id INTEGER NOT NULL,
+    old_slug TEXT NOT NULL,
+    new_slug TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, old_slug)
+  );
+
   CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);
   -- 开始记录使用的时间：在此之前没有数据，「从未使用 / 长期未用」只能从这里起算
   INSERT OR IGNORE INTO app_meta (key, value) VALUES ('usage_tracking_since', strftime('%Y-%m-%d %H:%M:%S', 'now'));

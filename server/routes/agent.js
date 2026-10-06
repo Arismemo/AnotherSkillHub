@@ -62,8 +62,13 @@ function scriptError(res, status, message) {
 
 // Agent 侧读取时，不可见的技能给出可操作的原因
 function agentLookup(req) {
-  const skill = findSkill(req.user.id, req.params.slug.replace(/\.md$/, ''));
-  if (!skill || skill.is_deleted) return { error: [404, `技能 ${req.params.slug} 不存在或已删除（ash search <关键词> 查找）`] };
+  const wanted = req.params.slug.replace(/\.md$/, '');
+  const skill = findSkill(req.user.id, wanted);
+  if (!skill || skill.is_deleted) {
+    const moved = redirectOf(req.user.id, wanted);
+    if (moved) return { error: [404, `技能 ${wanted} 已改名或并入 ${moved.slug}：请改用 ash pull ${moved.slug}（已装旧名的机器运行 ash migrate 一次换完）`] };
+    return { error: [404, `技能 ${req.params.slug} 不存在或已删除（ash search <关键词> 查找）`] };
+  }
   if (!isVisibleToAgents(skill, { allowPending: truthy(req.query.pending) })) {
     return { error: [404, `技能 ${skill.slug} 正在等待人工审核，采纳后才能拉取；推送者自用请加 --pending（HTTP: ?pending=1）`] };
   }
@@ -223,42 +228,13 @@ router.get('/:slug', (req, res) => {
 });
 
 // 一键安装脚本：/s/:slug/install.sh
-// agent=all：装进本机每个 Agent 各自加载技能的目录。一台机器上常同时跑着 Claude Code、Codex、Hermes，
-// 只装进其中一个目录，其他 Agent 既看不到这个技能、也按名字调用不到它引用的技能。
-// 生成的脚本逐个目录调用单目录安装脚本（依赖同样装在每个目录里，相对链接各自对得上）
-function multiAgentScript(req, skill) {
-  const sub = new URLSearchParams();
-  for (const key of ['pending', 'force', 'nodeps', 'pin', 'reason']) {
-    if (typeof req.query[key] === 'string' && req.query[key]) sub.set(key, req.query[key]);
-  }
-  const query = sub.toString() ? `?${sub}` : '';
-  return [
-    '#!/usr/bin/env bash',
-    '# AnotherSkillHub 多 Agent 安装脚本（由服务端生成）：装进本机每个 Agent 各自加载技能的目录',
-    'set -euo pipefail',
-    `BASE_URL=${shQuote(getBaseUrl(req))}`,
-    SCRIPT_TOKEN_PRELUDE,
-    AGENT_ROOTS_FN,
-    'roots="$(agent_roots)"',
-    `if [ -z "$roots" ]; then echo ${shQuote('没有找到任何 Agent 的目录（~/.claude、~/.agents、~/.codex、~/.hermes、~/.dsh）；请用 --agent 或 --dir 指定')} >&2; exit 1; fi`,
-    'status=0',
-    'while IFS= read -r root; do',
-    '  echo "=== $root"',
-    `  curl -fsSL -H "Authorization: Bearer $ASH_TOKEN" "$BASE_URL"${shQuote(`/s/${skill.slug}/install.sh${query}`)} | ASH_SKILLS_DIR="$root" bash || status=1`,
-    'done <<EOF',
-    '$roots',
-    'EOF',
-    'exit $status',
-    '',
-  ].join('\n');
-}
-
+// 默认装进本机共享存储 ~/.ash/skills/<slug>，再在 Agent 的技能目录里建指向它的链接（agent=all 链到每个 Agent，
+// 默认也是本机每个 Agent）；dir=/path 时直接装进那个目录。逻辑都在 templates/install.sh 里
 // 查询参数: agent=auto|hermes|codex|claude|dsh|all；dir=/path 自定义目录；pending=1 安装待审核技能；pin=1.2.0 固定版本
 router.get('/:slug/install.sh', (req, res) => {
   try {
     const { skill: current, error } = agentLookup(req);
     if (error) return scriptError(res, error[0], error[1]);
-    if (req.query.agent === 'all' && !req.query.dir) return res.type('text/plain').send(multiAgentScript(req, current));
     const { resolved, pin, error: pinError } = pinnedLookup(req, current);
     if (pinError) return scriptError(res, pinError[0], pinError[1]);
     // 固定版本时，内容、修订号、依赖都按那一版来
@@ -295,6 +271,7 @@ router.get('/:slug/install.sh', (req, res) => {
       FOOTER_MARK: shQuote(INSTALL_FOOTER_MARK),
       FOOTER: shQuote(footer),
       DEPS: depSpecs.map(shQuote).join(' '),
+      AGENT_ROOTS_FN,
     });
     res.type('text/plain').send(script);
   } catch (err) {
@@ -593,17 +570,54 @@ api.post('/push', upload.single('file'), async (req, res) => {
   }
 });
 
-// 已装技能比对：GET /api/agent/revisions?slug=a&slug=b → 每行 slug<TAB>状态<TAB>修订<TAB>版本
-// 状态: published | pending | trashed | missing
+// 改名 / 合并后的去向：旧标识符 → 当前可用的新技能。旧名重新被一个没删除的技能占用时不跳转；
+// 链式改名（a→b→c）顺着走到底，最多 5 跳，防止环
+function redirectOf(userId, slug) {
+  let current = slug;
+  for (let hops = 0; hops < 5; hops += 1) {
+    const live = findSkill(userId, current);
+    if (live && !live.is_deleted) return current === slug ? null : live;
+    const row = db.prepare('SELECT new_slug FROM skill_redirects WHERE user_id = ? AND old_slug = ?').get(userId, current);
+    if (!row) return null;
+    current = row.new_slug;
+  }
+  return null;
+}
+
+// 已装技能比对：GET /api/agent/revisions?slug=a&slug=b → 每行 slug<TAB>状态<TAB>修订<TAB>版本[<TAB>新标识符]
+// 状态: published | pending | trashed | missing | moved（改名或并入了别的技能，第 5 列是新标识符）
 api.get('/revisions', (req, res) => {
   const slugs = [].concat(req.query.slug || []).map(String).filter(Boolean).slice(0, 500);
   const lines = slugs.map((slug) => {
     const skill = findSkill(req.user.id, slug);
-    if (!skill) return `${slug}\tmissing\t-\t-`;
-    if (skill.is_deleted) return `${slug}\ttrashed\t-\t-`;
+    if (!skill || skill.is_deleted) {
+      const moved = redirectOf(req.user.id, slug);
+      if (moved) return `${slug}\tmoved\t-\t${moved.version || '-'}\t${moved.slug}`;
+      return `${slug}\t${skill ? 'trashed' : 'missing'}\t-\t-`;
+    }
     return `${slug}\t${skill.status === 'pending' ? 'pending' : 'published'}\t${skillRevision(skill)}\t${skill.version || '-'}`;
   });
   res.type('text/plain').send(lines.length ? `${lines.join('\n')}\n` : '');
+});
+
+// 登记改名去向（整理技能库时用）：GET 列出，PUT {old_slug, new_slug} 登记，DELETE ?old_slug= 撤销
+const SLUG_RE = /^[A-Za-z0-9_.-]+$/;
+api.get('/redirects', (req, res) => {
+  res.json(db.prepare('SELECT old_slug, new_slug, created_at FROM skill_redirects WHERE user_id = ? ORDER BY old_slug').all(req.user.id));
+});
+api.put('/redirects', (req, res) => {
+  const oldSlug = String(req.body?.old_slug || '').trim();
+  const newSlug = String(req.body?.new_slug || '').trim();
+  if (!SLUG_RE.test(oldSlug) || !SLUG_RE.test(newSlug) || oldSlug === newSlug) return res.status(400).json({ error: 'old_slug / new_slug 必须是不同的合法标识符' });
+  const target = findSkill(req.user.id, newSlug);
+  if (!target || target.is_deleted) return res.status(404).json({ error: `新技能 ${newSlug} 不存在` });
+  db.prepare(`INSERT INTO skill_redirects (user_id, old_slug, new_slug) VALUES (?, ?, ?)
+    ON CONFLICT(user_id, old_slug) DO UPDATE SET new_slug = excluded.new_slug, created_at = CURRENT_TIMESTAMP`).run(req.user.id, oldSlug, newSlug);
+  res.json({ old_slug: oldSlug, new_slug: newSlug });
+});
+api.delete('/redirects', (req, res) => {
+  const r = db.prepare('DELETE FROM skill_redirects WHERE user_id = ? AND old_slug = ?').run(req.user.id, String(req.query.old_slug || ''));
+  res.json({ deleted: r.changes });
 });
 
 const REVIEW_TEXT = {

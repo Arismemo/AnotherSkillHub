@@ -50,15 +50,45 @@ ash_fingerprint() {
 
 meta() { sed -n "s/^$2=//p" "$1/.ash" 2>/dev/null | head -n 1; }
 
-# 可能存放技能的目录：--dir 指定 > ASH_SKILLS_DIR > hermes profiles > 常见目录（去重）
-skill_roots() {
+# 备份目录：每次一个新目录（与 install.sh 一致）
+backup_path() {
+  local base p n=1
+  base="$HOME/.ash/backups/$1-$(date +%Y%m%d%H%M%S)"
+  p="$base"
+  while [ -e "$p" ]; do n=$((n + 1)); p="$base-$n"; done
+  mkdir -p "$(dirname "$p")"
+  echo "$p"
+}
+
+# 共享存储：ash 装的技能默认只在这里存一份，各 Agent 的技能目录里是指向它的符号链接（与 install.sh 一致）
+STORE="${ASH_STORE:-$HOME/.ash/skills}"
+
+# 目录是不是指向共享存储的链接
+is_store_link() { [ -L "$1" ] && [ "$(readlink "$1")" = "$STORE/$(basename "$1")" ]; }
+
+# 共享存储里的技能链接在哪些 Agent 目录（每行一个）
+links_of() {
+  local root
+  agent_dirs | while IFS= read -r root; do
+    if is_store_link "$root/$1"; then echo "$root"; fi
+  done
+}
+
+# 本机 Agent 的技能目录（存在的才列）：hermes profiles > 常见目录
+agent_dirs() {
   local d
+  for d in "$HOME"/.hermes/profiles/*/skills "$HOME/.hermes/skills" "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.dsh/skills"; do
+    if [ -d "$d" ]; then echo "$d"; fi
+  done | awk '!seen[$0]++'
+}
+
+# 可能存放技能的目录：--dir 指定时只看它；否则 共享存储 > ASH_SKILLS_DIR > 各 Agent 目录（去重）
+skill_roots() {
+  if [ -n "${1:-}" ]; then echo "$1"; return; fi
   {
-    if [ -n "${1:-}" ]; then echo "$1"; fi
+    if [ -d "$STORE" ]; then echo "$STORE"; fi
     if [ -n "${ASH_SKILLS_DIR:-}" ]; then echo "$ASH_SKILLS_DIR"; fi
-    for d in "$HOME"/.hermes/profiles/*/skills "$HOME/.hermes/skills" "$HOME/.agents/skills" "$HOME/.claude/skills" "$HOME/.dsh/skills"; do
-      if [ -d "$d" ]; then echo "$d"; fi
-    done
+    agent_dirs
   } | awk '!seen[$0]++'
 }
 
@@ -99,14 +129,29 @@ missing_deps() {
   done
 }
 
-# 已由 ash 安装的技能目录（含 .ash 元数据），每行一个目录
+# 已由 ash 安装的技能目录（含 .ash 元数据），每行一个目录。指向共享存储的链接不重复列（存储里那份就是它）
 installed_dirs() {
-  local root f
+  local root f d
   skill_roots "${1:-}" | while IFS= read -r root; do
     for f in "$root"/*/.ash; do
-      if [ -f "$f" ]; then dirname "$f"; fi
+      [ -f "$f" ] || continue
+      d="$(dirname "$f")"
+      if [ -L "$d" ]; then continue; fi
+      echo "$d"
     done
   done
+}
+
+# 用重装更新一个已装技能：共享存储里的装回存储、保持原来的链接；直接装在某个目录里的装回那个目录
+reinstall() {
+  local d="$1" slug="$2"; shift 2
+  if [ "$(dirname "$d")" = "$STORE" ]; then
+    ASH_LINK_ROOTS="$(links_of "$slug")"
+    [ -n "$ASH_LINK_ROOTS" ] || ASH_LINK_ROOTS="-"
+    ASH_LINK_ROOTS="$ASH_LINK_ROOTS" run_install "$SERVER_URL/s/$slug/install.sh" "$@"
+  else
+    ASH_SKILLS_DIR="$(dirname "$d")" run_install "$SERVER_URL/s/$slug/install.sh" "$@"
+  fi
 }
 
 # 批量查询服务端状态：每行 slug<TAB>状态<TAB>修订<TAB>版本
@@ -135,6 +180,7 @@ skill_state() {
     return
   fi
   case "$rstatus" in
+    moved) printf 'moved\t已改名为 %s（ash migrate 换成新名）\n' "$(printf '%s' "$line" | cut -f5)"; return ;;
     missing) printf 'missing\t远端已删除\n'; return ;;
     trashed) printf 'trashed\t远端在废纸篓\n'; return ;;
   esac
@@ -221,14 +267,17 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
 
 安装与本地管理
   ash pull <slug>[@版本] [--agent claude|codex|hermes|dsh|all] [--dir PATH] [--pending] [--force] [--no-deps]
-                                  安装技能及其依赖；本地改过的同名目录先备份到 ~/.ash/backups（--force 不备份）
-                                  --agent all 装进本机每个 Agent 的目录；slug@1.2.0 安装历史里的那一版并固定
+                                  安装技能及其依赖：只在 ~/.ash/skills 存一份，再链接进本机每个 Agent 的技能目录
+                                  （--agent 只链接给那个 Agent；--dir 直接装进指定目录、不建链接）；
+                                  本地改过的同名目录先备份到 ~/.ash/backups（--force 不备份）；slug@1.2.0 安装那一版并固定
   ash pull bundle:<标识或名称>     一次安装整个技能组合
   ash pull --all [--dir PATH] [--force]   更新所有过期的已装技能（本地改过的跳过，除非 --force）
   ash installed [--dir PATH]      本机已装技能及状态（最新 / 有更新 / 本地有修改 / 远端已删除）
   ash outdated [--dir PATH]       只列出需要处理的已装技能
   ash remove <slug> [--dir PATH] [--force] 卸载；本地改过的先备份（--force 直接删除）
   ash doctor [--fix] [--dir PATH]  检查本机各 Agent 能不能用上已装的技能：引用的技能在不在旁边、装的目录有没有 Agent 加载；--fix 自动补装
+  ash migrate [--apply] [--keep-copies]  把本机已有的技能换成共享存储 + 链接：ash 装的搬进存储，旧名换新名，
+                                  和库里同名的手动副本先备份再换成库里的版本；默认只列计划
 
 反馈
   ash feedback <slug> ok|fail ["说明"] [--dir PATH]   用完技能后回报结果；失败时写一句哪一步、为什么没走通
@@ -250,7 +299,7 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash update                      更新 ash 自身
 
 完整文档：$SERVER_URL/docs
-环境变量：ASH_AGENT 默认安装到哪个 Agent（claude|codex|hermes|dsh|all）；ASH_SERVER_URL 服务地址；ASH_TOKEN API token（默认读 ~/.ash/token）；ASH_SKILLS_DIR 默认安装目录（在 Claude Code 里运行时默认 ~/.claude/skills）；ASH_BIN_DIR ash 安装位置；ASH_TERMINAL 推送来源名（默认 hostname）
+环境变量：ASH_AGENT 默认安装到哪个 Agent（claude|codex|hermes|dsh|all）；ASH_SERVER_URL 服务地址；ASH_TOKEN API token（默认读 ~/.ash/token）；ASH_STORE 共享存储目录（默认 ~/.ash/skills）；ASH_SKILLS_DIR 不用共享存储、直接装进这个目录；ASH_BIN_DIR ash 安装位置；ASH_TERMINAL 推送来源名（默认 hostname）
 EOF
 }
 
@@ -306,11 +355,11 @@ case "$cmd" in
           outdated) ;;
           modified-outdated)
             if [ "$force" != 1 ]; then echo "⏭  ${slug}：${note}，跳过（ash pull $slug 会先备份再覆盖，或加 --force）"; skipped=$((skipped + 1)); continue; fi ;;
-          missing|trashed) echo "⚠️  ${slug}：$note"; continue ;;
+          missing|trashed|moved) echo "⚠️  ${slug}：$note"; continue ;;
           *) continue ;;
         esac
-        # 装回原来的目录：把它的上级目录作为安装根目录
-        if ASH_SKILLS_DIR="$(dirname "$d")" run_install "$SERVER_URL/s/$slug/install.sh" "${extra[@]}"; then updated=$((updated + 1)); else failed=$((failed + 1)); fi
+        # 装回原来的位置
+        if reinstall "$d" "$slug" "${extra[@]}"; then updated=$((updated + 1)); else failed=$((failed + 1)); fi
       done <<EOF
 $dirs
 EOF
@@ -341,6 +390,10 @@ EOF
       state="$(skill_state "$d" "$revs")"; code="${state%%$'\t'*}"; note="${state#*$'\t'}"
       if [ "$cmd" = "outdated" ] && { [ "$code" = "ok" ] || [ "$code" = "pinned" ]; }; then continue; fi
       printf '%s  ·  v%s  ·  %s  ·  %s\n' "$(meta "$d" slug)" "$(meta "$d" version)" "$note" "$d"
+      if [ "$(dirname "$d")" = "$STORE" ]; then
+        linked="$(links_of "$(meta "$d" slug)" | while IFS= read -r r; do printf '%s ' "$(root_agent "$r")"; done)"
+        if [ -n "$linked" ]; then printf '   ↳ 链接给：%s\n' "$linked"; else printf '   ↳ 没有链接给任何 Agent（ash pull %s --agent <agent> 链接过去）\n' "$(meta "$d" slug)"; fi
+      fi
       miss="$(missing_deps "$d" | tr '\n' ' ')"
       if [ -n "${miss// /}" ]; then printf '   ↳ 引用的技能不在旁边：%s（ash doctor --fix 补装）\n' "$miss"; fi
       shown=$((shown + 1))
@@ -364,9 +417,16 @@ EOF
     while IFS= read -r d; do
       [ -n "$d" ] || continue
       [ "$(meta "$d" slug)" = "$slug" ] || continue
+      # 共享存储里的技能：先拆掉各 Agent 目录里指向它的链接
+      if [ "$(dirname "$d")" = "$STORE" ]; then
+        while IFS= read -r r; do
+          if [ -n "$r" ]; then rm -f "$r/$slug"; echo "✓ 已移除链接 $r/$slug"; fi
+        done <<EOF2
+$(links_of "$slug")
+EOF2
+      fi
       if [ "$force" != 1 ] && [ "$(meta "$d" fingerprint)" != "$(ash_fingerprint "$d")" ]; then
-        backup="$HOME/.ash/backups/$slug-$(date +%Y%m%d%H%M%S)"
-        mkdir -p "$(dirname "$backup")"
+        backup="$(backup_path "$slug")"
         mv "$d" "$backup"
         echo "✓ 已卸载 ${d}（本地有修改，已备份到 ${backup}）"
       else
@@ -378,6 +438,139 @@ EOF
 $(installed_dirs "$dir")
 EOF
     [ "$removed" -gt 0 ] || die "没有找到由 ash 安装的 ${slug}（不是 ash 安装的目录不会被删除）"
+    ;;
+  migrate)
+    # 把本机已有的技能换成「共享存储 + 链接」：
+    #   1. ash 装在 Agent 目录里的技能 → 搬进共享存储，原位置换成链接
+    #   2. 已改名 / 合并的旧名 → 换成新名（旧目录先备份）
+    #   3. 和库里同名、但不是 ash 装的手动副本 → 先备份到 ~/.ash/backups，再换成库里的版本（--keep-copies 不动它们）
+    # 嵌在 Agent 分类子目录里的同名副本（如 ~/.hermes/skills/devops/<slug>）也算副本。默认只列计划，--apply 才执行
+    apply=0; keep=0
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --apply) apply=1; shift ;;
+        --keep-copies) keep=1; shift ;;
+        *) die "未知参数: $1" ;;
+      esac
+    done
+    # 库里所有技能（含废纸篓、改名去向）一次查回：每行 slug<TAB>状态<TAB>修订<TAB>版本[<TAB>新标识符]
+    cands="$(
+      agent_dirs | while IFS= read -r root; do
+        for d in "$root"/* "$root"/*/*; do
+          [ -f "$d/SKILL.md" ] || continue
+          # 链接本身（ash 建的或别的工具建的）和链接目录里面的东西都不是本机副本
+          if [ -L "$d" ] || [ -L "$(dirname "$d")" ]; then continue; fi
+          # 技能自己的子目录（例如带 SKILL.md 的模板）不是另一个技能
+          if [ "$(dirname "$d")" != "$root" ] && [ -f "$(dirname "$d")/SKILL.md" ]; then continue; fi
+          echo "$d"
+        done
+      done
+    )"
+    # 共享存储里已改名的旧技能（链接上面跳过了，这里按存储里的那份算）
+    if [ -d "$STORE" ]; then
+      for d in "$STORE"/*; do
+        if [ -f "$d/.ash" ] && [ ! -L "$d" ]; then cands="${cands:+$cands
+}$d"; fi
+      done
+    fi
+    [ -n "$cands" ] || { echo "本机 Agent 目录里没有技能"; exit 0; }
+    revs="$(printf '%s\n' "$cands" | while IFS= read -r d; do
+      if [ -f "$d/.ash" ]; then meta "$d" slug; else basename "$d"; fi
+    done | awk '!seen[$0]++' | { args=(-G); while IFS= read -r x; do args+=(--data-urlencode "slug=$x"); done; http "${args[@]}" "$SERVER_URL/api/agent/revisions"; })"
+    plan=""; n=0
+    while IFS= read -r d; do
+      [ -n "$d" ] || continue
+      root="$(dirname "$d")"; name="$(basename "$d")"
+      if [ -f "$d/.ash" ]; then slug="$(meta "$d" slug)"; else slug="$name"; fi
+      line="$(printf '%s\n' "$revs" | awk -F'\t' -v s="$slug" '$1 == s { print; exit }')"
+      st="$(printf '%s' "$line" | cut -f2)"
+      target="$slug"
+      case "$st" in
+        published|pending) ;;
+        moved) target="$(printf '%s' "$line" | cut -f5)" ;;
+        *) continue ;; # 库里没有（Agent 自带或自己写的技能）、或已删除：不动
+      esac
+      if [ "$root" = "$STORE" ]; then
+        # 存储里的技能只处理改名：每个链接到它的 Agent 目录都换成新名
+        [ "$target" != "$slug" ] || continue
+        while IFS= read -r r; do
+          [ -n "$r" ] || continue
+          plan="${plan}rename	${d}	${target}	${r}
+"
+          n=$((n + 1))
+        done <<EOF2
+$(links_of "$slug")
+EOF2
+        plan="${plan}drop	${d}	${target}	-
+"
+        continue
+      fi
+      # 分类子目录里的副本：链接放到 Agent 目录顶层（Agent 按目录树扫描，放哪层都能加载）
+      case "$root" in */skills) link_root="$root" ;; *) link_root="$(dirname "$root")" ;; esac
+      if [ -f "$d/.ash" ] && [ "$target" = "$slug" ] && [ "$root" = "$link_root" ]; then kind="move"
+      elif [ -f "$d/.ash" ] || [ "$target" != "$slug" ]; then kind="replace"
+      else
+        kind="copy"
+        if [ "$keep" = 1 ]; then continue; fi
+      fi
+      plan="${plan}${kind}	${d}	${target}	${link_root}
+"
+      n=$((n + 1))
+    done <<EOF
+$cands
+EOF
+    [ "$n" -gt 0 ] || { echo "✅ 没有需要迁移的技能（共享存储: $STORE）"; exit 0; }
+    echo "共享存储: $STORE（各 Agent 目录里放指向它的链接）"
+    printf '%s' "$plan" | while IFS="$(printf '\t')" read -r kind d target link_root; do
+      [ -n "$kind" ] || continue
+      case "$kind" in
+        move) echo "  搬进存储  $d" ;;
+        replace) echo "  换成新版  $d → $target（旧目录备份）" ;;
+        copy) echo "  替换副本  $d → 库里的 $target（副本备份）" ;;
+        rename) echo "  换成新名  $link_root/$(basename "$d") → $target" ;;
+        drop) ;;
+      esac
+    done
+    if [ "$apply" != 1 ]; then echo "共 $n 项。确认后运行 ash migrate --apply 执行（手动副本会先备份到 ~/.ash/backups；--keep-copies 不动手动副本）"; exit 0; fi
+    mkdir -p "$STORE"
+    failed=0
+    while IFS="$(printf '\t')" read -r kind d target link_root; do
+      [ -n "$kind" ] || continue
+      if [ "$kind" = drop ]; then
+        # 改名的旧技能：各处链接已换成新名，存储里的旧目录收进备份
+        if [ -d "$d" ]; then backup="$(backup_path "$(basename "$d")")"; mv "$d" "$backup"; echo "↳ 已备份 $d → $backup"; fi
+        continue
+      fi
+      if [ "$kind" = rename ]; then
+        rm -f "$link_root/$(basename "$d")"
+        d="$link_root/$(basename "$d")"
+      fi
+      if [ "$kind" = move ] && [ ! -e "$STORE/$target" ]; then
+        # 原样搬过去（保留 .ash 与本地修改），原位置换成链接
+        mv "$d" "$STORE/$target"
+        ln -s "$STORE/$target" "$d"
+        echo "✓ $d → 链接到 $STORE/$target"
+        continue
+      fi
+      if [ -e "$d" ] && [ ! -L "$d" ]; then
+        backup="$(backup_path "$(basename "$d")")"
+        mv "$d" "$backup"
+        echo "↳ 已备份 $d → $backup"
+      fi
+      # 同一技能已在存储里（别的 Agent 迁移过）就只补链接，否则装进存储并链接到这个 Agent 目录
+      if [ -f "$STORE/$target/.ash" ]; then
+        if [ ! -e "$link_root/$target" ]; then ln -s "$STORE/$target" "$link_root/$target"; fi
+        echo "✓ $link_root/$target → 链接到 $STORE/$target"
+      elif ! ASH_LINK_ROOTS="$link_root" run_install "$SERVER_URL/s/$target/install.sh" --data-urlencode "reason=update" >/dev/null; then
+        echo "✗ $target 安装失败（备份仍在 ~/.ash/backups）"; failed=$((failed + 1))
+      else
+        echo "✓ $link_root/$target → 链接到 $STORE/$target"
+      fi
+    done <<EOF
+$plan
+EOF
+    echo "完成。ash doctor 检查引用是否都链接齐了（ash doctor --fix 自动补）"
+    [ "$failed" = 0 ] || exit 1
     ;;
   doctor)
     fix=0; dir=""
@@ -392,14 +585,21 @@ EOF
     while IFS= read -r root; do
       [ -n "$root" ] || continue
       n=0
-      for f in "$root"/*/.ash; do if [ -f "$f" ]; then n=$((n + 1)); fi; done
+      for f in "$root"/*/.ash; do if [ -f "$f" ] && [ ! -L "$(dirname "$f")" ]; then n=$((n + 1)); fi; done
       [ "$n" -gt 0 ] || continue
-      who="$(root_agent "$root")"
+      if [ "$root" = "$STORE" ]; then who="共享存储，经链接给各 Agent"; else who="$(root_agent "$root")"; fi
       echo "$root（${who:-没有 Agent 从这里加载}）：$n 个 ash 安装的技能"
       if [ -z "$who" ]; then echo "  ⚠️  没有 Agent 会从这个目录加载技能：ash pull <slug> --agent <agent|all> 装到 Agent 的目录"; problems=$((problems + 1)); fi
       for f in "$root"/*/.ash; do
         [ -f "$f" ] || continue
-        d="$(dirname "$f")"; slug="$(meta "$d" slug)"; total=$((total + 1))
+        d="$(dirname "$f")"
+        if [ -L "$d" ]; then continue; fi
+        slug="$(meta "$d" slug)"; total=$((total + 1))
+        links=""
+        if [ "$root" = "$STORE" ]; then
+          links="$(links_of "$slug")"
+          if [ -z "$links" ]; then echo "  ⚠️  $slug 没有链接给任何 Agent：ash pull $slug --agent <claude|codex|hermes|dsh|all>"; problems=$((problems + 1)); fi
+        fi
         while IFS= read -r spec; do
           [ -n "$spec" ] || continue
           dep="${spec%%@*}"
@@ -408,12 +608,27 @@ EOF
               echo "  ⚠️  $slug 引用的 $dep 设置了 disable-model-invocation：Claude Code 里调用不到它（仍可读 ../$dep/SKILL.md）"
               problems=$((problems + 1))
             fi
+            # 共享存储：引用的技能要和它链接进同样的 Agent 目录，../<dep>/SKILL.md 才对得上
+            while IFS= read -r r; do
+              [ -n "$r" ] || continue
+              if [ -e "$r/$dep" ]; then continue; fi
+              if [ "$fix" = 1 ]; then ln -s "$STORE/$dep" "$r/$dep"; echo "  ✓ 已把 $dep 链接进 ${r}（$slug 引用它）"
+              else echo "  ✗ $slug 引用的 $dep 没有链接进 ${r}（ash doctor --fix 补上）"; problems=$((problems + 1)); fi
+            done <<EOF3
+$links
+EOF3
             continue
           fi
           if [ "$fix" = 1 ]; then
             extra=(--data-urlencode "reason=dependency")
             case "$spec" in *@*) extra+=(--data-urlencode "pin=${spec#*@}") ;; esac
-            if ASH_SKILLS_DIR="$root" run_install "$SERVER_URL/s/$dep/install.sh" "${extra[@]}" >/dev/null 2>&1; then
+            fixed=0
+            if [ "$root" = "$STORE" ]; then
+              if ASH_LINK_ROOTS="${links:--}" run_install "$SERVER_URL/s/$dep/install.sh" "${extra[@]}" >/dev/null 2>&1; then fixed=1; fi
+            else
+              if ASH_SKILLS_DIR="$root" run_install "$SERVER_URL/s/$dep/install.sh" "${extra[@]}" >/dev/null 2>&1; then fixed=1; fi
+            fi
+            if [ "$fixed" = 1 ]; then
               echo "  ✓ 已把 $slug 引用的 $dep 装到旁边"
             else
               echo "  ✗ $slug 引用的 $dep 安装失败（库里没有、未发布或网络错误）"; problems=$((problems + 1))

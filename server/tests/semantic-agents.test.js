@@ -184,36 +184,135 @@ test('semantic layer, pins, multi-agent installs and ash doctor end to end', asy
     assert.ok(lint.includes('pin-old') && !lint.includes('pin-missing'));
   });
 
-  await t.test('--agent all installs into every agent on the machine, dependencies included', async () => {
+  const store = path.join(home, '.ash', 'skills');
+  const linkOf = (rel) => {
+    const st = fs.lstatSync(path.join(home, rel), { throwIfNoEntry: false });
+    return st?.isSymbolicLink() ? fs.readlinkSync(path.join(home, rel)) : null;
+  };
+
+  await t.test('skills are stored once in ~/.ash/skills and linked into every agent, dependencies included', async () => {
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
     ok(['pull', 'uses-old', '--agent', 'all']);
+    assert.ok(fs.existsSync(path.join(store, 'uses-old', '.ash')), 'one real copy in the shared store');
     for (const root of ['.claude/skills', '.agents/skills']) {
-      assert.ok(fs.existsSync(path.join(home, root, 'uses-old', 'SKILL.md')), `installed for ${root}`);
-      assert.ok(fs.existsSync(path.join(home, root, 'toolkit', 'SKILL.md')), `dependency next to it in ${root}`);
+      assert.equal(linkOf(`${root}/uses-old`), path.join(store, 'uses-old'), `linked for ${root}`);
+      assert.equal(linkOf(`${root}/toolkit`), path.join(store, 'toolkit'), `dependency linked next to it in ${root}`);
+      assert.match(fs.readFileSync(path.join(home, root, 'toolkit', 'SKILL.md'), 'utf8'), /第一版/, 'the pinned dependency is what the link points at');
     }
-    ok(['pull', 'vercel-ship'], { ASH_AGENT: 'all' });
-    assert.ok(fs.existsSync(path.join(home, '.agents/skills/vercel-ship/SKILL.md')), 'ASH_AGENT=all is the default when set');
+    ok(['pull', 'vercel-ship'], { ASH_AGENT: 'claude' });
+    assert.equal(linkOf('.claude/skills/vercel-ship'), path.join(store, 'vercel-ship'), 'ASH_AGENT picks which agents get the link');
+    assert.ok(!fs.existsSync(path.join(home, '.agents/skills/vercel-ship')));
+    ok(['pull', 'vercel-ship']);
+    assert.equal(linkOf('.agents/skills/vercel-ship'), path.join(store, 'vercel-ship'), 'by default every agent on the machine gets the link');
+
+    const installed = ok(['installed']).stdout;
+    assert.equal(installed.match(/^uses-old /gm).length, 1, 'a skill linked into two agents is listed once');
+    assert.match(installed, /uses-old .*\.ash\/skills\/uses-old\n   ↳ 链接给：(Claude Code |Codex ){2}/);
   });
 
-  await t.test('ash doctor finds references that are not next to the skill, and --fix repairs them', () => {
+  await t.test('pull never replaces a link that another tool owns', () => {
+    const upstream = path.join(work, 'upstream-vercel-ship');
+    fs.mkdirSync(upstream);
+    fs.writeFileSync(path.join(upstream, 'SKILL.md'), '# upstream\n');
+    fs.rmSync(path.join(home, '.claude/skills/vercel-ship'));
+    fs.symlinkSync(upstream, path.join(home, '.claude/skills/vercel-ship'));
+    const r = ok(['pull', 'vercel-ship']);
+    assert.match(r.stderr, /不是 ash 建的，没有改动/);
+    assert.equal(linkOf('.claude/skills/vercel-ship'), upstream);
+    fs.rmSync(path.join(home, '.claude/skills/vercel-ship'));
+    ok(['pull', 'vercel-ship']);
+  });
+
+  await t.test('ash doctor finds references that are not linked next to the skill, and --fix repairs them', () => {
     assert.match(ok(['doctor']).stdout, /✅ 没有发现问题/);
-    fs.rmSync(path.join(home, '.claude/skills/toolkit'), { recursive: true });
+    fs.rmSync(path.join(home, '.claude/skills/toolkit'));
     const broken = ash(['doctor']);
     assert.equal(broken.status, 1);
-    assert.match(broken.stdout, /\.claude\/skills（Claude Code）/);
-    assert.match(broken.stdout, /uses-old 引用的 toolkit 不在同一目录/);
-    assert.match(ok(['installed']).stdout, /引用的技能不在旁边：toolkit@1\.0\.0/);
-    assert.match(ok(['doctor', '--fix']).stdout, /已把 uses-old 引用的 toolkit 装到旁边/);
+    assert.match(broken.stdout, /\.ash\/skills（共享存储/);
+    assert.match(broken.stdout, /uses-old 引用的 toolkit 没有链接进 .*\.claude\/skills/);
+    assert.match(ok(['doctor', '--fix']).stdout, /已把 toolkit 链接进 .*\.claude\/skills/);
     assert.match(fs.readFileSync(path.join(home, '.claude/skills/toolkit/SKILL.md'), 'utf8'), /第一版/, '--fix respects the pin');
     assert.match(ok(['doctor']).stdout, /✅ 没有发现问题/);
     const custom = ash(['doctor', '--dir', path.join(work, 'deps')]);
     assert.match(custom.stdout, /没有 Agent 从这里加载/);
   });
 
+  await t.test('remove deletes the stored copy and every link to it', () => {
+    ok(['remove', 'vercel-ship']);
+    assert.ok(!fs.existsSync(path.join(store, 'vercel-ship')));
+    for (const root of ['.claude/skills', '.agents/skills']) {
+      assert.ok(!fs.existsSync(path.join(home, root, 'vercel-ship')) && !linkOf(`${root}/vercel-ship`), `link removed from ${root}`);
+    }
+  });
+
+  await t.test('renamed skills redirect, and ash migrate moves everything into the shared store', async () => {
+    // 库里把 vercel-ship 改名为 site-ship：旧名进废纸篓并登记去向
+    ok(['push', writeSkill(md('name: site-ship\ndescription: Deploy the site to Vercel 部署站点', '# Site ship'))]);
+    await approve('site-ship');
+    const put = await fetch(`${origin}/api/agent/redirects`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ old_slug: 'vercel-ship', new_slug: 'site-ship' }),
+    });
+    assert.equal(put.status, 200);
+    // 改名前装进 Agent 目录的旧名（老版本 ash 的布局：文件直接在 Agent 目录里）
+    const hermes = path.join(home, '.hermes', 'skills');
+    ok(['pull', 'vercel-ship', '--dir', hermes]);
+    assert.equal((await fetch(`${origin}/api/skills/${(await detail('vercel-ship')).id}/trash`, { method: 'POST' })).status, 200);
+    assert.match(ash(['info', 'vercel-ship']).stderr, /已改名或并入 site-ship/);
+    assert.match(ok(['installed']).stdout, /vercel-ship .*已改名为 site-ship/);
+
+    // 老布局：ash 装的 migration-revert 直接在 Agent 目录里，且有本地修改
+    const codex = path.join(home, '.agents', 'skills');
+    ok(['pull', 'migration-revert', '--dir', codex]);
+    fs.appendFileSync(path.join(codex, 'migration-revert', 'SKILL.md'), '\n本地笔记\n');
+    // 手动复制进 Hermes 分类子目录的库技能副本，以及一个库里没有的技能
+    fs.mkdirSync(path.join(hermes, 'devops', 'db-rollback'), { recursive: true });
+    fs.writeFileSync(path.join(hermes, 'devops', 'db-rollback', 'SKILL.md'), '# 手抄的旧版\n');
+    fs.mkdirSync(path.join(hermes, 'my-own'), { recursive: true });
+    fs.writeFileSync(path.join(hermes, 'my-own', 'SKILL.md'), '# 自己写的\n');
+
+    const plan = ok(['migrate']).stdout;
+    assert.match(plan, /搬进存储 .*\.agents\/skills\/migration-revert/);
+    assert.match(plan, /换成新版 .*\.hermes\/skills\/vercel-ship → site-ship/);
+    assert.match(plan, /替换副本 .*\.hermes\/skills\/devops\/db-rollback → 库里的 db-rollback/);
+    assert.doesNotMatch(plan, /my-own/, 'skills the hub does not have are left alone');
+    assert.ok(fs.existsSync(path.join(hermes, 'vercel-ship', '.ash')), 'without --apply nothing changes');
+    assert.doesNotMatch(ok(['migrate', '--keep-copies']).stdout, /db-rollback/);
+
+    ok(['migrate', '--apply']);
+    assert.equal(linkOf('.agents/skills/migration-revert'), path.join(store, 'migration-revert'));
+    assert.match(fs.readFileSync(path.join(store, 'migration-revert', 'SKILL.md'), 'utf8'), /本地笔记/, 'ash installs move as-is, local edits kept');
+    assert.equal(linkOf('.hermes/skills/site-ship'), path.join(store, 'site-ship'));
+    assert.ok(!fs.existsSync(path.join(hermes, 'vercel-ship')), 'the old name is gone');
+    assert.equal(linkOf('.hermes/skills/db-rollback'), path.join(store, 'db-rollback'), 'nested copies are linked at the top level');
+    assert.ok(!fs.existsSync(path.join(hermes, 'devops', 'db-rollback')));
+    const backups = fs.readdirSync(path.join(home, '.ash', 'backups'));
+    assert.ok(backups.some((b) => b.startsWith('db-rollback-')) && backups.some((b) => b.startsWith('vercel-ship-')), 'replaced copies are backed up');
+    assert.ok(fs.existsSync(path.join(hermes, 'my-own', 'SKILL.md')));
+    assert.match(ok(['migrate']).stdout, /没有需要迁移的技能/, 'migrate is idempotent');
+  });
+
+  await t.test('a skill renamed after it was installed into the store is relinked under its new name', async () => {
+    ok(['push', writeSkill(md('name: rollback-v2\ndescription: 数据库迁移回滚第二版 database rollback v2', '# 回滚 v2'))]);
+    await approve('rollback-v2');
+    ok(['pull', 'db-rollback', '--agent', 'all']);
+    await fetch(`${origin}/api/agent/redirects`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ old_slug: 'db-rollback', new_slug: 'rollback-v2' }),
+    });
+    assert.equal((await fetch(`${origin}/api/skills/${(await detail('db-rollback')).id}/trash`, { method: 'POST' })).status, 200);
+    assert.match(ok(['migrate']).stdout, /换成新名 .*\.claude\/skills\/db-rollback → rollback-v2/);
+    ok(['migrate', '--apply']);
+    for (const root of ['.claude/skills', '.agents/skills', '.hermes/skills']) {
+      assert.equal(linkOf(`${root}/rollback-v2`), path.join(store, 'rollback-v2'), `new name linked in ${root}`);
+      assert.equal(linkOf(`${root}/db-rollback`), null, `old link gone from ${root}`);
+    }
+    assert.ok(!fs.existsSync(path.join(store, 'db-rollback')), 'the old stored copy is moved to backups');
+    assert.match(ok(['migrate']).stdout, /没有需要迁移的技能/);
+  });
+
   await t.test('ash lint --only narrows to one kind of problem', () => {
     const out = ok(['lint', '--only', 'bilingual']).stdout;
-    assert.match(out, /db-rollback\n.*缺少英文描述/);
+    assert.match(out, /rollback-v2\n.*缺少英文描述/);
     assert.doesNotMatch(out, /pin-old|历史版本/);
   });
 });
