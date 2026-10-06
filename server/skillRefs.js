@@ -185,8 +185,8 @@ function sharedStepsOf(analysis, entry) {
 // 只查能机械判断的：description 结构、正文里的地址/个人路径/口令赋值、元技能的必备节。
 // 是否「写得好」仍靠人审；这里的提示要能让 Agent 照着改完重推。
 const CJK = /[㐀-鿿]/g;
-const HANDOFF = /不要用于|不适用|交给|Not for|not for|Do not use/;
-const USE_WHEN = /Use (?:it )?when\b/i;
+const HANDOFF = /不要用于|不适用|不负责|交给|Not for|not for|Do not use/;
+const USE_WHEN = /\bUse (?:it |this )?(?:when|for|to)\b/i;
 const DESCRIPTION_SOFT_MAX = 450;
 // 只认 RFC1918 / Tailscale 段，且前面不是版本号上下文（「version 10.13.3.9」这类）
 const PRIVATE_IP = /(?<![\d.]|version\s|版本\s?|v)(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7]))\.\d{1,3}\.\d{1,3}(?![\d.])/i;
