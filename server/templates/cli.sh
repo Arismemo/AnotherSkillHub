@@ -156,7 +156,7 @@ reinstall() {
 
 # 批量查询服务端状态：每行 slug<TAB>状态<TAB>修订<TAB>版本
 fetch_revisions() {
-  local args=(-G) dir
+  local args=(-X POST) dir
   while IFS= read -r dir; do
     [ -n "$dir" ] || continue
     args+=(--data-urlencode "slug=$(meta "$dir" slug)")
@@ -476,7 +476,7 @@ EOF
     [ -n "$cands" ] || { echo "本机 Agent 目录里没有技能"; exit 0; }
     revs="$(printf '%s\n' "$cands" | while IFS= read -r d; do
       if [ -f "$d/.ash" ]; then meta "$d" slug; else basename "$d"; fi
-    done | awk '!seen[$0]++' | { args=(-G); while IFS= read -r x; do args+=(--data-urlencode "slug=$x"); done; http "${args[@]}" "$SERVER_URL/api/agent/revisions"; })"
+    done | awk '!seen[$0]++' | { args=(-X POST); while IFS= read -r x; do args+=(--data-urlencode "slug=$x"); done; http "${args[@]}" "$SERVER_URL/api/agent/revisions"; })"
     plan=""; n=0
     while IFS= read -r d; do
       [ -n "$d" ] || continue

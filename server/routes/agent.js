@@ -586,8 +586,10 @@ function redirectOf(userId, slug) {
 
 // 已装技能比对：GET /api/agent/revisions?slug=a&slug=b → 每行 slug<TAB>状态<TAB>修订<TAB>版本[<TAB>新标识符]
 // 状态: published | pending | trashed | missing | moved（改名或并入了别的技能，第 5 列是新标识符）
-api.get('/revisions', (req, res) => {
-  const slugs = [].concat(req.query.slug || []).map(String).filter(Boolean).slice(0, 500);
+// 名单长时用 POST（表单 slug=a&slug=b 放在请求体里）：几百个名字拼进 URL 会被网关拒绝
+function revisions(req, res) {
+  const raw = req.method === 'POST' ? req.body?.slug : req.query.slug;
+  const slugs = [].concat(raw || []).map(String).filter(Boolean).slice(0, 2000);
   const lines = slugs.map((slug) => {
     const skill = findSkill(req.user.id, slug);
     if (!skill || skill.is_deleted) {
@@ -598,7 +600,9 @@ api.get('/revisions', (req, res) => {
     return `${slug}\t${skill.status === 'pending' ? 'pending' : 'published'}\t${skillRevision(skill)}\t${skill.version || '-'}`;
   });
   res.type('text/plain').send(lines.length ? `${lines.join('\n')}\n` : '');
-});
+}
+api.get('/revisions', revisions);
+api.post('/revisions', revisions);
 
 // 登记改名去向（整理技能库时用）：GET 列出，PUT {old_slug, new_slug} 登记，DELETE ?old_slug= 撤销
 const SLUG_RE = /^[A-Za-z0-9_.-]+$/;
