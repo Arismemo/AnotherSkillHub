@@ -581,7 +581,7 @@ EOF
         *) die "未知参数: $1" ;;
       esac
     done
-    problems=0; total=0
+    problems=0; total=0; fixed_any=0
     while IFS= read -r root; do
       [ -n "$root" ] || continue
       n=0
@@ -612,7 +612,7 @@ EOF
             while IFS= read -r r; do
               [ -n "$r" ] || continue
               if [ -e "$r/$dep" ]; then continue; fi
-              if [ "$fix" = 1 ]; then ln -s "$STORE/$dep" "$r/$dep"; echo "  ✓ 已把 $dep 链接进 ${r}（$slug 引用它）"
+              if [ "$fix" = 1 ]; then ln -s "$STORE/$dep" "$r/$dep"; fixed_any=1; echo "  ✓ 已把 $dep 链接进 ${r}（$slug 引用它）"
               else echo "  ✗ $slug 引用的 $dep 没有链接进 ${r}（ash doctor --fix 补上）"; problems=$((problems + 1)); fi
             done <<EOF3
 $links
@@ -629,6 +629,7 @@ EOF3
               if ASH_SKILLS_DIR="$root" run_install "$SERVER_URL/s/$dep/install.sh" "${extra[@]}" >/dev/null 2>&1; then fixed=1; fi
             fi
             if [ "$fixed" = 1 ]; then
+              fixed_any=1
               echo "  ✓ 已把 $slug 引用的 $dep 装到旁边"
             else
               echo "  ✗ $slug 引用的 $dep 安装失败（库里没有、未发布或网络错误）"; problems=$((problems + 1))
@@ -644,6 +645,12 @@ EOF2
 $(skill_roots "$dir")
 EOF
     if [ "$total" = 0 ]; then echo "本机没有通过 ash 安装的技能"; exit 0; fi
+    # 补上的链接会让排在前面、已检查过的技能多出 Agent 目录，它们的引用也要跟着补：
+    # 这一轮补过东西就再跑一轮，直到没有可补的（最多 5 轮，防止意外死循环）
+    if [ "$fix" = 1 ] && [ "$fixed_any" = 1 ] && [ "${ASH_DOCTOR_PASS:-1}" -lt 5 ]; then
+      echo "↻ 补上的链接带出了新的引用，再检查一轮"
+      ASH_DOCTOR_PASS=$(( ${ASH_DOCTOR_PASS:-1} + 1 )) exec bash "$0" doctor --fix ${dir:+--dir "$dir"}
+    fi
     # 当前在 Claude Code 里，技能却都装在别的 Agent 的目录：Claude Code 看不到它们
     if [ "${CLAUDECODE:-}" = "1" ] && [ -z "$dir" ] && ! ls "$HOME"/.claude/skills/*/.ash >/dev/null 2>&1; then
       echo "⚠️  当前在 Claude Code 里，但 ~/.claude/skills 没有 ash 装的技能：Claude Code 只从那里加载（ash pull <slug> --agent claude，或 --agent all）"

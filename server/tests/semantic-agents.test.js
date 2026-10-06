@@ -238,6 +238,24 @@ test('semantic layer, pins, multi-agent installs and ash doctor end to end', asy
     assert.match(custom.stdout, /没有 Agent 从这里加载/);
   });
 
+  await t.test('doctor --fix follows references through skills it just linked (one run is enough)', async () => {
+    // 线上实测的顺序：a-diagram 引用 b-notes；z-html 引用 a-diagram。doctor 按字母序检查，
+    // 先查 a-diagram 时它还只链给 Claude，等查到 z-html 才把 a-diagram 链进 Codex——
+    // 这时 a-diagram 的引用 b-notes 也得跟进 Codex，一轮扫描做不到
+    ok(['push', writeSkill(md('name: b-notes\ndescription: 笔记 notes publisher', '# b notes'))]);
+    await approve('b-notes');
+    ok(['push', writeSkill(md('name: a-diagram\ndescription: 画图 diagram maker\ndepends_on: [b-notes]', '# a diagram'))]);
+    await approve('a-diagram');
+    ok(['push', writeSkill(md('name: z-html\ndescription: 网页 html page\ndepends_on: [a-diagram]', '# z html'))]);
+    await approve('z-html');
+    ok(['pull', 'z-html', '--agent', 'claude']);
+    fs.symlinkSync(path.join(store, 'z-html'), path.join(home, '.agents/skills/z-html'));
+    assert.equal(ash(['doctor']).status, 1);
+    ok(['doctor', '--fix']);
+    for (const s of ['z-html', 'a-diagram', 'b-notes']) assert.equal(linkOf(`.agents/skills/${s}`), path.join(store, s), `${s} linked into Codex`);
+    assert.match(ok(['doctor']).stdout, /✅ 没有发现问题/, 'a single --fix converges');
+  });
+
   await t.test('remove deletes the stored copy and every link to it', () => {
     ok(['remove', 'vercel-ship']);
     assert.ok(!fs.existsSync(path.join(store, 'vercel-ship')));
