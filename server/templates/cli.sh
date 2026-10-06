@@ -251,6 +251,17 @@ show_help() {
   cat <<EOF
 AnotherSkillHub CLI · 服务地址: $SERVER_URL
 
+给 Agent 的规则（4–7 条由 ash lint 和推送检查核对）
+  1. 接到任务先 ash suggest "<任务>"；有现成技能就按它做，不要另写一份
+  2. 写或改技能前读规范：ash show meta-skill-spec（元技能怎么引用、什么时候抽、description 怎么写）
+  3. 新技能用 ash new <slug> 生成骨架；推送前 ash lint <目录或slug> 修到没有 ⚠️
+  4. depends_on 只列做事时真要读或要跑的技能；「不要用于…（交给 X）」这类边界只写在 description 和正文
+  5. 已有元技能负责的动作写一行「用元技能 \`<slug>\`」+ 本技能特有参数，不要抄它的步骤
+  6. 中文为主：description 用中文写「做什么 + 什么时候用 + 不要用于…（交给 X）」，末尾加一句英文 Use when …
+  7. 不写口令、token、内网地址、个人路径：写变量名，值放 ~/.comate/secrets/creds.env
+  8. 改完 ash push <目录> --update 交回库里；用完技能 ash feedback <slug> ok|fail
+  详细说明：ash guide
+
 查找
   ash suggest "<任务描述>" [--limit N] [--json]           按任务描述找相关技能（接到任务时先用它）
   ash search <关键词…> [--tag T] [--folder F] [--json]   搜索已发布技能（多个关键词需同时命中；都不命中时给出相关候选）
@@ -258,8 +269,8 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash info <slug>                 描述、依赖、文件清单、版本与安装命令
   ash show <slug>[@版本] [--version ID] [--pending]       直接输出 SKILL.md（不安装）；@版本 取那一版
   ash versions <slug>             历史版本列表
-  ash lint [slug] [--only CODE] [--json]  技能检查：双语描述、引用、元技能契约、重复的步骤、能否被 Agent 调用
-                                  --only bilingual 只看缺双语描述的（批量补齐时用；只改双语字段的更新无需审核）
+  ash lint [slug|技能目录] [--only CODE] [--all] [--json]  技能检查：写作约定、双语描述、引用、元技能契约、重复的步骤、能否被 Agent 调用
+                                  传本地目录时检查还没推送的版本；不带参数检查全库（默认只列 ⚠️，--all 连写作风格提示一起列）
 
 技能组合
   ash bundles [--json]            列出全部组合
@@ -283,8 +294,9 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash feedback <slug> ok|fail ["说明"] [--dir PATH]   用完技能后回报结果；失败时写一句哪一步、为什么没走通
 
 推送与审核
+  ash new <slug> [--meta] [--dir PATH]  生成符合规范的技能骨架（frontmatter、description 模板；--meta 带契约与被谁引用两节）
   ash push <技能目录|SKILL.md> [--update] [--folder PATH] [--json]
-                                  同名技能已存在时需加 --update；推送内容需人工审核后对其他 Agent 可见
+                                  同名技能已存在时需加 --update；推送内容需人工审核后对其他 Agent 可见；结果里会附上检查意见
   ash mine                        我（本机）推送的技能及审核状态
   ash withdraw <slug>             撤回自己尚在待审核的推送
 
@@ -294,9 +306,10 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash logout                      删除本机保存的 token（要让它彻底失效，请在网页「账户」里吊销）
 
 其它
-  ash guide                       Agent 使用指南
+  ash guide                       Agent 使用指南（规则的完整说明）
   ash open                        在浏览器打开管理后台
   ash update                      更新 ash 自身
+  ash <命令> --help               只看这条命令的用法
 
 完整文档：$SERVER_URL/docs
 环境变量：ASH_AGENT 默认安装到哪个 Agent（claude|codex|hermes|dsh|all）；ASH_SERVER_URL 服务地址；ASH_TOKEN API token（默认读 ~/.ash/token）；ASH_STORE 共享存储目录（默认 ~/.ash/skills）；ASH_SKILLS_DIR 不用共享存储、直接装进这个目录；ASH_BIN_DIR ash 安装位置；ASH_TERMINAL 推送来源名（默认 hostname）
@@ -319,6 +332,22 @@ parse_filters() {
 
 cmd="${1:-help}"
 [ "$#" -gt 0 ] && shift
+
+# ash <命令> --help：只打印这条命令的用法（取自总帮助），再附上给 Agent 的规则
+for a in "$@"; do
+  case "$a" in
+    --help|-h)
+      if [ "$cmd" != help ] && [ "$cmd" != -h ] && [ "$cmd" != --help ]; then
+        show_help | awk -v c="  ash $cmd" '
+          index($0, c" ") == 1 || $0 == c { on = 1; print; next }
+          on && /^                                  / { print; next }
+          { on = 0 }'
+        echo
+        show_help | sed -n '/^给 Agent 的规则/,/^  详细说明/p'
+        exit 0
+      fi ;;
+  esac
+done
 
 case "$cmd" in
   pull)
@@ -725,17 +754,95 @@ EOF
     http "$SERVER_URL/s/$1/versions"
     ;;
   lint)
-    args=(-G); json=0
+    args=(-G); json=0; local_file=""
     while [ "$#" -gt 0 ]; do
       case "$1" in
         --json) json=1; shift ;;
         --only) [ -n "${2:-}" ] || die "--only 需要参数（例如 bilingual）"; args+=(--data-urlencode "code=$2"); shift 2 ;;
+        --all) args+=(--data-urlencode "all=1"); shift ;;
         -*) die "未知参数: $1" ;;
-        *) valid_slug "$1"; args+=(--data-urlencode "slug=$1"); shift ;;
+        *)
+          # 本地目录或 SKILL.md：检查还没推送的版本
+          if [ -d "$1" ] && [ -f "$1/SKILL.md" ]; then local_file="$1/SKILL.md"
+          elif [ -f "$1" ]; then local_file="$1"
+          else valid_slug "$1"; args+=(--data-urlencode "slug=$1"); fi
+          shift ;;
       esac
     done
-    if [ "$json" = 0 ]; then args+=(--data-urlencode "format=text"); fi
-    http "${args[@]}" "$SERVER_URL/api/agent/lint"
+    if [ -n "$local_file" ]; then
+      form=(-X POST --data-urlencode "content@$local_file")
+      for a in "${args[@]}"; do case "$a" in code=*) form+=(--data-urlencode "$a") ;; esac; done
+      if [ "$json" = 0 ]; then form+=(--data-urlencode "format=text"); fi
+      http "${form[@]}" "$SERVER_URL/api/agent/lint"
+    else
+      if [ "$json" = 0 ]; then args+=(--data-urlencode "format=text"); fi
+      http "${args[@]}" "$SERVER_URL/api/agent/lint"
+    fi
+    ;;
+  new)
+    [ -n "${1:-}" ] || die "用法: ash new <slug> [--meta] [--dir PATH]"
+    slug="$1"; shift; meta=0; dir="."
+    [[ "$slug" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || die "slug 只能用小写字母、数字和单个连字符（例如 dthorx-log-pull）"
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --meta) meta=1; shift ;;
+        --dir) [ -n "${2:-}" ] || die "--dir 需要参数"; dir="$2"; shift 2 ;;
+        *) die "未知参数: $1" ;;
+      esac
+    done
+    target="$dir/$slug"
+    [ ! -e "$target" ] || die "$target 已存在"
+    if http -G --data-urlencode "slug=$slug" "$SERVER_URL/api/agent/revisions" | grep -q $'\t\\(published\\|pending\\)\t'; then
+      die "库里已有 ${slug}：先 ash pull $slug 在原版上改，再 ash push --update"
+    fi
+    mkdir -p "$target"
+    if [ "$meta" = 1 ]; then
+      prefix="【元技能】"; extra='
+## 契约
+
+- 输入：调用方要给什么
+- 输出：调用方拿回什么
+- 前置：需要什么环境
+- 失败：失败时返回什么、调用方该怎么办
+
+## 陷阱
+
+（这个动作特有的坑，全库只在这里写）
+
+## 被谁引用
+
+| 技能 | 用途 |
+|---|---|
+'
+    else
+      prefix=""; extra='
+## 验证
+
+怎样确认完成；结论按元技能 `verification-discipline` 分级（需要时把它加进 depends_on）。
+'
+    fi
+    cat > "$target/SKILL.md" <<EOF2
+---
+name: $slug
+description: ${prefix}<中文：做什么>。用户说「<触发说法>」时使用。不要用于<相近但不归本技能的事>（交给 <slug>）。Use when <English trigger>.
+version: 1.0.0
+tags: []
+# depends_on: [<做事时真要读或要跑的技能>]   只列流程里用到的；「交给 X」这类边界不列
+---
+
+# <人读标题>
+
+## 何时使用
+
+## 步骤
+
+1. 已有元技能负责的动作写「用元技能 \`<slug>\`」+ 本技能特有参数，不要抄它的步骤
+${extra}
+EOF2
+    echo "✓ 已生成 $target/SKILL.md"
+    echo "  写完后：ash lint $target    （修到没有 ⚠️）"
+    echo "  推送：  ash push $target"
+    echo "  规范：  ash show meta-skill-spec"
     ;;
   bundles)
     if [ "${1:-}" = "--json" ]; then http "$SERVER_URL/api/bundles"

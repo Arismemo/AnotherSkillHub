@@ -99,7 +99,7 @@ function analyzeSkill(skill, library) {
   const contract = section(body, ['契约', 'Contract', '接口', 'Interface']);
   const usedBy = section(body, ['被谁引用', 'Used by', '调用方']);
   return {
-    id: skill.id, slug: skill.slug, name: skill.name, status: skill.status, version: skill.version, meta, frontmatterError,
+    id: skill.id, slug: skill.slug, name: skill.name, status: skill.status, version: skill.version, meta, frontmatterError, body,
     frontmatterName: typeof data.name === 'string' ? data.name.trim() : null,
     description: String(skill.description || ''),
     // Claude Code 不会自动调用设置了这个字段的技能——别的技能也就引用不到它
@@ -110,6 +110,7 @@ function analyzeSkill(skill, library) {
     },
     usedByListed: usedBy === null ? null : listedSlugs(usedBy, skill.slug),
     missingLanguages: skill.description ? missingLanguages(skill.description, localizedMeta(data)) : [],
+    hasEnglishDescription: Boolean(localizedMeta(data).description_en),
     commands: extractCommands(skill.content),
     steps: extractProseSteps(skill.content),
   };
@@ -180,6 +181,47 @@ function sharedStepsOf(analysis, entry) {
     .map((r) => ({ others: idsToSlugs(analysis, r.skills.filter((id) => id !== entry.id)), commands: r.commands, kind: r.kind }));
 }
 
+// ——— 全库写作约定（meta-skill-spec「全库写作约定」节的机器检查）———
+// 只查能机械判断的：description 结构、正文里的地址/个人路径/口令赋值、元技能的必备节。
+// 是否「写得好」仍靠人审；这里的提示要能让 Agent 照着改完重推。
+const CJK = /[㐀-鿿]/g;
+const HANDOFF = /不要用于|不适用|交给|Not for|not for|Do not use/;
+const USE_WHEN = /Use (?:it )?when\b/i;
+const DESCRIPTION_SOFT_MAX = 450;
+// 只认 RFC1918 / Tailscale 段，且前面不是版本号上下文（「version 10.13.3.9」这类）
+const PRIVATE_IP = /(?<![\d.]|version\s|版本\s?|v)(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7]))\.\d{1,3}\.\d{1,3}(?![\d.])/i;
+// 容器里的公共账号（vscode、sdk、root…）不算个人路径
+const HOME_PATH = /(?:\/home|\/Users)\/(?!<|\$|USER\b|user\b|me\b|vscode\b|sdk\b|root\b|ubuntu\b|runner\b|node\b|app\b)[a-z][\w.-]*\//;
+const SECRET_ASSIGN = /\b(?:[A-Z0-9_]*(?:PASS(?:WORD)?|TOKEN|SECRET|_AK|API_?KEY)|AK)\s*=\s*['"]?(?![$<{]|\.\.\.|xxx)[A-Za-z0-9_\-+/]{8,}/;
+
+function conventionIssues(entry) {
+  const issues = [];
+  const desc = entry.description.trim();
+  if (desc) {
+    const cjk = (desc.match(CJK) || []).length;
+    if (cjk < 8) issues.push(['desc-zh', 'info', 'description 没有中文主句：全库约定 description 以中文写「做什么 + 什么时候用」，末尾再加一句英文 Use when …（中文任务才能可靠地找到它）']);
+    if (!HANDOFF.test(desc)) issues.push(['desc-boundary', 'info', 'description 缺少「不要用于…（交给 X）」：写明边界和该交给谁，才能防止和相近技能互抢触发']);
+    if (!USE_WHEN.test(desc) && !entry.hasEnglishDescription) issues.push(['desc-use-when', 'info', 'description 末尾缺一句英文「Use when …」（或写 description_en）：英文任务和跨语言查重靠它']);
+    if (desc.length > DESCRIPTION_SOFT_MAX) issues.push(['desc-long', 'info', `description 有 ${desc.length} 个字符，约定在 ${DESCRIPTION_SOFT_MAX} 以内：实现细节、端口、命令挪进正文`]);
+  }
+  // 地址、路径、口令最常出现在命令里：连代码块一起查
+  const body = entry.body || '';
+  const ip = body.match(PRIVATE_IP);
+  const endpointOwner = /##\s*端点[^\n]*唯一/.test(entry.body || '');
+  if (ip && !endpointOwner) {
+    // 192.168 多是车内/设备局域网的固定拓扑（ThorB、ECU），不算泄露，只提醒；办公网/tailnet 地址必须改掉
+    const lan = ip[0].startsWith('192.168.');
+    issues.push(['hardcoded-host', lan ? 'info' : 'warn', lan
+      ? `正文里有设备局域网地址 ${ip[0]}：如果是固定硬件拓扑可以保留，最好收进该平台的事实/端点技能统一维护`
+      : `正文里有内网地址 ${ip[0]}：改成环境变量并在「端点」一节说明；默认值只放在该端点的唯一来源技能里`]);
+  }
+  const home = body.match(HOME_PATH);
+  if (home) issues.push(['personal-path', 'warn', `正文里有个人路径 ${home[0]}…：改成 $HOME/… 或项目变量（如 $VOYAGER_ROOT），在开头说明变量含义`]);
+  const secret = body.match(SECRET_ASSIGN);
+  if (secret) issues.push(['secret-literal', 'warn', `正文里像是写了凭据明文（${secret[0].split('=')[0].trim()}=…）：只写变量名，值放 ~/.comate/secrets/creds.env`]);
+  return issues;
+}
+
 // 检查一个技能：[{ code, level: warn | info, msg }]。entry 默认取库里的分析结果，也可以传入待审内容的分析
 function lintSkill(analysis, entry, { username = null } = {}) {
   const issues = [];
@@ -200,6 +242,7 @@ function lintSkill(analysis, entry, { username = null } = {}) {
     if (callers.length) add('not-invocable', 'warn', `被 ${callers.join('、')} 引用，但设置了 disable-model-invocation: true：Claude 不能调用它，引用它的技能走不通`);
   }
   entry.missingLanguages.forEach((lang) => add('bilingual', 'warn', LANGUAGE_HINT[lang]));
+  for (const issue of conventionIssues(entry)) add(...issue);
 
   const declaredLocal = new Set();
   for (const raw of entry.invalid) add('invalid-ref', 'warn', `depends_on 里的「${raw}」写法不对：应为 slug、@账号/slug 或 slug@版本`);

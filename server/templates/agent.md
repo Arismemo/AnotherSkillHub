@@ -51,7 +51,9 @@ token 保存在 `~/.ash/token`，也可以通过环境变量 `ASH_TOKEN` 提供�
 1. 先查重：`ash suggest "<这个新技能要解决的问题>"`。如果已有相近技能，先 `ash pull <slug>` 拉到本地，在原版基础上修改，再运行 `ash push <目录> --update`。
    - 新技能里有些步骤已经是别的技能（尤其是元技能）的内容时，不要复制那些步骤，改为引用（见下文「技能之间的引用」）。
    - 推送结果里提示「库中已有相近技能」或「与元技能相同的命令」时，认真判断：是补充就改为更新已有技能，确实不同就在 description 里写清楚区别。
-   - 推送前运行 `ash lint <slug>`（已在库里的技能）自查：双语描述、引用写法、元技能契约、能不能被 Agent 调用。
+   - 推送前运行 `ash lint <技能目录>` 自查还没推送的版本（已在库里的也可以 `ash lint <slug>`）：写作约定、双语描述、引用写法、元技能契约、能不能被 Agent 调用。修到没有 ⚠️ 再推。
+   - 新技能用 `ash new <slug>` 生成骨架（元技能加 `--meta`），不要从空白文件写起。
+   - 库里有 `meta-skill-spec` 时先 `ash show meta-skill-spec`：它是本库的写作约定，和本指南冲突时以它为准。
 2. 不加 `--update` 时，如果同名 slug 已存在，推送会被拒绝（409），不会覆盖别人的版本。
 3. 新技能和对已有技能的更新都会进入「待审核」，人工采纳后其他 Agent 才能拉到。你自己需要立刻使用新技能时，可以运行 `ash pull <slug> --pending`。
 4. 推送后把服务端返回的结果（是否待审核、有无警告）如实告诉用户。
@@ -63,12 +65,11 @@ token 保存在 `~/.ash/token`，也可以通过环境变量 `ASH_TOKEN` 提供�
 
 ```markdown
 ---
-name: my-skill              # 必填。英文 slug，只含小写字母/数字/-/_，也是安装目录名
-description: 一句话说明「什么时候应该使用这个技能」，Agent 靠它判断是否调用
-description_en: Use when …  # 另一种语言的描述（description 是英文时写 description_zh）
+name: my-skill              # 必填。英文 slug，只含小写字母/数字/连字符，也是安装目录名
+description: 中文主句（做什么 + 什么时候用）。不要用于…（交给 other-skill）。Use when …
 tags: [ops, debugging]
 version: 1.0.0
-depends_on: [other-skill]   # 可选，引用的其他技能，写法见下文
+depends_on: [other-skill]   # 只列做事时真要读或要跑的技能，见下文
 ---
 
 # 人类可读的标题
@@ -84,7 +85,9 @@ depends_on: [other-skill]   # 可选，引用的其他技能，写法见下文
 怎样确认完成，以及常见失败的处理办法。
 ```
 
-- **描述要中英双语**：`description` 用你习惯的语言写，再用 `description_en` 或 `description_zh` 补另一种（主描述本身中英混写也可以）。中文任务和英文任务才都能找到它，查重也才能跨语言对上。正文不用写两份：两份正文要同步维护、迟早不一致，而读正文的 Agent 中英文都懂。
+- **description 的写法**：中文主句写「做什么 + 什么时候用」，再写「不要用于…（交给 X）」划清边界，末尾一句英文 `Use when …`。这样一条就同时覆盖中英文任务，不必再写 `description_en` / `description_zh`；约 400 字以内，端口、命令、实现细节放正文。`ash lint` 会逐项检查。
+- **不写敏感信息**：正文、示例、脚本里不出现口令、token、AK 明文，不写内网地址和个人路径（`/home/<人名>/…`）——写环境变量名，值放 `~/.comate/secrets/creds.env`；端点默认值只放在该端点的唯一来源技能里。`ash lint` 和推送检查会提示。
+- **描述要中英双语**：按上面的写法主描述本身就是中英混写；也可以另写 `description_en` / `description_zh`。中文任务和英文任务才都能找到它，查重也才能跨语言对上。正文不用写两份，读正文的 Agent 中英文都懂。
   - 给已有技能补双语描述：`ash lint --only bilingual` 列出缺的，逐个 `ash pull` 后加上 `description_en` / `description_zh` 再 `ash push --update`。**只改双语字段的更新直接发布、不用等审核**（Agent 框架不读这些字段，不影响 Agent 的行为）。
 - frontmatter 是 YAML：值里含有「: 」时要用引号括起来（`description_en: "Use when: …"`），否则整段 frontmatter 解析失败，名称、描述、依赖全部丢失。
 - 脚本放在 `scripts/`，参考资料放在 `references/`，正文里用相对路径引用。
@@ -97,7 +100,7 @@ depends_on: [other-skill]   # 可选，引用的其他技能，写法见下文
 
 **怎么写**（两处都要写）：
 
-1. frontmatter 的 `depends_on` 声明它。`ash pull` 据此把它一并装在本技能旁边；没声明的引用在别的机器上找不到。
+1. frontmatter 的 `depends_on` 声明它。`ash pull` 据此把它一并装在本技能旁边；没声明的引用在别的机器上找不到。**只列做事时真要读或要跑的技能**（像代码里用到才 import）：只用来划边界的「不要用于…（交给 X）」、只在某个分支才用到的技能、只指个出处的「详见 X」都不列，写在正文里就够了，Agent 需要时自己 `ash pull X`。被调用方不反向依赖调用方，两个技能互相 depends_on 几乎总是写错了。
 2. 正文在用到它的地方写「用元技能 `<slug>`」，后面只写本技能特有的参数和坑：
 
 ```markdown
@@ -148,7 +151,7 @@ ash list [--tag T] [--folder F] [--json]
 ash info <slug>
 ash show <slug> [--version ID] [--pending]
 ash versions <slug>
-ash lint [slug] [--only CODE] [--json]
+ash lint [slug|技能目录] [--only CODE] [--json]
 ash bundles | ash bundle <标识或名称>
 ash pull <slug>[@版本] [--agent claude|codex|hermes|dsh|all] [--dir PATH] [--pending] [--force] [--no-deps]
 ash pull bundle:<标识或名称>
@@ -156,6 +159,8 @@ ash pull --all [--dir PATH] [--force]
 ash installed | ash outdated [--dir PATH]
 ash remove <slug> [--dir PATH] [--force]
 ash doctor [--fix] [--dir PATH]
+ash migrate [--apply] [--keep-copies]
+ash new <slug> [--meta] [--dir PATH]
 ash push <技能目录|SKILL.md> [--update] [--folder PATH] [--json]
 ash mine | ash withdraw <slug>
 ash feedback <slug> ok|fail ["说明"]
@@ -183,7 +188,8 @@ GET  __BASE_URL__/s/bundle/<标识或名称>/install.sh           安装整个�
 POST __BASE_URL__/api/agent/push                            multipart：file=<tar.gz 或 SKILL.md>，update=1 表示更新，terminal=<来源>，format=text
 GET  __BASE_URL__/api/agent/mine?terminal=<来源>              我的推送及审核状态
 POST __BASE_URL__/api/agent/withdraw                        撤回待审推送：slug=<slug>&terminal=<来源>
-GET  __BASE_URL__/api/agent/revisions?slug=a&slug=b         已装技能比对：每行 slug、状态、修订号、版本
+GET  __BASE_URL__/api/agent/revisions?slug=a&slug=b         已装技能比对：每行 slug、状态、修订号、版本（名单长时用 POST，moved 表示已改名，第 5 列是新名）
 GET  __BASE_URL__/api/agent/lint?slug=<slug>&format=text     技能检查（不带 slug 列出全库有问题的技能）
+POST __BASE_URL__/api/agent/lint                            推送前自查本地版本：content=<SKILL.md 全文>&format=text（不写库）
 POST __BASE_URL__/api/agent/feedback                        用完回报：slug=<slug>&outcome=ok|fail&note=<说明>&terminal=<来源>
 ```
