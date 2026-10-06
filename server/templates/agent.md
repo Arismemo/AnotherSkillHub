@@ -112,12 +112,12 @@ depends_on: [other-skill]   # 可选，引用的其他技能，写法见下文
 **按技能干活时，遇到「用元技能 `x`」或指向 `../x/SKILL.md` 的链接**，按这个顺序找到它：
 
 1. 在 Claude Code 里：直接调用名为 `x` 的技能；
-2. 其他 Agent（或 Claude Code 里调用不到时）：读本技能旁边的 `../x/SKILL.md`——`ash pull` 把引用的技能装在同一个目录下，已装的 `SKILL.md` 末尾也列出了这些链接；
-3. 本机没有：运行 `ash pull x`（在 Claude Code 里默认装到 `~/.claude/skills`），再按 1 或 2；只想看内容用 `ash show x`。
+2. 其他 Agent（或 Claude Code 里调用不到时）：读本技能旁边的 `../x/SKILL.md`——`ash pull` 把引用的技能和本技能链接进同一个 Agent 目录，已装的 `SKILL.md` 末尾也列出了这些链接；
+3. 本机没有：运行 `ash pull x`，再按 1 或 2；只想看内容用 `ash show x`。
 
 读完 `x` 按它的步骤做，再回到本技能继续。
 
-**装到哪里决定了哪个 Agent 看得到**：Claude Code 只从 `~/.claude/skills`（和项目的 `.claude/skills`）加载技能，Codex 从 `~/.agents/skills`，Hermes 从 `~/.hermes/skills`。一台机器上同时用几个 Agent 时，用 `ash pull <slug> --agent all` 装进每个 Agent 的目录（或设置 `ASH_AGENT=all` 作为默认）。`ash doctor` 检查本机：引用的技能在不在旁边、装的目录有没有 Agent 加载；`ash doctor --fix` 自动补装缺的。
+**装在哪里**：`ash pull` 把技能只存一份在 `~/.ash/skills/<slug>`（只读，归 ash 管），再在本机每个 Agent 的技能目录里放指向它的链接——Claude Code 的 `~/.claude/skills`、Codex 的 `~/.agents/skills`、Hermes 的 `~/.hermes/skills`（或唯一的 profile）。库里装来的技能和 Agent 自带、自己写的技能因此不混在一起，几个 Agent 用的也是同一个版本。`--agent claude|codex|hermes|dsh` 只链接给那个 Agent（`ASH_AGENT` 设默认）；`--dir` 直接装进指定目录、不建链接。**不要直接改 `~/.ash/skills` 里的文件**：要改就改完 `ash push --update` 回库，或者复制一份到别处再改。`ash doctor` 检查本机：引用的技能链接齐了没有、装的目录有没有 Agent 加载；`ash doctor --fix` 自动补。老版本 ash 装进 Agent 目录的技能、改了名的旧技能、手动复制进去的库技能副本，运行一次 `ash migrate`（先看计划）/ `ash migrate --apply` 统一换成链接，替换前都会备份到 `~/.ash/backups`。
 
 **引用写法**：`slug`（本库）、`@账号/slug`（指定账号，为团队库 / 技能广场预留，目前只能指向自己的账号）、`slug@1.2.0`（固定版本：`ash pull` 从历史里装那一版，`ash pull --all` 不会升级它；版本号由 frontmatter 的 `version` 决定，改了内容要记得升版本号）。
 
@@ -162,7 +162,7 @@ ash feedback <slug> ok|fail ["说明"]
 ash guide
 ```
 
-默认安装目录是自动探测的：`$ASH_SKILLS_DIR`；`$ASH_AGENT`（claude / codex / hermes / dsh / all）；在 Claude Code 里运行时是 `~/.claude/skills`；否则依次尝试唯一的 `~/.hermes/profiles/*/skills`、`~/.hermes/skills`、`~/.agents/skills`、`~/.claude/skills`、`~/.dsh/skills`。
+默认装进共享存储 `~/.ash/skills`（`$ASH_STORE` 可改），链接给本机每个 Agent（在 Claude Code 里运行时一定包括 `~/.claude/skills`）；`$ASH_AGENT`（claude / codex / hermes / dsh / all）决定默认链接给谁；`$ASH_SKILLS_DIR` 或 `--dir` 不用共享存储，直接装进那个目录。
 
 ## 没有 ash 时的 HTTP 接口
 
