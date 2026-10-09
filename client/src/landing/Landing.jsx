@@ -133,7 +133,7 @@ export default function Landing({ user, registration }) {
 
         <section id="features" className="section section-alt">
           <div className="container">
-            <h2>团队共享技能需要的东西，都在这里</h2>
+            <h2>多台机器、多个 Agent 共用一个技能库，需要的都在这里</h2>
             <ul className="features">
               {FEATURES.map(({ icon: Icon, title, text }) => (
                 <li key={title} className="feature">

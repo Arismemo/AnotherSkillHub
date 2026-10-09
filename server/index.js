@@ -36,8 +36,10 @@ app.get(['/setup.sh', '/cli.sh'], (req, res) => {
 });
 
 // Agent 使用指南：引导语只指向这里，改指南不必给每台机器重发提示词
-app.get(['/agent.md', '/llms.txt'], (req, res) => {
-  res.type('text/markdown').send(render('agent.md', { BASE_URL: getBaseUrl(req) }));
+// 分两层：/agent.md 是每次都读的精简版（查找、使用、回报、推送），/agent-full.md（或 ?full=1）是写技能、引用、元技能、HTTP 接口的完整规范
+app.get(['/agent.md', '/llms.txt', '/agent-full.md'], (req, res) => {
+  const full = req.path === '/agent-full.md' || ['1', 'true'].includes(String(req.query.full || ''));
+  res.type('text/markdown').send(render(full ? 'agent-full.md' : 'agent.md', { BASE_URL: getBaseUrl(req) }));
 });
 
 // 前端：两个入口。index.html 是公开的 landing（含 /login、/register），app.html 是登录后的应用（/app）

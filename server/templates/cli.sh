@@ -50,6 +50,16 @@ ash_fingerprint() {
 
 meta() { sed -n "s/^$2=//p" "$1/.ash" 2>/dev/null | head -n 1; }
 
+# 待审导入版本获批后，其修订号与服务端相同；清掉标记以免后续更新一直被当成待审版本。
+clear_adopted_pending() {
+  local dir="$1" tmp
+  [ "$(meta "$dir" adopted)" = 1 ] && [ "$(meta "$dir" pending)" = 1 ] || return 0
+  tmp="$dir/.ash.tmp.$$"
+  if sed 's/^pending=1$/pending=0/' "$dir/.ash" > "$tmp" && mv "$tmp" "$dir/.ash"; then return 0; fi
+  rm -f "$tmp"
+  return 1
+}
+
 # 备份目录：每次一个新目录（与 install.sh 一致）
 backup_path() {
   local base p n=1
@@ -154,7 +164,7 @@ reinstall() {
   fi
 }
 
-# 批量查询服务端状态：每行 slug<TAB>状态<TAB>修订<TAB>版本
+# 批量查询服务端状态：每行 slug<TAB>状态<TAB>修订<TAB>版本<TAB>待审修订<TAB>改名去向
 fetch_revisions() {
   local args=(-X POST) dir
   while IFS= read -r dir; do
@@ -167,11 +177,11 @@ fetch_revisions() {
 # 单个已装技能的状态：输出 "代码<TAB>说明"
 # 代码: ok | outdated | modified | modified-outdated | missing | trashed | other-server
 skill_state() {
-  local dir="$1" revs="$2" slug server rev line rstatus rrev rver modified=0
+  local dir="$1" revs="$2" slug server rev line rstatus rrev rver pending_rev modified=0
   slug="$(meta "$dir" slug)"; server="$(meta "$dir" server)"; rev="$(meta "$dir" revision)"
   if [ "$server" != "$SERVER_URL" ]; then printf 'other-server\t来自其它服务 %s\n' "$server"; return; fi
   line="$(printf '%s\n' "$revs" | awk -F'\t' -v s="$slug" '$1 == s { print; exit }')"
-  rstatus="$(printf '%s' "$line" | cut -f2)"; rrev="$(printf '%s' "$line" | cut -f3)"; rver="$(printf '%s' "$line" | cut -f4)"
+  rstatus="$(printf '%s' "$line" | cut -f2)"; rrev="$(printf '%s' "$line" | cut -f3)"; rver="$(printf '%s' "$line" | cut -f4)"; pending_rev="$(printf '%s' "$line" | cut -f5)"
   if [ "$(meta "$dir" fingerprint)" != "$(ash_fingerprint "$dir")" ]; then modified=1; fi
   # 固定版本的技能不跟着库里更新走：ash pull --all 跳过，ash outdated 不列
   if [ -n "$(meta "$dir" pinned)" ]; then
@@ -180,10 +190,18 @@ skill_state() {
     return
   fi
   case "$rstatus" in
-    moved) printf 'moved\t已改名为 %s（ash migrate 换成新名）\n' "$(printf '%s' "$line" | cut -f5)"; return ;;
+    moved) printf 'moved\t已改名为 %s（ash migrate 换成新名）\n' "$(printf '%s' "$line" | cut -f6)"; return ;;
     missing) printf 'missing\t远端已删除\n'; return ;;
     trashed) printf 'trashed\t远端在废纸篓\n'; return ;;
   esac
+  if [ "$(meta "$dir" adopted)" = 1 ] && [ "$(meta "$dir" pending)" = 1 ]; then
+    if [ "$pending_rev" = "$rev" ]; then
+      printf 'modified-outdated\t本地是导入的待审版本，保留到审核完成\n'
+      return
+    elif [ "$rstatus" = "published" ] && [ "$rrev" = "$rev" ]; then
+      clear_adopted_pending "$dir" || true
+    fi
+  fi
   if [ "$rrev" != "$rev" ]; then
     if [ "$modified" = 1 ]; then printf 'modified-outdated\t本地有修改 · 远端有更新 v%s\n' "$rver"
     else printf 'outdated\t有更新 → v%s\n' "$rver"; fi
@@ -229,6 +247,208 @@ install_to_bin() {
   if [ -n "$current" ] && [ "$current" != "$bin_dir/ash" ]; then
     echo "⚠️  PATH 里更靠前的 $current 不是刚安装的版本，运行 ash 仍会用到它：请删除它，或把 $bin_dir 放到 PATH 更前面"
   fi
+}
+
+# 把技能目录打成推送用的 tar.gz（ash push 与 ash import 共用）：排除 .ash 元数据与常见的无关目录
+pack_skill_dir() {
+  COPYFILE_DISABLE=1 tar -czf "$2" --exclude='.git' --exclude='node_modules' --exclude='__pycache__' \
+    --exclude='.DS_Store' --exclude='._*' --exclude='./.ash' -C "$1" .
+}
+
+# 从单行 JSON 里取第一次出现的字符串字段（json_field 取的是最后一次）
+json_first() { grep -o "\"$1\":\"[^\"]*\"" | head -n 1 | sed "s/^\"$1\":\"//; s/\"$//"; }
+
+# 把一个已在库里的本地技能目录登记为 ash 管理：写入与 install.sh 相同格式的 .ash，
+# 之后 ash installed / outdated / pull --all 就能管到它（ash import 用）
+adopt_dir() {
+  local dir="$1" slug="$2" pending="$3" revision="$4" version="$5" deps
+  [[ "$revision" =~ ^[0-9a-f]{12}$ ]] || return 1
+  # 与 install.sh 一样只记本库的引用（跨账号的 @owner/slug 不算）
+  deps="$(sed -n '1,/^---$/s/^depends_on: *\[\(.*\)\].*/\1/p' "$dir/SKILL.md" 2>/dev/null | tr -d " \"'" | tr ',' '\n' | grep -v -e '^@' -e '^$' | paste -s -d, - || true)"
+  {
+    printf 'slug=%s\n' "$slug"
+    printf 'server=%s\n' "$SERVER_URL"
+    printf 'revision=%s\n' "$revision"
+    printf 'version=%s\n' "$version"
+    printf 'pending=%s\n' "$pending"
+    printf 'pinned=\n'
+    printf 'deps=%s\n' "$deps"
+    printf 'fingerprint=%s\n' "$(ash_fingerprint "$dir")"
+    printf 'installed_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'adopted=1\n'
+  } > "$dir/.ash"
+}
+
+# ——— Claude Code hook（ash hooks install）———
+# Claude Code 的 Skill 工具不触发 PreToolUse/PostToolUse，所以只挂一个 Stop hook：会话每轮结束时扫一遍会话记录（transcript JSONL），
+# 认出用到了哪些 ash 装的技能（Skill 工具调用、Read 了 <技能>/SKILL.md）、哪些已经 ash feedback 过。
+# 用到的记到库里（每个会话每个技能一次）；用了却没回报的，提醒 Agent 回报一次（每个技能每个会话只提醒一次）。
+HOOK_MARK='hook claude-stop'
+
+# 结构化读 hook 输入与 JSONL：只认真实工具调用，反馈还必须有对应工具结果的成功确认。
+# node / python3 都没有时静默跳过；不把文档中的示例或失败命令当成反馈。
+parse_stop_transcript() {
+  if command -v node >/dev/null 2>&1; then
+    node -e '
+      const fs = require("fs"), path = require("path");
+      try {
+        const input = JSON.parse(fs.readFileSync(0, "utf8"));
+        const session = input.session_id;
+        if (typeof session !== "string" || !/^[A-Za-z0-9_-]+$/.test(session)) process.exit(0);
+        let file = input.transcript_path;
+        if (typeof file !== "string") process.exit(0);
+        if (file.startsWith("~/")) file = path.join(process.env.HOME, file.slice(2));
+        const messages = fs.readFileSync(file, "utf8").split(/\r?\n/).flatMap(line => {
+          try { return [JSON.parse(line)]; } catch { return []; }
+        });
+        const calls = new Map(), used = new Set(), fed = new Set();
+        for (const row of messages) {
+          if (row.type !== "assistant" || !Array.isArray(row.message?.content)) continue;
+          for (const tool of row.message.content) {
+            if (tool.type !== "tool_use") continue;
+            const arg = tool.input || {};
+            if (tool.name === "Skill" && typeof arg.skill === "string") used.add(`name:${arg.skill}`);
+            if (tool.name === "Read" && typeof arg.file_path === "string" && arg.file_path.endsWith("/SKILL.md")) {
+              const file = arg.file_path.startsWith("~/") ? path.join(process.env.HOME, arg.file_path.slice(2)) : arg.file_path;
+              used.add(`dir:${path.dirname(path.resolve(input.cwd || process.cwd(), file))}`);
+            }
+            const feedback = typeof arg.command === "string" ? arg.command.match(/(?:^\s*|[;|&]\s*)(?:command\s+)?ash\s+feedback\s+([A-Za-z0-9_.-]+)\s+(?:ok|fail)\b/) : null;
+            if (tool.name === "Bash" && feedback) calls.set(tool.id, feedback[1]);
+          }
+        }
+        for (const row of messages) {
+          if (row.type !== "user" || !Array.isArray(row.message?.content)) continue;
+          for (const result of row.message.content) {
+            if (result.type !== "tool_result" || result.is_error || !calls.has(result.tool_use_id)) continue;
+            const text = typeof result.content === "string" ? result.content : (Array.isArray(result.content) ? result.content.map(x => x.text || "").join("\n") : "");
+            const match = text.match(/✅ 已记录 ([A-Za-z0-9_.-]+) 的反馈：/);
+            const command = calls.get(result.tool_use_id);
+            if (match && command === match[1]) fed.add(match[1]);
+          }
+        }
+        console.log(`session:${session}`);
+        console.log(`active:${input.stop_hook_active === true ? 1 : 0}`);
+        for (const item of used) if (!/[\r\n\t]/.test(item)) console.log(item);
+        for (const slug of fed) console.log(`fed:${slug}`);
+      } catch { /* malformed input or unavailable transcript: stay quiet */ }
+    '
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -I -c '
+import json, os, re, sys
+try:
+    arg = json.load(sys.stdin)
+    session = arg.get("session_id")
+    if not isinstance(session, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", session): sys.exit(0)
+    file = arg.get("transcript_path")
+    if not isinstance(file, str): sys.exit(0)
+    rows = []
+    with open(os.path.expanduser(file)) as f:
+        for line in f:
+            try: rows.append(json.loads(line))
+            except ValueError: pass
+    calls, used, fed = {}, set(), set()
+    for row in rows:
+        if not isinstance(row, dict) or row.get("type") != "assistant": continue
+        content = row.get("message", {}).get("content", [])
+        if not isinstance(content, list): continue
+        for tool in content:
+            if tool.get("type") != "tool_use": continue
+            data = tool.get("input") or {}
+            if tool.get("name") == "Skill" and isinstance(data.get("skill"), str): used.add("name:" + data["skill"])
+            p = data.get("file_path")
+            if tool.get("name") == "Read" and isinstance(p, str) and p.endswith("/SKILL.md"):
+                used.add("dir:" + os.path.dirname(os.path.abspath(os.path.join(arg.get("cwd") or os.getcwd(), os.path.expanduser(p)))))
+            command = data.get("command")
+            feedback = re.search(r"(?:^|[\s;&|])ash\s+feedback\s+([A-Za-z0-9_.-]+)\s+(?:ok|fail)\b", command) if isinstance(command, str) else None
+            if tool.get("name") == "Bash" and feedback: calls[tool.get("id")] = feedback.group(1)
+    for row in rows:
+        if not isinstance(row, dict) or row.get("type") != "user": continue
+        content = row.get("message", {}).get("content", [])
+        if not isinstance(content, list): continue
+        for result in content:
+            if result.get("type") != "tool_result" or result.get("is_error") or result.get("tool_use_id") not in calls: continue
+            text = result.get("content", "")
+            if isinstance(text, list): text = "\n".join(x.get("text", "") for x in text if isinstance(x, dict))
+            match = re.search(r"✅ 已记录 ([A-Za-z0-9_.-]+) 的反馈：", text) if isinstance(text, str) else None
+            if match and calls.get(result.get("tool_use_id")) == match.group(1): fed.add(match.group(1))
+    print("session:" + session)
+    print("active:" + ("1" if arg.get("stop_hook_active") is True else "0"))
+    for item in sorted(used):
+        if not re.search(r"[\r\n\t]", item): print(item)
+    for slug in sorted(fed): print("fed:" + slug)
+except Exception:
+    pass
+'
+  fi
+}
+
+# name:/dir: → 本服务装的技能目录（不是 ash 装的、来自别的服务的都忽略）
+resolve_used_dir() {
+  local item="$1" root
+  case "$item" in
+    dir:*) item="${item#dir:}"; if [ -f "$item/.ash" ] && [ "$(meta "$item" server)" = "$SERVER_URL" ]; then echo "$item"; fi ;;
+    name:*)
+      item="${item#name:}"
+      case "$item" in ''|*/*|.*) return ;; esac
+      while IFS= read -r root; do
+        [ -n "$root" ] || continue
+        if [ -f "$root/$item/.ash" ] && [ "$(meta "$root/$item" server)" = "$SERVER_URL" ]; then echo "$root/$item"; return; fi
+      done <<EOF
+$(skill_roots ""; echo "$HOME/.claude/skills"; echo "$PWD/.claude/skills")
+EOF
+      ;;
+  esac
+}
+
+# 改 Claude Code 的 settings.json：install 加上（已有则替换）ash 的 Stop hook，uninstall 去掉。用 node 或 python3，都没有时返回 3
+edit_claude_settings() {
+  local file="$1" mode="$2" cmd="$3"
+  if command -v node >/dev/null 2>&1; then
+    node -e '
+      const fs = require("fs"), path = require("path");
+      const [file, mode, cmd, mark] = process.argv.slice(1);
+      let s = {};
+      try { s = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { if (e.code !== "ENOENT") { console.error(`无法解析 ${file}：${e.message}`); process.exit(2); } }
+      s.hooks = s.hooks || {};
+      const groups = (s.hooks.Stop || []).map((g) => ({ ...g, hooks: (g.hooks || []).filter((h) => !String(h.command || "").includes(mark)) })).filter((g) => g.hooks.length);
+      if (mode === "install") groups.push({ hooks: [{ type: "command", command: cmd, timeout: 30 }] });
+      if (groups.length) s.hooks.Stop = groups; else delete s.hooks.Stop;
+      if (!Object.keys(s.hooks).length) delete s.hooks;
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(s, null, 2) + "\n");
+    ' "$file" "$mode" "$cmd" "$HOOK_MARK"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -I - "$file" "$mode" "$cmd" "$HOOK_MARK" <<'PY'
+import json, os, sys
+file, mode, cmd, mark = sys.argv[1:5]
+s = {}
+if os.path.exists(file):
+    try:
+        with open(file) as f: s = json.load(f)
+    except ValueError as e:
+        sys.stderr.write("无法解析 %s：%s\n" % (file, e)); sys.exit(2)
+hooks = s.get("hooks") or {}
+groups = []
+for g in hooks.get("Stop") or []:
+    kept = [h for h in g.get("hooks") or [] if mark not in str(h.get("command", ""))]
+    if kept: groups.append(dict(g, hooks=kept))
+if mode == "install": groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": 30}]})
+if groups: hooks["Stop"] = groups
+else: hooks.pop("Stop", None)
+if hooks: s["hooks"] = hooks
+else: s.pop("hooks", None)
+d = os.path.dirname(file)
+if d and not os.path.isdir(d): os.makedirs(d)
+with open(file, "w") as f: f.write(json.dumps(s, indent=2, ensure_ascii=False) + "\n")
+PY
+  else
+    return 3
+  fi
+}
+
+# 单个 slug 的服务端状态行：slug<TAB>状态<TAB>修订<TAB>版本
+revision_line() {
+  http -G --data-urlencode "slug=$1" "$SERVER_URL/api/agent/revisions" | awk -F'\t' -v s="$1" '$1 == s { print; exit }'
 }
 
 fetch_self() {
@@ -292,11 +512,17 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
 
 反馈
   ash feedback <slug> ok|fail ["说明"] [--dir PATH]   用完技能后回报结果；失败时写一句哪一步、为什么没走通
+  ash stats [--days N] [--json]   最近 N 天（默认 30）的使用次数、反馈率，按机器拆分
+  ash hooks install|uninstall|status [--settings PATH]
+                                  Claude Code hook：用到的技能自动记入库里，用了没回报的提醒 Agent 回报一次
 
 推送与审核
   ash new <slug> [--meta] [--dir PATH]  生成符合规范的技能骨架（frontmatter、description 模板；--meta 带契约与被谁引用两节）
   ash push <技能目录|SKILL.md> [--update] [--folder PATH] [--json]
                                   同名技能已存在时需加 --update；推送内容需人工审核后对其他 Agent 可见；结果里会附上检查意见
+  ash import [目录…] [--folder PATH] [--update] [--dry-run] [--no-adopt]
+                                  把本机已有、不是 ash 装的技能一次推送进库（默认扫描各 Agent 的技能目录）；
+                                  同名已在库里的跳过（--update 提交为更新）；导入的目录登记为 ash 管理（--no-adopt 不登记）
   ash mine                        我（本机）推送的技能及审核状态
   ash withdraw <slug>             撤回自己尚在待审核的推送
 
@@ -306,7 +532,7 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash logout                      删除本机保存的 token（要让它彻底失效，请在网页「账户」里吊销）
 
 其它
-  ash guide                       Agent 使用指南（规则的完整说明）
+  ash guide [--full]              Agent 使用指南（精简版；--full 完整规范：写技能、引用、元技能、HTTP 接口）
   ash open                        在浏览器打开管理后台
   ash update                      更新 ash 自身
   ash <命令> --help               只看这条命令的用法
@@ -482,7 +708,7 @@ EOF
         *) die "未知参数: $1" ;;
       esac
     done
-    # 库里所有技能（含废纸篓、改名去向）一次查回：每行 slug<TAB>状态<TAB>修订<TAB>版本[<TAB>新标识符]
+    # 库里所有技能（含废纸篓、改名去向）一次查回：每行 slug<TAB>状态<TAB>修订<TAB>版本<TAB>待审修订<TAB>改名去向
     cands="$(
       agent_dirs | while IFS= read -r root; do
         for d in "$root"/* "$root"/*/*; do
@@ -516,7 +742,7 @@ EOF
       target="$slug"
       case "$st" in
         published|pending) ;;
-        moved) target="$(printf '%s' "$line" | cut -f5)" ;;
+        moved) target="$(printf '%s' "$line" | cut -f6)" ;;
         *) continue ;; # 库里没有（Agent 自带或自己写的技能）、或已删除：不动
       esac
       if [ "$root" = "$STORE" ]; then
@@ -871,8 +1097,7 @@ EOF2
       [ -f "$target/SKILL.md" ] || die "目录中缺少 SKILL.md：$target"
       archive="$(mktemp "${TMPDIR:-/tmp}/ash-push.XXXXXX")"
       trap 'rm -f "$archive"' EXIT
-      COPYFILE_DISABLE=1 tar -czf "$archive" --exclude='.git' --exclude='node_modules' --exclude='__pycache__' \
-        --exclude='.DS_Store' --exclude='._*' --exclude='./.ash' -C "$target" .
+      pack_skill_dir "$target" "$archive"
       nfiles="$(tar -tzf "$archive" | grep -vc '/$' || true)"
       echo "→ 推送目录 ${target}（$nfiles 个文件，来源 ${TERMINAL}）" >&2
       http -X POST "$SERVER_URL/api/agent/push" -F "file=@$archive;filename=skill.tar.gz;type=application/gzip" "${form[@]}"
@@ -881,6 +1106,198 @@ EOF2
       echo "→ 推送文件 ${target}（来源 ${TERMINAL}）" >&2
       http -X POST "$SERVER_URL/api/agent/push" -F "file=@$target" "${form[@]}"
     fi
+    ;;
+  import)
+    # 把本机已有、不是 ash 装的技能一次推送进库。默认扫描各 Agent 的技能目录；
+    # 参数可以是技能根目录（下面每个含 SKILL.md 的子目录是一个技能），也可以直接是一个技能目录
+    roots=(); update=0; folder=""; dry=0; adopt=1
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --update) update=1; shift ;;
+        --folder) [ -n "${2:-}" ] || die "--folder 需要参数"; folder="$2"; shift 2 ;;
+        --dry-run) dry=1; shift ;;
+        --no-adopt) adopt=0; shift ;;
+        -*) die "未知参数: $1" ;;
+        *) [ -d "$1" ] || die "不是目录: $1"; roots+=("$(cd "$1" && pwd)"); shift ;;
+      esac
+    done
+    candidates="$(
+      if [ "${#roots[@]}" -gt 0 ]; then printf '%s\n' "${roots[@]}"; else skill_roots ""; fi | while IFS= read -r root; do
+        [ -n "$root" ] || continue
+        if [ -f "$root/SKILL.md" ]; then echo "$root"; continue; fi
+        for f in "$root"/*/SKILL.md; do
+          if [ -f "$f" ]; then
+            d="$(dirname "$f")"
+            case "$(basename "$d")" in .*) continue ;; esac
+            echo "$d"
+          fi
+        done
+      done | awk '!seen[$0]++'
+    )"
+    [ -n "$candidates" ] || { echo "没有找到技能目录（含 SKILL.md 的目录）。可以指定目录：ash import ~/my-skills"; exit 0; }
+    archive="$(mktemp "${TMPDIR:-/tmp}/ash-import.XXXXXX")"
+    trap 'rm -f "$archive"' EXIT
+    created=0; pending_new=0; updated=0; unchanged=0; exists=0; managed=0; failed=0
+    seen=""   # 每行 名称<TAB>目录<TAB>指纹：同名副本内容不同时要告诉用户导入的是哪一份
+    form=(-F "terminal=$TERMINAL" -F "update=$update")
+    if [ -n "$folder" ]; then form+=(-F "folder=$folder"); fi
+    while IFS= read -r d; do
+      [ -n "$d" ] || continue
+      if [ -f "$d/.ash" ]; then managed=$((managed + 1)); continue; fi
+      # 同一个技能常常同时放在几个 Agent 的目录里：按 frontmatter 的 name（没有就用目录名）只导入第一份
+      name="$(sed -n '1,/^---$/s/^name: *["'\'']*\([^"'\'' ]*\).*/\1/p' "$d/SKILL.md" 2>/dev/null | head -n 1)"
+      key="${name:-$(basename "$d")}"
+      fp="$(ash_fingerprint "$d")"
+      first="$(printf '%s' "$seen" | awk -F'\t' -v k="$key" '$1 == k { print $2 "\t" $3; exit }')"
+      if [ -n "$first" ]; then
+        if [ "${first#*$'\t'}" = "$fp" ]; then echo "⏭  $d：与 ${first%%$'\t'*} 内容相同，跳过"
+        else echo "⚠️  $d：与 ${first%%$'\t'*} 同名（$key）但内容不同，没有导入这一份；如果它才是要保留的版本：ash import '$d' --update"; fi
+        continue
+      fi
+      seen="$seen$key"$'\t'"$d"$'\t'"$fp"$'\n'
+      if [ "$dry" = 1 ]; then echo "· $key  ←  $d"; continue; fi
+      pack_skill_dir "$d" "$archive"
+      out="$(curl -sS -w '\n%{http_code}' ${AUTH[@]+"${AUTH[@]}"} -X POST "$SERVER_URL/api/agent/push" \
+        -F "file=@$archive;filename=skill.tar.gz;type=application/gzip" "${form[@]}")" || die "无法连接 $SERVER_URL"
+      code="${out##*$'\n'}"; body="${out%$'\n'*}"
+      if [ "$code" = 401 ]; then die "未登录或 token 已失效，请先运行 ash login"; fi
+      if [ "$code" -ge 400 ] 2>/dev/null; then
+        msg="$(printf '%s' "$body" | json_first error)"
+        if [ "$code" = 409 ]; then echo "= $key：已在库里，跳过（要提交本地版本为更新：ash import --update）"; exists=$((exists + 1))
+        else echo "✗ $d：${msg:-HTTP $code}"; failed=$((failed + 1)); fi
+        continue
+      fi
+      action="$(printf '%s' "$body" | json_first action)"; status="$(printf '%s' "$body" | json_first status)"
+      slug="$(printf '%s' "$body" | json_first slug)"
+      case "$action" in
+        created)
+          created=$((created + 1))
+          if [ "$status" = pending ]; then pending_new=$((pending_new + 1)); label="已导入（待审核）"; else label="已导入（已发布）"; fi ;;
+        update-pending) updated=$((updated + 1)); label="已提交更新（待审核）" ;;
+        updated) updated=$((updated + 1)); label="已更新" ;;
+        unchanged) unchanged=$((unchanged + 1)); label="库里已是同样的内容" ;;
+        *) label="$action" ;;
+      esac
+      note=""
+      # 登记为 ash 管理：之后 ash installed / outdated 就能管到它。目录名必须等于 slug，否则 ash pull --all 会装到另一个目录
+      if [ "$adopt" = 1 ] && [ -n "$slug" ]; then
+        if [ "$(basename "$d")" != "$slug" ]; then note="（目录名与 slug $slug 不同，未登记为 ash 管理）"
+        else
+          pending=0; adopted_revision="$(printf '%s' "$body" | json_first revision)"
+          pending_revision="$(printf '%s' "$body" | json_first pending_revision)"
+          if [ "$status" = pending ] || { [[ "$pending_revision" =~ ^[0-9a-f]{12}$ ]] && [ "$pending_revision" = "$adopted_revision" ]; }; then
+            pending=1
+            if [[ "$pending_revision" =~ ^[0-9a-f]{12}$ ]]; then adopted_revision="$pending_revision"; fi
+          fi
+          if adopt_dir "$d" "$slug" "$pending" "$adopted_revision" "$(printf '%s' "$body" | json_first version)"; then note="（已登记为 ash 管理）"
+          else note="（登记为 ash 管理失败）"; fi
+        fi
+      fi
+      echo "✓ ${slug:-$key}：$label$note  ←  $d"
+    done <<EOF
+$candidates
+EOF
+    if [ "$dry" = 1 ]; then echo "（--dry-run：以上目录会被导入，未做任何修改）"; exit 0; fi
+    echo "完成：导入 $created 个，更新 $updated 个，无变化 $unchanged 个，已在库里 $exists 个，已由 ash 管理 $managed 个，失败 $failed 个"
+    if [ "$pending_new" -gt 0 ]; then echo "ℹ️  $pending_new 个新技能在待审核：在网页「待审核」里采纳后其他 Agent 才能拉取（$SERVER_URL/app）"; fi
+    if [ "$adopt" = 1 ] && [ $((created + updated + unchanged)) -gt 0 ]; then
+      echo "ℹ️  已登记的目录保留在原处；审核采纳后运行 ash migrate 查看共享存储迁移计划，再 ash migrate --apply 链接给各 Agent"
+    fi
+    [ "$failed" = 0 ] || exit 1
+    ;;
+  hooks)
+    sub="${1:-status}"; [ "$#" -gt 0 ] && shift
+    settings="${ASH_CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --settings) [ -n "${2:-}" ] || die "--settings 需要参数"; settings="$2"; shift 2 ;;
+        *) die "未知参数: $1" ;;
+      esac
+    done
+    # hook 直接调用当前这份 ash（绝对路径），不依赖 Claude Code 运行时的 PATH
+    self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+    quoted_self="'$(printf '%s' "$self" | sed "s/'/'\\\\''/g")'"
+    case "$sub" in
+      install|uninstall)
+        if [ "$sub" = install ] && [ -f "$settings" ]; then cp "$settings" "$settings.ash-bak"; fi
+        if [ "$sub" = uninstall ] && [ ! -f "$settings" ]; then echo "未安装（没有 $settings）"; exit 0; fi
+        rc=0; edit_claude_settings "$settings" "$sub" "$quoted_self $HOOK_MARK" || rc=$?
+        if [ "$rc" = 3 ]; then
+          echo "本机没有 node 或 python3，无法自动修改 ${settings}。请手动在其中加入：" >&2
+          echo "Stop hook：type=command，command=$quoted_self $HOOK_MARK，timeout=30" >&2
+          exit 1
+        fi
+        [ "$rc" = 0 ] || die "修改 $settings 失败"
+        if [ "$sub" = install ]; then
+          echo "✅ 已在 $settings 安装 Claude Code hook"
+          echo "   每轮结束时：用到的 ash 技能记入库里；用了却没 ash feedback 的，提醒 Agent 回报一次"
+          echo "   只记录、不提醒：export ASH_HOOK_REMIND=0；卸载：ash hooks uninstall"
+        else
+          echo "✓ 已从 $settings 移除 ash 的 hook"
+        fi
+        ;;
+      status)
+        if [ -f "$settings" ] && grep -q "$HOOK_MARK" "$settings"; then echo "✅ 已安装（$settings）"
+        else echo "未安装。在跑 Claude Code 的机器上运行 ash hooks install"; exit 1; fi
+        ;;
+      *) die "用法: ash hooks install|uninstall|status [--settings PATH]" ;;
+    esac
+    ;;
+  hook)
+    # Claude Code 调用的入口（由 ash hooks install 写入 settings.json）。任何错误都不能打断 Agent：一律 exit 0
+    [ "${1:-}" = "claude-stop" ] || exit 0
+    [ -n "$ASH_TOKEN" ] || exit 0
+    parsed="$(parse_stop_transcript 2>/dev/null || true)"
+    session="$(printf '%s\n' "$parsed" | sed -n 's/^session://p')"
+    [ -n "$session" ] || exit 0
+    active="$(printf '%s\n' "$parsed" | sed -n 's/^active://p')"
+    state_dir="$HOME/.ash/hook-state"; (umask 077; mkdir -p "$state_dir") 2>/dev/null || exit 0
+    find "$state_dir" -type f -name 'stop-*' -mtime +7 -delete 2>/dev/null || true
+    # 不同服务和登录账号分别去重；只保存校验值，不把 token 写进状态文件。
+    scope="$(printf '%s\n%s' "$SERVER_URL" "$ASH_TOKEN" | cksum | awk '{print $1}')"
+    state="$state_dir/stop-$scope-$session"; (umask 077; touch "$state") 2>/dev/null || exit 0
+    fed=",$(printf '%s\n' "$parsed" | sed -n 's/^fed://p' | tr '\n' ',')"
+    new_used=(); new_revs=(); remind=(); seen_slugs=""
+    while IFS= read -r item; do
+      [ -n "$item" ] || continue
+      d="$(resolve_used_dir "$item")"; [ -n "$d" ] || continue
+      slug="$(meta "$d" slug)"
+      [[ "$slug" =~ ^[A-Za-z0-9_.-]+$ ]] || continue
+      # Read 和 Skill 可以指向同一份存储，只在本次请求中发送一次。
+      case ",${seen_slugs:-}," in *",$slug,"*) continue ;; esac
+      seen_slugs="${seen_slugs:-},$slug"
+      if ! grep -qxF "used:$slug" "$state"; then
+        new_used+=("$slug"); new_revs+=("$(meta "$d" revision)")
+      fi
+      case "$fed" in *",$slug,"*) continue ;; esac
+      if ! grep -qxF "reminded:$slug" "$state"; then remind+=("$slug"); fi
+    done <<EOF
+$(printf '%s\n' "$parsed" | grep -E '^(name|dir):' || true)
+EOF
+    if [ "${#new_used[@]}" -gt 0 ]; then
+      # 每批最多 50 个；仅将服务端确认的成功响应写入去重状态，离线或 token 失效时下轮重试。
+      i=0
+      while [ "$i" -lt "${#new_used[@]}" ]; do
+        post=(-X POST --data-urlencode "terminal=$TERMINAL"); batch=(); n=0
+        while [ "$i" -lt "${#new_used[@]}" ] && [ "$n" -lt 50 ]; do
+          post+=(--data-urlencode "slug=${new_used[$i]}" --data-urlencode "revision=${new_revs[$i]}")
+          batch+=("${new_used[$i]}"); i=$((i + 1)); n=$((n + 1))
+        done
+        if response="$(curl -fsS -m 5 ${AUTH[@]+"${AUTH[@]}"} "${post[@]}" "$SERVER_URL/api/agent/used" 2>/dev/null)"; then
+          recorded=",${response#*：},"; recorded="${recorded// /}"
+          for slug in "${batch[@]}"; do
+            case "$recorded" in *",$slug,"*) echo "used:$slug" >> "$state" ;; esac
+          done
+        fi
+      done
+    fi
+    # stop_hook_active：这一轮本来就是被 Stop hook 续上的，不再提醒（避免循环）
+    if [ "${#remind[@]}" -gt 0 ] && [ "${ASH_HOOK_REMIND:-1}" != "0" ] && [ "$active" != 1 ]; then
+      for slug in "${remind[@]}"; do echo "reminded:$slug" >> "$state"; done
+      list="$(printf '%s、' "${remind[@]}")"; list="${list%、}"
+      printf '{"decision":"block","reason":"%s"}\n' "本次会话用到了技能库里的技能 ${list}，但还没有回报结果。请对每个技能运行一次 ash feedback <slug> ok，没走通则 ash feedback <slug> fail 加一句哪一步、为什么。回报后再结束；不要为此重做任务。"
+    fi
+    exit 0
     ;;
   mine)
     http -G --data-urlencode "terminal=$TERMINAL" "$SERVER_URL/api/agent/mine"
@@ -924,7 +1341,23 @@ EOF2
     echo "✓ 已删除本机 token。它在服务端仍然有效，如需作废请到网页「账户」里吊销"
     ;;
   guide)
-    http "$SERVER_URL/agent.md"
+    case "${1:-}" in
+      --full) http "$SERVER_URL/agent-full.md" ;;
+      '') http "$SERVER_URL/agent.md" ;;
+      *) die "未知参数: $1（ash guide 精简版，ash guide --full 完整规范）" ;;
+    esac
+    ;;
+  stats)
+    args=(-G); json=0
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --json) json=1; shift ;;
+        --days) [ -n "${2:-}" ] || die "--days 需要参数"; args+=(--data-urlencode "days=$2"); shift 2 ;;
+        *) die "未知参数: $1" ;;
+      esac
+    done
+    if [ "$json" = 0 ]; then args+=(--data-urlencode "format=text"); fi
+    http "${args[@]}" "$SERVER_URL/api/skills/insights"
     ;;
   open)
     if command -v open >/dev/null 2>&1; then open "$SERVER_URL/app"

@@ -555,6 +555,9 @@ api.post('/push', upload.single('file'), async (req, res) => {
     const payload = {
       success: true,
       ...result,
+      // 导入目录保存实际提交内容的修订号，待审更新不能冒充已发布版本。
+      revision: skillRevision({ content, files: JSON.stringify(archiveFiles) }),
+      version: meta.version,
       lint,
       review_required: result.status === 'pending' || result.action === 'update-pending',
       files: archiveFiles.length,
@@ -566,6 +569,10 @@ api.post('/push', upload.single('file'), async (req, res) => {
       install_cmd: curlPipeCommand(`${base}/s/${slug}/install.sh`),
     };
     const status = result.action === 'created' ? 201 : 200;
+    const pendingSkill = findSkill(uid, slug);
+    payload.pending_revision = pendingSkill?.pending_content == null
+      ? '-'
+      : skillRevision({ content: pendingSkill.pending_content, files: pendingSkill.pending_files || '[]' });
     return asText ? res.status(status).type('text/plain').send(pushSummaryText(payload)) : res.status(status).json(payload);
   } catch (err) {
     return fail(500, err.message);
@@ -586,8 +593,8 @@ function redirectOf(userId, slug) {
   return null;
 }
 
-// 已装技能比对：GET /api/agent/revisions?slug=a&slug=b → 每行 slug<TAB>状态<TAB>修订<TAB>版本[<TAB>新标识符]
-// 状态: published | pending | trashed | missing | moved（改名或并入了别的技能，第 5 列是新标识符）
+// 已装技能比对：每行 slug<TAB>状态<TAB>修订<TAB>版本<TAB>待审修订<TAB>改名去向
+// 状态: published | pending | trashed | missing | moved；第 5 列供已导入的待审版本比对，第 6 列仅 moved 时有值
 // 名单长时用 POST（表单 slug=a&slug=b 放在请求体里）：几百个名字拼进 URL 会被网关拒绝
 function revisions(req, res) {
   const raw = req.method === 'POST' ? req.body?.slug : req.query.slug;
@@ -596,10 +603,13 @@ function revisions(req, res) {
     const skill = findSkill(req.user.id, slug);
     if (!skill || skill.is_deleted) {
       const moved = redirectOf(req.user.id, slug);
-      if (moved) return `${slug}\tmoved\t-\t${moved.version || '-'}\t${moved.slug}`;
+      if (moved) return `${slug}\tmoved\t-\t${moved.version || '-'}\t-\t${moved.slug}`;
       return `${slug}\t${skill ? 'trashed' : 'missing'}\t-\t-`;
     }
-    return `${slug}\t${skill.status === 'pending' ? 'pending' : 'published'}\t${skillRevision(skill)}\t${skill.version || '-'}`;
+    const pendingRevision = skill.pending_content == null
+      ? '-'
+      : skillRevision({ content: skill.pending_content, files: skill.pending_files || '[]' });
+    return `${slug}\t${skill.status === 'pending' ? 'pending' : 'published'}\t${skillRevision(skill)}\t${skill.version || '-'}\t${pendingRevision}\t-`;
   });
   res.type('text/plain').send(lines.length ? `${lines.join('\n')}\n` : '');
 }
@@ -752,6 +762,24 @@ api.post('/feedback', (req, res) => {
   if (outcome === 'fail' && !note) lines.push(`ℹ️  附一句原因更有用：ash feedback ${slug} fail "哪一步、为什么没走通"`);
   if (outcome === 'fail') lines.push('ℹ️  如果你已经找到了正确做法，把修正推送回库里：修改本地技能目录后 ash push <目录> --update');
   res.type('text/plain').send(`${lines.join('\n')}\n`);
+});
+
+// 本机 Agent 用到了已装技能：ash hooks install 装的 Claude Code hook 在会话结束时上报（每个会话每个技能一次）。
+// 服务端本来看不到这一步——技能装到本地后由 Agent 直接读取；有了它，「从未使用 / 长期未用」才准
+api.post('/used', (req, res) => {
+  const body = req.body || {};
+  const revisions = [].concat(body.revision || []).map(String);
+  const entries = [].concat(body.slug || []).slice(0, 50).map((s, i) => ({ slug: String(s).trim(), revision: revisions[i] }));
+  if (!entries.some(({ slug }) => /^[A-Za-z0-9_.-]+$/.test(slug))) return res.status(400).type('text/plain').send('错误: 缺少 slug\n');
+  const recorded = [];
+  entries.forEach(({ slug, revision: supplied }) => {
+    if (!/^[A-Za-z0-9_.-]+$/.test(slug) || recorded.includes(slug)) return;
+    const skill = findSkill(req.user.id, slug);
+    if (!skill || skill.is_deleted) return;
+    const revision = /^[0-9a-f]{12}$/.test(supplied || '') ? supplied : skillRevision(skill);
+    if (recordEvent(skill, req.user.id, 'use', { terminal: terminalOf(req), revision })) recorded.push(slug);
+  });
+  res.type('text/plain').send(`已记录 ${recorded.length} 个技能的使用${recorded.length ? `：${recorded.join(', ')}` : ''}\n`);
 });
 
 // 按任务描述找技能：ash suggest "<一两句话描述任务>"
