@@ -61,18 +61,24 @@ export function formatKeys(keys) {
     .join(IS_MAC ? '' : '+');
 }
 
-export default function useHotkeys(bindings, overlayOpen = false) {
-  // ref 保存最新绑定，避免每次 render 重新挂/卸监听
+export default function useHotkeys(bindings, overlayOpen = false, graphOpen = false) {
+  // ref 保存最新绑定，避免每次 render 重新挂/卸监听。
+  // 写入放在 effect 里：渲染期间不读 ref，按下时读到的仍是最新绑定
   const bindingsRef = useRef(bindings);
-  useEffect(() => { bindingsRef.current = bindings; });
   const overlayOpenRef = useRef(overlayOpen);
-  useEffect(() => { overlayOpenRef.current = overlayOpen; });
+  const graphOpenRef = useRef(graphOpen);
+  useEffect(() => { bindingsRef.current = bindings; }, [bindings]);
+  useEffect(() => { overlayOpenRef.current = overlayOpen; }, [overlayOpen]);
+  useEffect(() => { graphOpenRef.current = graphOpen; }, [graphOpen]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.defaultPrevented || event.isComposing) return;
       const typing = isTypingTarget(event.target);
-      for (const binding of bindingsRef.current) {
+      const active = graphOpenRef.current
+        ? bindingsRef.current.filter((b) => ['palette', 'help'].includes(b.id))
+        : bindingsRef.current;
+      for (const binding of active) {
         if (!binding || typeof binding.run !== 'function') continue;
         if (overlayOpenRef.current && !binding.alwaysOn) continue;
         if (typing && !binding.allowInInput) continue;

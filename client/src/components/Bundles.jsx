@@ -26,7 +26,22 @@ export function BundleDetail({ bundle, onClose, onChanged, showToast }) {
     } catch (e) { setError(e.message); }
   };
 
-  useEffect(() => { if (bundle) load(); }, [bundle?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!bundle?.id) return undefined;
+    let cancelled = false;
+    // 异步启动，避免在 effect 里同步 setState 触发级联渲染
+    const timer = window.setTimeout(() => {
+      requestJson(`/api/bundles/${bundle.id}`)
+        .then((data) => {
+          if (cancelled) return;
+          setDetail(data);
+          setNameDraft(data.name || '');
+          setError('');
+        })
+        .catch((e) => { if (!cancelled) setError(e.message); });
+    }, 0);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [bundle?.id]);
 
   if (!bundle) return null;
 

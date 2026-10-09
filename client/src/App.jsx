@@ -535,7 +535,7 @@ export default function App() {
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, []);
+  }, [setSelectedSkillId, setCurrentFolder]);
 
   // ——— 键盘流 ———
   // 列表内上下移动（选中即预览，Linear 式）
@@ -596,6 +596,7 @@ export default function App() {
 
   // 唯一的快捷键注册表：速查面板（?）由它生成，键位不再散落在各组件的 keydown 里。
   // 每次渲染重建（useHotkeys 只把它存进 ref），这样处理函数永远闭包到最新状态。
+  // 详情动作不在这里闭包 detailApiRef：渲染期不读 ref，按键时派发事件，由下面的 effect 转发。
   const shortcuts = [
     { id: 'palette', group: '全局', keys: 'mod+k', label: '命令面板（全库检索）', allowInInput: true, alwaysOn: true, run: () => setShowPalette((v) => !v) },
     { id: 'help', group: '全局', keys: '?', label: '快捷键速查', run: () => setShowShortcuts(true) },
@@ -615,12 +616,25 @@ export default function App() {
     },
     { id: 'select-all', group: '技能列表', keys: 'mod+a', label: '全选当前列表', run: () => { setSelectedIds(new Set(sortedSkills.map((s) => s.id))); setMultiSelectMode(true); } },
     { id: 'star', group: '当前技能', keys: 's', label: '收藏 / 取消收藏', run: () => selectedSkill && handleToggleStar(selectedSkill.id) },
-    { id: 'edit', group: '当前技能', keys: 'e', label: '编辑 / 预览切换', run: () => detailApiRef.current?.toggleMode() },
-    { id: 'save', group: '当前技能', keys: 'mod+s', label: '保存编辑', allowInInput: true, run: () => detailApiRef.current?.save() },
+    // 不在渲染期读 detailApiRef：派发事件，由下面的 effect 转给详情组件
+    { id: 'edit', group: '当前技能', keys: 'e', label: '编辑 / 预览切换', run: () => window.dispatchEvent(new CustomEvent('ash:detail', { detail: 'toggle' })) },
+    { id: 'save', group: '当前技能', keys: 'mod+s', label: '保存编辑', allowInInput: true, run: () => window.dispatchEvent(new CustomEvent('ash:detail', { detail: 'save' })) },
     { id: 'trash', group: '当前技能', keys: ['Delete', 'Backspace'], label: '移入废纸篓', run: () => selectedSkill && currentFolder !== 'trash' && handleTrashSkill(selectedSkill.id) },
   ];
 
-  useHotkeys(graphOpen ? shortcuts.filter((shortcut) => ['palette', 'help'].includes(shortcut.id)) : shortcuts, overlayOpen);
+  useHotkeys(shortcuts, overlayOpen, graphOpen);
+
+  // 详情组件的动作只在事件里读 ref，渲染期间不碰
+  useEffect(() => {
+    const onDetailAction = (event) => {
+      const api = detailApiRef.current;
+      if (!api) return;
+      if (event.detail === 'save') api.save();
+      else if (event.detail === 'toggle') api.toggleMode();
+    };
+    window.addEventListener('ash:detail', onDetailAction);
+    return () => window.removeEventListener('ash:detail', onDetailAction);
+  }, [detailApiRef]);
 
   const handleAddSkillsToBundle = async (bundleId, ids) => {
     const { succeeded, failed } = await settleRequests(ids, (id) => requestJson(`/api/bundles/${bundleId}/skills`, {

@@ -474,13 +474,18 @@ export function VersionHistoryModal({ isOpen, onClose, skillId, onRestored }) {
   const [compare, setCompare] = useState(null); // { version, current }
 
   useEffect(() => {
-    if (!isOpen || !skillId) return;
-    setLoading(true);
-    setError('');
-    requestJson(`/api/skills/${skillId}/versions`)
-      .then((data) => setVersions(Array.isArray(data) ? data : []))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+    if (!isOpen || !skillId) return undefined;
+    let cancelled = false;
+    // 异步启动，避免在 effect 里同步 setState 触发级联渲染
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      setError('');
+      requestJson(`/api/skills/${skillId}/versions`)
+        .then((data) => { if (!cancelled) setVersions(Array.isArray(data) ? data : []); })
+        .catch((e) => { if (!cancelled) setError(e.message); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    }, 0);
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, [isOpen, skillId]);
 
   if (!isOpen) return null;
