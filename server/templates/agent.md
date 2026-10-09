@@ -27,15 +27,16 @@
 完成了一个下次还会用到的流程后推送。一次性的操作记录、任何密钥、token 或个人隐私都不要推送。
 
 1. 先查重：`ash suggest "<新技能要解决的问题>"`。已有相近的就 `ash pull <slug>`，改完 `ash push <目录> --update`。
-2. `ash push <目录>`。同名技能已存在时必须加 `--update`。推送后进入待审核；自己要马上用就 `ash pull <slug> --pending`。
-3. 把返回结果（是否待审核、有无警告）如实告诉用户。之后用 `ash mine` 查看审核结果。
+2. 新技能用 `ash new <slug>` 生成骨架（元技能加 `--meta`），不要从空白写起；推送前 `ash lint <目录>` 自查（已在库里的也可以 `ash lint <slug>`），修到没有 ⚠️ 再推。
+3. `ash push <目录>`。同名技能已存在时必须加 `--update`。推送后进入待审核；自己要马上用就 `ash pull <slug> --pending`。
+4. 把返回结果（是否待审核、有无警告）如实告诉用户。之后用 `ash mine` 查看审核结果。
 
 最小的 `SKILL.md`：
 
 ```markdown
 ---
-name: my-skill            # 英文 slug：小写字母、数字、-、_
-description: 什么时候使用这个技能（再用 description_en 写一句英文）
+name: my-skill            # 英文 slug：小写字母、数字、-
+description: 做什么、什么时候用，结尾一句英文 Use when …
 version: 1.0.0
 depends_on: [other-skill] # 可选：引用的其他技能
 ---

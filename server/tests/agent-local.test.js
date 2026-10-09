@@ -106,6 +106,13 @@ test('agent-side management', async (t) => {
     assert.ok(backups.some((b) => b.startsWith('alpha-')));
     assert.match(fs.readFileSync(path.join(home, '.ash', 'backups', backups.find((b) => b.startsWith('alpha-')), 'SKILL.md'), 'utf8'), /我的本地笔记/);
     assert.doesNotMatch(ok(['installed', '--dir', skillsDir]).stdout, /有更新|本地有修改/);
+
+    // 运行技能脚本留下的 __pycache__ / .pyc / .DS_Store 不算本地修改
+    fs.mkdirSync(path.join(skillsDir, 'alpha', 'scripts', '__pycache__'), { recursive: true });
+    fs.writeFileSync(path.join(skillsDir, 'alpha', 'scripts', '__pycache__', 'a.cpython-312.pyc'), 'bytecode');
+    fs.writeFileSync(path.join(skillsDir, 'alpha', 'scripts', 'b.pyc'), 'bytecode');
+    fs.writeFileSync(path.join(skillsDir, 'alpha', '.DS_Store'), 'finder');
+    assert.doesNotMatch(ok(['installed', '--dir', skillsDir]).stdout, /本地有修改/);
   });
 
   await t.test('pulling over a directory not installed by ash backs it up first', () => {

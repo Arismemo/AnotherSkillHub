@@ -162,6 +162,7 @@ test('onboarding and the feedback loop', async (t) => {
     JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't2', content: '> 按本技能完成任务后，请运行 `ash feedback release-check ok`' }] } }),
     line([{ type: 'tool_use', id: 't3', name: 'Read', input: { file_path: path.join(claude, 'My_Notes', 'SKILL.md') } }]),
     line([{ type: 'tool_use', id: 't4', name: 'Bash', input: { command: 'ash feedback deploy-kit ok', description: 'report' } }]),
+    JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't4', content: '✅ 已记录 deploy-kit 的反馈：成功\n' }] } }),
   ].join('\n') + '\n');
   const stopInput = (extra = {}) => JSON.stringify({ session_id: 'sess-1', transcript_path: transcript, hook_event_name: 'Stop', stop_hook_active: false, ...extra });
   const useEvents = async (slug) => (await skill(slug)).usage.uses_30d;
@@ -224,5 +225,104 @@ test('onboarding and the feedback loop', async (t) => {
     assert.match(text, /gpu-box {2}· {2}使用 5 {2}· {2}反馈 0/);
     assert.match(text, /ash hooks install/);
     assert.equal((await (await fetch(`${origin}/api/skills/insights?days=0`)).json()).days, 30, 'bad windows fall back to 30 days');
+  });
+
+  await t.test('the Stop hook counts real tool calls whatever the JSON field order or path escaping', async () => {
+    writeSkill(path.join(codex, 'escape-kit'), { 'SKILL.md': md('escape-kit', '转义路径与字段顺序 escape'), 'references/notes.md': '# notes\n' });
+    assert.match(ok(['import', path.join(codex, 'escape-kit')]).stdout, /escape-kit：已导入（待审核）/);
+    await approve('escape-kit');
+    // 技能被挪进一个名字带引号的目录（.ash 一起拷贝）：会话记录里这段路径必然是 \" 转义
+    const quoted = path.join(claude, 'quo"te-d\'ir');
+    writeSkill(quoted, { 'SKILL.md': md('escape-kit', '转义路径与字段顺序 escape') });
+    fs.copyFileSync(path.join(codex, 'escape-kit', '.ash'), path.join(quoted, '.ash'));
+    const skillMd = path.join(codex, 'escape-kit', 'SKILL.md');
+    const hookInput = (file, session) => JSON.stringify({ session_id: session, transcript_path: file, hook_event_name: 'Stop', stop_hook_active: false });
+
+    // 只有「读带引号目录里的 SKILL.md」是真使用：文本计划、用户消息里 tool_use 形状的字符串、
+    // Read 了 SKILL.md 以外的文件、别的工具读 SKILL.md、skill 参数不是字符串，都不记
+    const odd = path.join(work, 'session-odd.jsonl');
+    fs.writeFileSync(odd, [
+      `{"type":"assistant","message":{"content":[{"name":"Read","type":"tool_use","id":"o1","input":{"file_path":${JSON.stringify(path.join(quoted, 'SKILL.md'))}}}]}}`,
+      `{"type":"assistant","message":{"content":[{"type":"text","text":"计划：Read file_path=${skillMd}，再调用 Skill 工具（skill=escape-kit）"}]}}`,
+      JSON.stringify({ type: 'user', message: { content: '{"type":"tool_use","name":"Skill","input":{"skill":"escape-kit"}}' } }),
+      `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"o3","name":"Read","input":{"file_path":${JSON.stringify(path.join(codex, 'escape-kit', 'references', 'notes.md'))}}}]}}`,
+      `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"o4","name":"Grep","input":{"file_path":${JSON.stringify(skillMd)}}}]}}`,
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"o5","name":"Skill","input":{"skill":["escape-kit"]}}]}}',
+    ].join('\n') + '\n');
+    ok(['hook', 'claude-stop'], { input: hookInput(odd, 'sess-odd') });
+    assert.equal(await useEvents('escape-kit'), 1, 'only the Read of the quoted SKILL.md path counts as a use');
+
+    // 同一 slug 用 Skill 工具和 Read 各一次（两条记录的字段顺序都打乱）：仍然只记一次
+    const twice = path.join(work, 'session-twice.jsonl');
+    fs.writeFileSync(twice, [
+      '{"message":{"content":[{"input":{"skill":"escape-kit"},"name":"Skill","type":"tool_use","id":"t1"}]},"type":"assistant"}',
+      `{"message":{"content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":${JSON.stringify(skillMd)}}}]},"type":"assistant"}`,
+    ].join('\n') + '\n');
+    ok(['hook', 'claude-stop'], { input: hookInput(twice, 'sess-twice') });
+    assert.equal(await useEvents('escape-kit'), 2, 'Skill + Read of the same slug in one session count once');
+
+    // 免提醒只认成功的 tool_result：is_error 的反馈结果哪怕文本就是确认语，也要继续提醒
+    const failed = path.join(work, 'session-failed-feedback.jsonl');
+    fs.writeFileSync(failed, [
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"f1","name":"Skill","input":{"skill":"escape-kit"}}]}}',
+      '{"message":{"content":[{"input":{"command":"ash feedback escape-kit ok","description":"report"},"type":"tool_use","id":"f2"}]},"type":"assistant"}',
+      JSON.stringify({ type: 'user', message: { content: [{ content: '✅ 已记录 escape-kit 的反馈：成功', is_error: true, tool_use_id: 'f2', type: 'tool_result' }] } }),
+    ].join('\n') + '\n');
+    const blocked = ok(['hook', 'claude-stop'], { input: hookInput(failed, 'sess-failed') });
+    assert.equal(JSON.parse(blocked.stdout).decision, 'block', 'an errored feedback tool_result must not silence the reminder');
+    assert.match(JSON.parse(blocked.stdout).reason, /escape-kit/);
+    assert.equal(await useEvents('escape-kit'), 3);
+
+    const reported = path.join(work, 'session-reported.jsonl');
+    fs.writeFileSync(reported, [
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"r1","name":"Skill","input":{"skill":"escape-kit"}}]}}',
+      '{"message":{"content":[{"type":"tool_use","id":"r2","input":{"command":"ash feedback escape-kit ok"},"name":"Bash"}]},"type":"assistant"}',
+      JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'r2', content: '✅ 已记录 escape-kit 的反馈：成功\n' }] } }),
+    ].join('\n') + '\n');
+    assert.equal(ok(['hook', 'claude-stop'], { input: hookInput(reported, 'sess-reported') }).stdout, '', 'a successful feedback tool_result silences the reminder');
+    assert.equal(await useEvents('escape-kit'), 4);
+  });
+
+  await t.test('an imported update keeps its submitted revision while pending and follows the library after approval', async () => {
+    writeSkill(path.join(codex, 'lifecycle-kit'), { 'SKILL.md': md('lifecycle-kit', '生命周期 lifecycle 演示') });
+    assert.match(ok(['import', path.join(codex, 'lifecycle-kit')]).stdout, /lifecycle-kit：已导入（待审核）（已登记为 ash 管理）/);
+    await approve('lifecycle-kit');
+
+    // 从另一份未登记的副本提交更新：.ash 记录的是刚提交内容的修订号（不是库里已发布的），并标 pending=1
+    writeSkill(path.join(claude, 'lifecycle-kit'), { 'SKILL.md': md('lifecycle-kit', '生命周期 lifecycle 演示') });
+    fs.appendFileSync(path.join(claude, 'lifecycle-kit', 'SKILL.md'), '\n6. 本地又进一步\n');
+    assert.match(ok(['import', path.join(claude, 'lifecycle-kit'), '--update']).stdout, /lifecycle-kit：已提交更新（待审核）/);
+    const meta = fs.readFileSync(path.join(claude, 'lifecycle-kit', '.ash'), 'utf8');
+    assert.match(meta, /^pending=1$/m);
+    const localRev = /^revision=([0-9a-f]{12})$/m.exec(meta)[1];
+    const published = (await skill('lifecycle-kit')).usage.revision;
+    assert.notEqual(localRev, published);
+    assert.ok((await skill('lifecycle-kit')).pending_update);
+
+    // /revisions 第 5 列给出待审修订号：没有这一列，CLI 无法区分「本地是导入的待审版本」和「本地落后于已发布版本」，
+    // 曾导致审批后 pending=1 一直留着、之后库里的新更新被误判成待审本地版本而永远跳过
+    const cols = (await (await fetch(`${origin}/api/agent/revisions`, {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'slug=lifecycle-kit',
+    })).text()).trim().split('\t');
+    assert.deepEqual([cols[0], cols[1], cols[2], cols[4]], ['lifecycle-kit', 'published', published, localRev]);
+
+    // 待审期间 pull --all 不能拿库里的已发布内容覆盖本地这份
+    const pulled = ok(['pull', '--all', '--dir', claude]).stdout;
+    assert.match(pulled, /lifecycle-kit：本地是导入的待审版本，保留到审核完成，跳过/);
+    assert.match(pulled, /完成：更新 0 个，跳过 1 个，失败 0 个/);
+    assert.match(fs.readFileSync(path.join(claude, 'lifecycle-kit', 'SKILL.md'), 'utf8'), /6\. 本地又进一步/);
+
+    // 审批通过：本地登记的修订号恰好变成已发布版本，installed 显示最新并清掉 pending 标记
+    await approve('lifecycle-kit');
+    assert.match(ok(['installed', '--dir', claude]).stdout, /lifecycle-kit {2}· {2}v1\.0\.0 {2}· {2}最新 /);
+    assert.equal(localRev, (await skill('lifecycle-kit')).usage.revision);
+    assert.match(fs.readFileSync(path.join(claude, 'lifecycle-kit', '.ash'), 'utf8'), /^pending=0$/m, 'approval clears the adopted pending flag');
+
+    // 库里再发布一个新版本：本地这份要显示为有更新，而不是被误判成「待审本地版本」一直跳过
+    writeSkill(path.join(work, 'lifecycle-next'), { 'SKILL.md': md('lifecycle-kit', '生命周期 lifecycle 演示') });
+    fs.appendFileSync(path.join(work, 'lifecycle-next', 'SKILL.md'), '\n7. 远端演进\n');
+    assert.match(ok(['push', path.join(work, 'lifecycle-next'), '--update']).stdout, /已提交 lifecycle-kit 的更新（待审核/);
+    await approve('lifecycle-kit');
+    assert.match(ok(['outdated', '--dir', claude]).stdout, /lifecycle-kit {2}· {2}v1\.0\.0 {2}· {2}有更新/);
   });
 });

@@ -26,11 +26,17 @@ if [ -n "$ASH_TOKEN" ]; then AUTH=(-H "Authorization: Bearer $ASH_TOKEN"); fi
 
 echo "📦 AnotherSkillHub: 正在安装技能 [$SKILL_NAME]"
 
-# 自动探测：ASH_SKILLS_DIR > 在 Claude Code 里运行时装到 ~/.claude/skills > 唯一的 hermes profile > 已存在的常见目录 > ~/.agents/skills
-# Claude Code 只从 ~/.claude/skills（和项目的 .claude/skills）加载技能：装到别处它既看不到这个技能，也按名字调用不到它引用的技能
-detect_root() {
-  if [ -n "${ASH_SKILLS_DIR:-}" ]; then echo "$ASH_SKILLS_DIR"; return; fi
-  if [ "${CLAUDECODE:-}" = "1" ]; then echo "$HOME/.claude/skills"; return; fi
+# 两种装法：
+#   共享存储（默认）：技能只在 ~/.ash/skills/<slug>（ASH_STORE 可改）存一份，各 Agent 的技能目录里放指向它的符号链接。
+#     库里装来的和 Agent 自带、自己写的技能不混在一起；一台机器上几个 Agent 用的是同一份、同一个版本
+#   指定目录（--dir 或 ASH_SKILLS_DIR）：文件直接装进那个目录，不建链接
+STORE="${ASH_STORE:-$HOME/.ash/skills}"
+
+# 本机各个 Agent 加载技能的目录（与 ash CLI 共用一份定义）
+__AGENT_ROOTS_FN__
+
+# 本机还没有任何 Agent 目录时的兜底：唯一的 hermes profile > 已存在的常见目录 > ~/.agents/skills
+fallback_root() {
   if [ -d "$HOME/.hermes/profiles" ]; then
     set -- "$HOME"/.hermes/profiles/*/skills
     if [ "$#" -eq 1 ] && [ -d "$1" ]; then echo "$1"; return; fi
@@ -41,24 +47,90 @@ detect_root() {
   echo "$HOME/.agents/skills"
 }
 
-# 技能目录内容指纹（不含 .ash）：判断本地是否改过。与 ash CLI 中的定义保持一致
-ash_fingerprint() {
-  (cd "$1" && find . -type f ! -name .ash -print | LC_ALL=C sort | while IFS= read -r f; do printf '%s\n' "$f"; cat "$f"; done) | cksum | awk '{print $1 "-" $2}'
+# 共享存储时要链接到哪些 Agent 目录（每行一个）。ASH_LINK_ROOTS 由 ash CLI 和依赖安装传入（"-" 表示不建链接）
+link_roots() {
+  if [ -n "${ASH_LINK_ROOTS:-}" ]; then
+    if [ "$ASH_LINK_ROOTS" != "-" ]; then printf '%s\n' "$ASH_LINK_ROOTS"; fi
+    return
+  fi
+  case "$AGENT_TARGET" in
+    hermes) echo "$HOME/.hermes/skills" ;;
+    codex)  echo "$HOME/.agents/skills" ;;
+    claude) echo "$HOME/.claude/skills" ;;
+    dsh)    echo "$HOME/.dsh/skills" ;;
+    *)
+      # 默认链到本机每个 Agent。在 Claude Code 里运行时一定包括 ~/.claude/skills：它只从那里加载技能
+      local roots
+      roots="$(agent_roots)"
+      {
+        if [ "${CLAUDECODE:-}" = "1" ]; then echo "$HOME/.claude/skills"; fi
+        if [ -n "$roots" ]; then printf '%s\n' "$roots"
+        elif [ "${CLAUDECODE:-}" != "1" ]; then fallback_root; fi
+      } | awk 'NF && !seen[$0]++'
+      ;;
+  esac
 }
 
-case "$AGENT_TARGET" in
-  hermes) SKILLS_ROOT="$HOME/.hermes/skills" ;;
-  codex)  SKILLS_ROOT="$HOME/.agents/skills" ;;
-  claude) SKILLS_ROOT="$HOME/.claude/skills" ;;
-  dsh)    SKILLS_ROOT="$HOME/.dsh/skills" ;;
-  *)      SKILLS_ROOT="$(detect_root)" ;;
-esac
+# 技能目录内容指纹（不含 .ash，也不含运行脚本时生成的 __pycache__ / *.pyc 和 .DS_Store）：判断本地是否改过。与 ash CLI 中的定义保持一致
+ash_fingerprint() {
+  (cd "$1" && find . -name __pycache__ -prune -o -type f ! -name .ash ! -name '*.pyc' ! -name .DS_Store -print | LC_ALL=C sort | while IFS= read -r f; do printf '%s\n' "$f"; cat "$f"; done) | cksum | awk '{print $1 "-" $2}'
+}
+
+# 备份目录：每次一个新目录，同一秒里备份同名技能也不会互相覆盖
+backup_path() {
+  local base p n=1
+  base="$HOME/.ash/backups/$1-$(date +%Y%m%d%H%M%S)"
+  p="$base"
+  while [ -e "$p" ]; do n=$((n + 1)); p="$base-$n"; done
+  mkdir -p "$(dirname "$p")"
+  echo "$p"
+}
+
+# 同名目录要被替换时：本地改过的、或不是 ash 安装的，先备份到 ~/.ash/backups（--force 跳过备份）
+set_aside() {
+  local dir="$1" why="" recorded backup
+  if [ -f "$dir/.ash" ]; then
+    recorded="$(sed -n 's/^fingerprint=//p' "$dir/.ash")"
+    if [ "$recorded" != "$(ash_fingerprint "$dir")" ]; then why="本地有修改"; fi
+  else
+    why="不是由 ash 安装的"
+  fi
+  if [ -n "$why" ] && [ "$FORCE" != "1" ]; then
+    backup="$(backup_path "$(basename "$dir")")"
+    mv "$dir" "$backup"
+    echo "⚠️  ${dir} ${why}，已备份到 $backup" >&2
+  else
+    rm -rf "$dir"
+  fi
+}
+
+# 把共享存储里的技能链接进一个 Agent 目录。别的工具建的链接（例如上游安装器）不动
+link_into() {
+  local slug="$1" root="$2" target="$2/$1" src="$STORE/$1"
+  mkdir -p "$root"
+  if [ -L "$target" ]; then
+    if [ "$(readlink "$target")" = "$src" ]; then return 0; fi
+    if [ -e "$target" ]; then
+      echo "⚠️  $target 是指向 $(readlink "$target") 的链接，不是 ash 建的，没有改动（要用库里的版本请先删掉它）" >&2
+      return 0
+    fi
+    rm -f "$target" # 指向已不存在位置的旧链接
+  elif [ -e "$target" ]; then
+    set_aside "$target"
+  fi
+  ln -s "$src" "$target"
+  echo "↳ 已链接 $target → $src"
+}
 
 case "$CUSTOM_DIR" in
   "~") CUSTOM_DIR="$HOME" ;;
   "~/"*) CUSTOM_DIR="$HOME/${CUSTOM_DIR#\~/}" ;;
 esac
-if [ -n "$CUSTOM_DIR" ]; then SKILLS_ROOT="$CUSTOM_DIR"; fi
+if [ -n "$CUSTOM_DIR" ]; then MODE=dir; SKILLS_ROOT="$CUSTOM_DIR"
+elif [ -n "${ASH_SKILLS_DIR:-}" ]; then MODE=dir; SKILLS_ROOT="$ASH_SKILLS_DIR"
+else MODE=store; SKILLS_ROOT="$STORE"; fi
+LINKS=""
+if [ "$MODE" = store ]; then LINKS="$(link_roots)"; fi
 INSTALL_DIR="$SKILLS_ROOT/$SKILL_NAME"
 mkdir -p "$SKILLS_ROOT"
 echo "目标安装目录: $INSTALL_DIR"
@@ -88,23 +160,10 @@ if [ "${ASH_FEEDBACK_HINT:-1}" != "0" ] && [ -f "$STAGING/SKILL.md" ]; then
   printf '\n%s\n%s\n' "$FOOTER_MARK" "$FOOTER" >> "$STAGING/SKILL.md"
 fi
 
-# 覆盖前保护：本地改过的、或不是 ash 安装的同名目录先备份到 ~/.ash/backups（--force 跳过备份）
-if [ -d "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
-  reason=""
-  if [ -f "$INSTALL_DIR/.ash" ]; then
-    recorded="$(sed -n 's/^fingerprint=//p' "$INSTALL_DIR/.ash")"
-    if [ "$recorded" != "$(ash_fingerprint "$INSTALL_DIR")" ]; then reason="本地有修改"; fi
-  else
-    reason="不是由 ash 安装的"
-  fi
-  if [ -n "$reason" ] && [ "$FORCE" != "1" ]; then
-    BACKUP="$HOME/.ash/backups/$SKILL_NAME-$(date +%Y%m%d%H%M%S)"
-    mkdir -p "$(dirname "$BACKUP")"
-    mv "$INSTALL_DIR" "$BACKUP"
-    echo "⚠️  原目录${reason}，已备份到 $BACKUP" >&2
-  fi
+if [ -e "$INSTALL_DIR" ] || [ -L "$INSTALL_DIR" ]; then
+  if [ -d "$INSTALL_DIR" ] && [ ! -L "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then set_aside "$INSTALL_DIR"
+  else rm -rf "$INSTALL_DIR"; fi
 fi
-rm -rf "$INSTALL_DIR"
 mv "$STAGING" "$INSTALL_DIR"
 
 {
@@ -121,8 +180,17 @@ mv "$STAGING" "$INSTALL_DIR"
 } > "$INSTALL_DIR/.ash"
 
 echo "✅ 技能 [$SKILL_NAME] v$VERSION 已安装到 $INSTALL_DIR"
+while IFS= read -r root; do
+  if [ -n "$root" ]; then link_into "$SKILL_NAME" "$root"; fi
+done <<EOF
+$LINKS
+EOF
+if [ "$MODE" = store ] && [ -z "$LINKS" ]; then
+  echo "   （没有链接到任何 Agent 目录：ash pull $SKILL_NAME --agent <claude|codex|hermes|dsh> 链接过去）"
+fi
 
-# 依赖：装到同一目录；已安装的不动；ASH_DEPS_SEEN 防止循环依赖
+# 依赖：装到同一处（共享存储时也链接进同样的 Agent 目录，相对链接 ../<slug>/SKILL.md 两边都对得上）；
+# 已安装的不重装；ASH_DEPS_SEEN 防止循环依赖
 if [ "$NODEPS" != "1" ] && [ "${#DEPS[@]}" -gt 0 ]; then
   export ASH_DEPS_SEEN="${ASH_DEPS_SEEN:-},$SKILL_NAME,"
   for spec in "${DEPS[@]}"; do
@@ -137,11 +205,21 @@ if [ "$NODEPS" != "1" ] && [ "${#DEPS[@]}" -gt 0 ]; then
       else
         echo "↳ 依赖 $dep 已安装，跳过"
       fi
+      while IFS= read -r root; do
+        if [ -n "$root" ]; then link_into "$dep" "$root"; fi
+      done <<EOF
+$LINKS
+EOF
       continue
     fi
     echo "↳ 安装依赖 $spec"
+    if [ "$MODE" = store ]; then
+      dep_env=(ASH_LINK_ROOTS="${LINKS:--}")
+    else
+      dep_env=(ASH_SKILLS_DIR="$SKILLS_ROOT")
+    fi
     if ! dep_script="$(curl -fsS -G ${AUTH[@]+"${AUTH[@]}"} --data-urlencode "reason=dependency" --data-urlencode "pin=$dep_pin" "$BASE_URL/s/$dep/install.sh")" \
-      || ! printf '%s\n' "$dep_script" | ASH_SKILLS_DIR="$SKILLS_ROOT" bash; then
+      || ! printf '%s\n' "$dep_script" | env "${dep_env[@]}" bash; then
       echo "⚠️  依赖 $dep 安装失败（不存在、未发布或网络错误），请手动处理" >&2
     fi
   done

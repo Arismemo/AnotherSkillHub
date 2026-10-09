@@ -25,7 +25,8 @@ Agents multiply: you have one on your laptop, one on a rack server, one on a GPU
 
 **Agent CLI** (installed via one command)
 - `ash search <kw>` / `ash list` (`--tag`, `--folder`) / `ash info <slug>` / `ash show <slug>` / `ash versions <slug>` — compact text output built for agents (`--json` for raw)
-- `ash pull <slug>` — install a complete skill package plus its `depends_on` skills into the local agent's skills dir
+- `ash pull <slug>` — install a complete skill package plus its `depends_on` skills. It is stored once in `~/.ash/skills/<slug>` and symlinked into every local agent's skills dir, so hub skills never mix with an agent's own skills and every agent runs the same version
+- `ash migrate [--apply]` — move existing installs into that layout: ash installs move as-is, renamed skills switch to their new name, hand-copied hub skills are backed up and replaced
 - `ash installed` / `ash outdated` / `ash pull --all` / `ash remove` — manage what's installed locally; locally modified skills are never overwritten silently (backed up to `~/.ash/backups`)
 - `ash bundles` / `ash bundle <slug or name>` / `ash pull bundle:<slug or name>` — discover and install skill bundles
 - `ash mine` / `ash withdraw <slug>` — follow the review status of your own pushes, retract pending ones
@@ -34,7 +35,7 @@ Agents multiply: you have one on your laptop, one on a rack server, one on a GPU
 - `ash stats` — usage, feedback count and **feedback rate** over the last 30 days, per machine (also shown atop the 需关注 view)
 - `ash hooks install` — a Claude Code Stop hook: records which ash skills a session actually used, and reminds the agent once to `ash feedback` any it didn't report
 - `ash guide` — the short agent guide served by the hub (`/agent.md`); `ash guide --full` for authoring, references, meta-skills and HTTP (`/agent-full.md`). Onboarding prompts just point here
-- Install target auto-detection: `$ASH_SKILLS_DIR` → single `~/.hermes/profiles/*/skills` → `~/.hermes/skills` → `~/.agents/skills` → `~/.claude/skills` → `~/.dsh/skills`
+- Install layout: shared store `$ASH_STORE` (default `~/.ash/skills`) + links into `~/.claude/skills`, `~/.agents/skills`, `~/.hermes/skills` (or the single Hermes profile), `~/.dsh/skills`; `--agent` links into one agent only; `--dir` / `$ASH_SKILLS_DIR` install straight into a directory without links
 
 **Human review of agent pushes**
 - New skills and updates pushed by agents land in **待审核 (Pending)**; other agents can't pull them until approved
@@ -125,7 +126,7 @@ Self-host with Docker — full runbook (build gate, DB backup, image roll-out, r
 | `ASH_SEED` | `1` | `0` skips the example skills given to each new account |
 | `ASH_ALLOWED_EXTS` | text types | Comma-separated extension whitelist for attached files |
 
-Client-side (`ash`): `ASH_SERVER_URL` overrides the hub address, `ASH_TOKEN` overrides the token saved by `ash login`, `ASH_SKILLS_DIR` sets the default install directory, `ASH_TERMINAL` names this machine in pushes (default: hostname; used by `ash mine` / `ash withdraw`), `ASH_BIN_DIR` sets where `ash` itself is installed (otherwise a writable bin dir, passwordless `sudo -n`, or `~/.local/bin` — it never blocks on a password prompt). The npm wrapper needs `ash config <url>` once.
+Client-side (`ash`): `ASH_SERVER_URL` overrides the hub address, `ASH_TOKEN` overrides the token saved by `ash login`, `ASH_STORE` moves the shared store (default `~/.ash/skills`), `ASH_SKILLS_DIR` installs straight into a directory instead of the store, `ASH_TERMINAL` names this machine in pushes (default: hostname; used by `ash mine` / `ash withdraw`), `ASH_BIN_DIR` sets where `ash` itself is installed (otherwise a writable bin dir, passwordless `sudo -n`, or `~/.local/bin` — it never blocks on a password prompt). The npm wrapper needs `ash config <url>` once.
 
 ## CLI & API examples
 
@@ -136,9 +137,10 @@ ash login                                  # 登录（或 ash login --token <tok
 ash search 部署 仿真                        # 多个关键词需同时命中；纯文本输出
 ash info systematic-debugging              # 描述、文件清单、安装命令
 ash show systematic-debugging              # 直接输出 SKILL.md，不安装
-ash pull systematic-debugging              # 安装技能（自动探测目录）
-ash pull systematic-debugging --agent claude   # 指定安装到 ~/.claude/skills
-ash pull systematic-debugging --dir ~/my-skills # 自定义安装目录
+ash pull systematic-debugging              # 装进 ~/.ash/skills，并链接给本机每个 Agent
+ash pull systematic-debugging --agent claude   # 只链接给 Claude Code（~/.claude/skills）
+ash pull systematic-debugging --dir ~/my-skills # 直接装进指定目录，不建链接
+ash migrate                                # 把老布局 / 旧名 / 手动副本换成共享存储 + 链接（先看计划，--apply 执行）
 ash pull my-new-skill --pending            # 安装自己刚推送、尚在审核中的技能
 ash pull systematic-debugging --no-deps    # 不安装 depends_on 依赖
 ash installed                              # 本机已装技能：最新 / 有更新 / 本地有修改 / 远端已删除

@@ -40,6 +40,8 @@ function pinnedLookup(req, skill) {
 }
 const feedbackHint = (slug) => `按本技能完成任务后，请运行 \`ash feedback ${slug} ok\`；没走通则运行 \`ash feedback ${slug} fail "一句话原因"\`。`;
 const LINT_ICON = { warn: '⚠️ ', info: 'ℹ️ ' };
+// 写作风格类提示（info）：全库检查时默认不列，见 GET /lint
+const STYLE_CODES = new Set(['desc-zh', 'desc-boundary', 'desc-use-when', 'desc-long', 'hardcoded-host']);
 
 // 本库里可以安装的引用：没写账号或写的是自己的账号；@别人/slug 要等团队库
 function localReferences(req, skill) {
@@ -62,8 +64,13 @@ function scriptError(res, status, message) {
 
 // Agent 侧读取时，不可见的技能给出可操作的原因
 function agentLookup(req) {
-  const skill = findSkill(req.user.id, req.params.slug.replace(/\.md$/, ''));
-  if (!skill || skill.is_deleted) return { error: [404, `技能 ${req.params.slug} 不存在或已删除（ash search <关键词> 查找）`] };
+  const wanted = req.params.slug.replace(/\.md$/, '');
+  const skill = findSkill(req.user.id, wanted);
+  if (!skill || skill.is_deleted) {
+    const moved = redirectOf(req.user.id, wanted);
+    if (moved) return { error: [404, `技能 ${wanted} 已改名或并入 ${moved.slug}：请改用 ash pull ${moved.slug}（已装旧名的机器运行 ash migrate 一次换完）`] };
+    return { error: [404, `技能 ${req.params.slug} 不存在或已删除（ash search <关键词> 查找）`] };
+  }
   if (!isVisibleToAgents(skill, { allowPending: truthy(req.query.pending) })) {
     return { error: [404, `技能 ${skill.slug} 正在等待人工审核，采纳后才能拉取；推送者自用请加 --pending（HTTP: ?pending=1）`] };
   }
@@ -223,42 +230,13 @@ router.get('/:slug', (req, res) => {
 });
 
 // 一键安装脚本：/s/:slug/install.sh
-// agent=all：装进本机每个 Agent 各自加载技能的目录。一台机器上常同时跑着 Claude Code、Codex、Hermes，
-// 只装进其中一个目录，其他 Agent 既看不到这个技能、也按名字调用不到它引用的技能。
-// 生成的脚本逐个目录调用单目录安装脚本（依赖同样装在每个目录里，相对链接各自对得上）
-function multiAgentScript(req, skill) {
-  const sub = new URLSearchParams();
-  for (const key of ['pending', 'force', 'nodeps', 'pin', 'reason']) {
-    if (typeof req.query[key] === 'string' && req.query[key]) sub.set(key, req.query[key]);
-  }
-  const query = sub.toString() ? `?${sub}` : '';
-  return [
-    '#!/usr/bin/env bash',
-    '# AnotherSkillHub 多 Agent 安装脚本（由服务端生成）：装进本机每个 Agent 各自加载技能的目录',
-    'set -euo pipefail',
-    `BASE_URL=${shQuote(getBaseUrl(req))}`,
-    SCRIPT_TOKEN_PRELUDE,
-    AGENT_ROOTS_FN,
-    'roots="$(agent_roots)"',
-    `if [ -z "$roots" ]; then echo ${shQuote('没有找到任何 Agent 的目录（~/.claude、~/.agents、~/.codex、~/.hermes、~/.dsh）；请用 --agent 或 --dir 指定')} >&2; exit 1; fi`,
-    'status=0',
-    'while IFS= read -r root; do',
-    '  echo "=== $root"',
-    `  curl -fsSL -H "Authorization: Bearer $ASH_TOKEN" "$BASE_URL"${shQuote(`/s/${skill.slug}/install.sh${query}`)} | ASH_SKILLS_DIR="$root" bash || status=1`,
-    'done <<EOF',
-    '$roots',
-    'EOF',
-    'exit $status',
-    '',
-  ].join('\n');
-}
-
+// 默认装进本机共享存储 ~/.ash/skills/<slug>，再在 Agent 的技能目录里建指向它的链接（agent=all 链到每个 Agent，
+// 默认也是本机每个 Agent）；dir=/path 时直接装进那个目录。逻辑都在 templates/install.sh 里
 // 查询参数: agent=auto|hermes|codex|claude|dsh|all；dir=/path 自定义目录；pending=1 安装待审核技能；pin=1.2.0 固定版本
 router.get('/:slug/install.sh', (req, res) => {
   try {
     const { skill: current, error } = agentLookup(req);
     if (error) return scriptError(res, error[0], error[1]);
-    if (req.query.agent === 'all' && !req.query.dir) return res.type('text/plain').send(multiAgentScript(req, current));
     const { resolved, pin, error: pinError } = pinnedLookup(req, current);
     if (pinError) return scriptError(res, pinError[0], pinError[1]);
     // 固定版本时，内容、修订号、依赖都按那一版来
@@ -295,6 +273,7 @@ router.get('/:slug/install.sh', (req, res) => {
       FOOTER_MARK: shQuote(INSTALL_FOOTER_MARK),
       FOOTER: shQuote(footer),
       DEPS: depSpecs.map(shQuote).join(' '),
+      AGENT_ROOTS_FN,
     });
     res.type('text/plain').send(script);
   } catch (err) {
@@ -576,6 +555,9 @@ api.post('/push', upload.single('file'), async (req, res) => {
     const payload = {
       success: true,
       ...result,
+      // 导入目录保存实际提交内容的修订号，待审更新不能冒充已发布版本。
+      revision: skillRevision({ content, files: JSON.stringify(archiveFiles) }),
+      version: meta.version,
       lint,
       review_required: result.status === 'pending' || result.action === 'update-pending',
       files: archiveFiles.length,
@@ -587,23 +569,71 @@ api.post('/push', upload.single('file'), async (req, res) => {
       install_cmd: curlPipeCommand(`${base}/s/${slug}/install.sh`),
     };
     const status = result.action === 'created' ? 201 : 200;
+    const pendingSkill = findSkill(uid, slug);
+    payload.pending_revision = pendingSkill?.pending_content == null
+      ? '-'
+      : skillRevision({ content: pendingSkill.pending_content, files: pendingSkill.pending_files || '[]' });
     return asText ? res.status(status).type('text/plain').send(pushSummaryText(payload)) : res.status(status).json(payload);
   } catch (err) {
     return fail(500, err.message);
   }
 });
 
-// 已装技能比对：GET /api/agent/revisions?slug=a&slug=b → 每行 slug<TAB>状态<TAB>修订<TAB>版本
-// 状态: published | pending | trashed | missing
-api.get('/revisions', (req, res) => {
-  const slugs = [].concat(req.query.slug || []).map(String).filter(Boolean).slice(0, 500);
+// 改名 / 合并后的去向：旧标识符 → 当前可用的新技能。旧名重新被一个没删除的技能占用时不跳转；
+// 链式改名（a→b→c）顺着走到底，最多 5 跳，防止环
+function redirectOf(userId, slug) {
+  let current = slug;
+  for (let hops = 0; hops < 5; hops += 1) {
+    const live = findSkill(userId, current);
+    if (live && !live.is_deleted) return current === slug ? null : live;
+    const row = db.prepare('SELECT new_slug FROM skill_redirects WHERE user_id = ? AND old_slug = ?').get(userId, current);
+    if (!row) return null;
+    current = row.new_slug;
+  }
+  return null;
+}
+
+// 已装技能比对：每行 slug<TAB>状态<TAB>修订<TAB>版本<TAB>待审修订<TAB>改名去向
+// 状态: published | pending | trashed | missing | moved；第 5 列供已导入的待审版本比对，第 6 列仅 moved 时有值
+// 名单长时用 POST（表单 slug=a&slug=b 放在请求体里）：几百个名字拼进 URL 会被网关拒绝
+function revisions(req, res) {
+  const raw = req.method === 'POST' ? req.body?.slug : req.query.slug;
+  const slugs = [].concat(raw || []).map(String).filter(Boolean).slice(0, 2000);
   const lines = slugs.map((slug) => {
     const skill = findSkill(req.user.id, slug);
-    if (!skill) return `${slug}\tmissing\t-\t-`;
-    if (skill.is_deleted) return `${slug}\ttrashed\t-\t-`;
-    return `${slug}\t${skill.status === 'pending' ? 'pending' : 'published'}\t${skillRevision(skill)}\t${skill.version || '-'}`;
+    if (!skill || skill.is_deleted) {
+      const moved = redirectOf(req.user.id, slug);
+      if (moved) return `${slug}\tmoved\t-\t${moved.version || '-'}\t-\t${moved.slug}`;
+      return `${slug}\t${skill ? 'trashed' : 'missing'}\t-\t-`;
+    }
+    const pendingRevision = skill.pending_content == null
+      ? '-'
+      : skillRevision({ content: skill.pending_content, files: skill.pending_files || '[]' });
+    return `${slug}\t${skill.status === 'pending' ? 'pending' : 'published'}\t${skillRevision(skill)}\t${skill.version || '-'}\t${pendingRevision}\t-`;
   });
   res.type('text/plain').send(lines.length ? `${lines.join('\n')}\n` : '');
+}
+api.get('/revisions', revisions);
+api.post('/revisions', revisions);
+
+// 登记改名去向（整理技能库时用）：GET 列出，PUT {old_slug, new_slug} 登记，DELETE ?old_slug= 撤销
+const SLUG_RE = /^[A-Za-z0-9_.-]+$/;
+api.get('/redirects', (req, res) => {
+  res.json(db.prepare('SELECT old_slug, new_slug, created_at FROM skill_redirects WHERE user_id = ? ORDER BY old_slug').all(req.user.id));
+});
+api.put('/redirects', (req, res) => {
+  const oldSlug = String(req.body?.old_slug || '').trim();
+  const newSlug = String(req.body?.new_slug || '').trim();
+  if (!SLUG_RE.test(oldSlug) || !SLUG_RE.test(newSlug) || oldSlug === newSlug) return res.status(400).json({ error: 'old_slug / new_slug 必须是不同的合法标识符' });
+  const target = findSkill(req.user.id, newSlug);
+  if (!target || target.is_deleted) return res.status(404).json({ error: `新技能 ${newSlug} 不存在` });
+  db.prepare(`INSERT INTO skill_redirects (user_id, old_slug, new_slug) VALUES (?, ?, ?)
+    ON CONFLICT(user_id, old_slug) DO UPDATE SET new_slug = excluded.new_slug, created_at = CURRENT_TIMESTAMP`).run(req.user.id, oldSlug, newSlug);
+  res.json({ old_slug: oldSlug, new_slug: newSlug });
+});
+api.delete('/redirects', (req, res) => {
+  const r = db.prepare('DELETE FROM skill_redirects WHERE user_id = ? AND old_slug = ?').run(req.user.id, String(req.query.old_slug || ''));
+  res.json({ deleted: r.changes });
 });
 
 const REVIEW_TEXT = {
@@ -670,19 +700,45 @@ api.get('/lint', (req, res) => {
   if (slug && !rows.length) return res.status(404).type('text/plain').send(`错误: 技能 ${slug} 不存在或已删除\n`);
   // ?code=bilingual 只看某一类问题（例如批量补双语描述时）
   const only = String(req.query.code || '').split(',').map((c) => c.trim()).filter(Boolean);
+  // 全库检查默认只列 ⚠️（会让技能装不上、调用不到、泄露信息的问题）；写作风格提示太多会淹没它们，
+  // 单个技能、本地草稿和 ?all=1 时才全部列出
+  const everything = Boolean(slug) || only.length > 0 || truthy(req.query.all);
   const results = rows.map((skill) => ({
     slug: skill.slug, status: skill.status,
-    issues: lintFor(req.user.id, skill, { username: req.user.username }).filter((i) => !only.length || only.includes(i.code)),
+    issues: lintFor(req.user.id, skill, { username: req.user.username })
+      .filter((i) => !only.length || only.includes(i.code))
+      .filter((i) => everything || i.level === 'warn' || !STYLE_CODES.has(i.code)),
   })).filter((r) => slug || r.issues.length);
   if (!wantsText(req)) return res.json({ results });
   if (!results.length || results.every((r) => !r.issues.length)) {
-    return res.type('text/plain').send(slug ? `✅ ${slug} 没有发现问题\n` : '✅ 全库没有发现问题\n');
+    return res.type('text/plain').send(slug ? `✅ ${slug} 没有发现问题\n` : `✅ 全库没有发现问题${everything ? '' : '（写作风格提示用 ash lint --all 查看）'}\n`);
   }
   const lines = [`${results.length} 个技能有待处理的问题（修改本地技能目录后 ash push <目录> --update）：`];
   for (const r of results) {
     lines.push('', `${r.slug}${r.status === 'pending' ? '（待审核）' : ''}`);
     r.issues.forEach((i) => lines.push(`  ${LINT_ICON[i.level]} ${i.msg}`));
   }
+  res.type('text/plain').send(`${lines.join('\n')}\n`);
+});
+
+// 推送前自查：POST /api/agent/lint  content=<SKILL.md 全文>。按库里现有技能分析引用与重复，但不写库
+api.post('/lint', (req, res) => {
+  const content = stripInstallFooter(String(req.body?.content || ''));
+  if (!content.trim()) return res.status(400).type('text/plain').send('错误: 缺少 content（SKILL.md 全文）\n');
+  const meta = normalizeSkillMeta(content, {});
+  if (meta.errors.length) return res.status(400).type('text/plain').send(`错误: ${meta.errors.join('；')}\n`);
+  const existing = findSkill(req.user.id, meta.slug);
+  const draft = existing && !existing.is_deleted
+    ? { ...existing, description: meta.description || existing.description }
+    : { id: -1, slug: meta.slug, name: meta.name, description: meta.description, folder_path: String(req.body?.folder || 'inbox'), tags: JSON.stringify(meta.tags), status: 'pending' };
+  const only = String(req.body?.code || '').split(',').map((c) => c.trim()).filter(Boolean);
+  const issues = [
+    ...meta.warnings.filter((w) => !/缺少(中|英)文描述/.test(w)).map((msg) => ({ code: 'meta', level: 'warn', msg })),
+    ...lintFor(req.user.id, draft, { username: req.user.username, content }),
+  ].filter((i) => !only.length || only.includes(i.code));
+  if (!wantsText(req)) return res.json({ slug: meta.slug, issues });
+  if (!issues.length) return res.type('text/plain').send(`✅ ${meta.slug}（本地版本）没有发现问题\n`);
+  const lines = [`${meta.slug}（本地版本，未推送）有 ${issues.length} 条检查意见：`, ...issues.map((i) => `  ${LINT_ICON[i.level]} ${i.msg}`)];
   res.type('text/plain').send(`${lines.join('\n')}\n`);
 });
 
@@ -712,16 +768,16 @@ api.post('/feedback', (req, res) => {
 // 服务端本来看不到这一步——技能装到本地后由 Agent 直接读取；有了它，「从未使用 / 长期未用」才准
 api.post('/used', (req, res) => {
   const body = req.body || {};
-  const slugs = [...new Set([].concat(body.slug || []).map((s) => String(s).trim()).filter((s) => /^[A-Za-z0-9_.-]+$/.test(s)))].slice(0, 50);
-  if (!slugs.length) return res.status(400).type('text/plain').send('错误: 缺少 slug\n');
   const revisions = [].concat(body.revision || []).map(String);
+  const entries = [].concat(body.slug || []).slice(0, 50).map((s, i) => ({ slug: String(s).trim(), revision: revisions[i] }));
+  if (!entries.some(({ slug }) => /^[A-Za-z0-9_.-]+$/.test(slug))) return res.status(400).type('text/plain').send('错误: 缺少 slug\n');
   const recorded = [];
-  slugs.forEach((slug, i) => {
+  entries.forEach(({ slug, revision: supplied }) => {
+    if (!/^[A-Za-z0-9_.-]+$/.test(slug) || recorded.includes(slug)) return;
     const skill = findSkill(req.user.id, slug);
     if (!skill || skill.is_deleted) return;
-    const revision = /^[0-9a-f]{12}$/.test(revisions[i] || '') ? revisions[i] : skillRevision(skill);
-    recordEvent(skill, req.user.id, 'use', { terminal: terminalOf(req), revision });
-    recorded.push(slug);
+    const revision = /^[0-9a-f]{12}$/.test(supplied || '') ? supplied : skillRevision(skill);
+    if (recordEvent(skill, req.user.id, 'use', { terminal: terminalOf(req), revision })) recorded.push(slug);
   });
   res.type('text/plain').send(`已记录 ${recorded.length} 个技能的使用${recorded.length ? `：${recorded.join(', ')}` : ''}\n`);
 });

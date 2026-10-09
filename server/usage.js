@@ -19,13 +19,15 @@ const STALE_AFTER_DAYS = 60;
 const FAILING_MIN = 2;
 
 function recordEvent(skill, actorId, kind, { outcome = null, note = null, terminal = null, revision = null } = {}) {
-  if (!skill || !EVENT_KINDS.includes(kind)) return;
+  if (!skill || !EVENT_KINDS.includes(kind)) return false;
   try {
     db.prepare('INSERT INTO skill_events (skill_id, actor_id, kind, outcome, note, terminal, revision) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(skill.id, actorId || null, kind, outcome, note, terminal ? String(terminal).slice(0, 120) : null, revision || skillRevision(skill));
+    return true;
   } catch (e) {
     // 记录失败不能影响安装与阅读本身
     console.error('recordEvent failed:', e.message);
+    return false;
   }
 }
 
@@ -199,7 +201,7 @@ function insightsText(i) {
     `近 ${i.days} 天：使用 ${i.uses} 次（${i.skills_used} 个技能）· 反馈 ${i.feedback} 次（${i.ok} 成功 / ${i.fail} 失败）· 反馈率 ${percent(i.feedback_rate)}`,
     '',
     '按机器：',
-    ...i.terminals.map((t) => `  ${t.terminal || '（未知来源）'}  ·  使用 ${t.uses}  ·  反馈 ${t.feedback}  ·  反馈率 ${percent(t.feedback_rate)}${t.hook ? '  ·  已装 hook' : ''}`),
+    ...i.terminals.map((t) => `  ${t.terminal || '（未知来源）'}  ·  使用 ${t.uses}  ·  反馈 ${t.feedback}  ·  反馈率 ${percent(t.feedback_rate)}${t.hook ? '  ·  有 Agent 调用记录' : ''}`),
   ];
   if (i.low_feedback) {
     lines.push('', `⚠️  反馈率低于 ${percent(LOW_FEEDBACK_RATE)}：「常失败」等健康信号可能不准。`
