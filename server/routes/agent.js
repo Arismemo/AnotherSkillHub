@@ -273,6 +273,10 @@ router.get('/:slug/install.sh', (req, res) => {
       FOOTER_MARK: shQuote(INSTALL_FOOTER_MARK),
       FOOTER: shQuote(footer),
       DEPS: depSpecs.map(shQuote).join(' '),
+      ARCHIVE_URL: shQuote(`${getBaseUrl(req)}/s/${skill.slug}/archive.tar.gz`),
+      RAW_URL: shQuote(`${getBaseUrl(req)}/s/${skill.slug}.md`),
+      SHARE_URL: shQuote(''),
+      SHARE_ACCESS: shQuote(''),
       AGENT_ROOTS_FN,
     });
     res.type('text/plain').send(script);

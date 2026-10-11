@@ -1,6 +1,7 @@
 // 详情页的 markdown 渲染与代码高亮。marked / highlight.js 只在这里配置一次，
 // 也只应被详情页（懒加载 chunk）引用——从首屏代码 import 会把 hljs 拖进主包。
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import hljs from 'highlight.js/lib/core';
 import bash from 'highlight.js/lib/languages/bash';
 import c from 'highlight.js/lib/languages/c';
@@ -140,4 +141,6 @@ function highlightMarkdownHtml(html) {
   return container.innerHTML;
 }
 
-export const renderMarkdown = (source) => highlightMarkdownHtml(marked.parse(source));
+// marked 不过滤原始 HTML：分享页渲染的是别人的内容，Agent 推送的内容也不可信，先净化再放进 innerHTML
+// （脱离文档的 div 里 <img onerror> 照样会执行，所以必须在 highlightMarkdownHtml 之前做）
+export const renderMarkdown = (source) => highlightMarkdownHtml(DOMPurify.sanitize(marked.parse(source)));

@@ -1,0 +1,75 @@
+/* markdown 渲染与 highlight.js 配色的公共样式：应用入口（main.jsx，先于 index.css）与
+   分享页（懒加载 chunk 里的 SharePage.jsx）都引入——只在一处定义，两边不会漂移。
+   应用专属的 .file-viewer / .frontmatter / .skill-summary 选择子也保留在这里：规则随
+   markdown 一起走，应用侧外观不变。 */
+
+pre code.hljs { display: block; overflow-x: auto; padding: 1em; }
+code.hljs { padding: 3px 5px; }
+.hljs { color: #c9d1d9; background: #0d1117; }
+.hljs-doctag, .hljs-keyword, .hljs-meta .hljs-keyword, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-variable.language_ { color: #ff7b72; }
+.hljs-title, .hljs-title.class_, .hljs-title.class_.inherited__, .hljs-title.function_ { color: #d2a8ff; }
+.hljs-attr, .hljs-attribute, .hljs-literal, .hljs-meta, .hljs-number, .hljs-operator, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .hljs-variable { color: #79c0ff; }
+.hljs-meta .hljs-string, .hljs-regexp, .hljs-string { color: #a5d6ff; }
+.hljs-built_in, .hljs-symbol { color: #ffa657; }
+.hljs-code, .hljs-comment, .hljs-formula { color: #8b949e; }
+.hljs-name, .hljs-quote, .hljs-selector-pseudo, .hljs-selector-tag { color: #7ee787; }
+.hljs-subst { color: #c9d1d9; }
+.hljs-section { color: #1f6feb; font-weight: 700; }
+.hljs-bullet { color: #f2cc60; }
+.hljs-emphasis { color: #c9d1d9; font-style: italic; }
+.hljs-strong { color: #c9d1d9; font-weight: 700; }
+.hljs-addition { color: #aff5b4; background-color: #033a16; }
+.hljs-deletion { color: #ffdcd7; background-color: #67060c; }
+
+
+:root[data-theme="light"] .hljs { color: #24292f; background: #f5f7fa; }
+:root[data-theme="light"] .hljs-doctag, :root[data-theme="light"] .hljs-keyword, :root[data-theme="light"] .hljs-meta .hljs-keyword, :root[data-theme="light"] .hljs-template-tag, :root[data-theme="light"] .hljs-template-variable, :root[data-theme="light"] .hljs-type, :root[data-theme="light"] .hljs-variable.language_ { color: #cf222e; }
+:root[data-theme="light"] .hljs-title, :root[data-theme="light"] .hljs-title.class_, :root[data-theme="light"] .hljs-title.class_.inherited__, :root[data-theme="light"] .hljs-title.function_ { color: #8250df; }
+:root[data-theme="light"] .hljs-attr, :root[data-theme="light"] .hljs-attribute, :root[data-theme="light"] .hljs-literal, :root[data-theme="light"] .hljs-meta, :root[data-theme="light"] .hljs-number, :root[data-theme="light"] .hljs-operator, :root[data-theme="light"] .hljs-selector-attr, :root[data-theme="light"] .hljs-selector-class, :root[data-theme="light"] .hljs-selector-id, :root[data-theme="light"] .hljs-variable { color: #0550ae; }
+:root[data-theme="light"] .hljs-meta .hljs-string, :root[data-theme="light"] .hljs-regexp, :root[data-theme="light"] .hljs-string { color: #0a5668; }
+:root[data-theme="light"] .hljs-built_in, :root[data-theme="light"] .hljs-symbol { color: #9a6700; }
+:root[data-theme="light"] .hljs-code, :root[data-theme="light"] .hljs-comment, :root[data-theme="light"] .hljs-formula { color: #596579; }
+:root[data-theme="light"] .hljs-name, :root[data-theme="light"] .hljs-quote, :root[data-theme="light"] .hljs-selector-pseudo, :root[data-theme="light"] .hljs-selector-tag { color: #116329; }
+:root[data-theme="light"] .hljs-subst, :root[data-theme="light"] .hljs-emphasis, :root[data-theme="light"] .hljs-strong { color: #24292f; }
+:root[data-theme="light"] .hljs-section { color: #0550ae; }
+:root[data-theme="light"] .hljs-bullet { color: #805400; }
+:root[data-theme="light"] .hljs-addition { color: #116329; background-color: #dafbe1; }
+:root[data-theme="light"] .hljs-deletion { color: #b42318; background-color: #ffebe9; }
+
+/* 正文段落收在 --measure 内保证可读行宽；pre/table 不设上限，吃满 .detail-content（破框） */
+.markdown-document > div > :is(p, ul, ol, blockquote, h1, h2, h3, h4, hr), .skill-summary { max-width: var(--measure); margin-inline: auto; transition: margin var(--dur-fast) var(--ease-out); }
+/* 代码块与段落同一 measure 体系：同宽同起点，任何容器宽度下严格对齐 */
+.markdown-document > div > pre { max-width: var(--measure); margin-inline: auto; transition: margin var(--dur-fast) var(--ease-out); }
+/* 列表内代码块维持列表文字对齐（上一条规则会被此负 margin 抵消） */
+.markdown-document li > pre { max-width: none; margin-left: -1.45rem; margin-right: 0; }
+/* 工程文档节奏：SKILL.md 是「短小节 + 命令块 + check list」，不是散文，行高/段距都比博客正文紧 */
+.markdown-document { color: var(--text-body); font-size: var(--fs-md); line-height: 1.62; }
+.markdown-document > div { max-width: 100%; }
+.markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4 { color: var(--text); font-weight: 650; line-height: 1.35; letter-spacing: -.018em; text-wrap: balance; }
+.markdown-document h1 { margin: .2rem 0 1.05rem; font-size: var(--fs-2xl); }
+.markdown-document h2 { margin: 1.45rem 0 .55rem; padding-bottom: .28rem; border-bottom: 1px solid var(--border-muted); font-size: var(--fs-xl); }
+.markdown-document h3 { margin: 1.05rem 0 .4rem; font-size: var(--fs-lg); font-weight: 600; letter-spacing: 0; }
+.markdown-document p, .markdown-document ul, .markdown-document ol, .markdown-document blockquote { margin: .65rem 0; }
+.markdown-document ul, .markdown-document ol { padding-left: 1.45rem; }
+/* 列表项内的代码块：负 margin 抵消 ul padding，与列表文字起点对齐 + 左侧竖线归属感 */
+.markdown-document li > pre { margin-left: -1.45rem; border-left: 2px solid var(--border-muted); }
+/* Tailwind preflight 清掉了 list-style，这里恢复；任务列表（checkbox）不出圆点 */
+.markdown-document ul { list-style: disc; }
+.markdown-document ol { list-style: decimal; }
+.markdown-document ul ul { list-style: circle; }
+.markdown-document li::marker { color: var(--text-subtle); }
+.markdown-document li:has(> input[type=checkbox]) { list-style: none; margin-left: -1.45rem; }
+.markdown-document li > input[type=checkbox] { margin: 0 .45rem 0 0; vertical-align: -.1em; accent-color: var(--accent); }
+.markdown-document li + li { margin-top: .14rem; }
+.markdown-document a { color: var(--accent); text-underline-offset: .18em; }
+.markdown-document blockquote { padding: .15rem 1rem; border-left: 3px solid var(--border-strong); color: var(--text-muted); }
+.markdown-document code, .frontmatter pre { font-family: var(--mono); }
+.markdown-document :not(pre) > code { padding: .12rem .32rem; border: 1px solid var(--border-muted); border-radius: var(--r-xs); background: var(--surface-raised); color: var(--text); font-size: .875em; }
+.markdown-document pre, .file-viewer pre { position: relative; overflow-x: auto; margin: .8rem 0; padding: .7rem .85rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-code); color: var(--text-body); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; tab-size: 2; }
+.markdown-document pre[data-lang]::before, .file-viewer pre[data-lang]::before { content: attr(data-lang); position: absolute; top: .4rem; right: .6rem; color: var(--text-subtle); font-size: var(--fs-2xs); font-family: inherit; text-transform: lowercase; pointer-events: none; }
+.file-viewer pre[data-lang] code, .markdown-document pre code { background: transparent; padding: 0; border: 0; }
+.markdown-document table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: var(--fs-sm); }
+/* 表格与段落同一 measure 体系：同起点居中，任何容器宽度下对齐 */
+.markdown-document > div > table { max-width: var(--measure); margin-inline: auto; transition: margin var(--dur-fast) var(--ease-out); }
+.markdown-document th, .markdown-document td { padding: .45rem .65rem; border: 1px solid var(--border); }
+.markdown-document th { background: var(--surface-raised); color: var(--text); text-align: left; }

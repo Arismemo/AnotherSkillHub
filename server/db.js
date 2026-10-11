@@ -283,17 +283,48 @@ db.exec(`
   INSERT OR IGNORE INTO app_meta (key, value) VALUES ('usage_tracking_since', strftime('%Y-%m-%d %H:%M:%S', 'now'));
 `);
 
-// 分享：一技能一链接，token 只存 sha256，密码用 scrypt（与账号密码同参数）
+// ——— 分享链接 ———
+// 第一版把分享做成 skills 表上的几列（一技能一链接、token 只存哈希、链接事后取不回），已整体推翻：清掉旧列，旧链接全部失效
 try {
   const cols = db.prepare('PRAGMA table_info(skills)').all().map((c) => c.name);
-  const add = (name, ddl) => { if (!cols.includes(name)) db.exec(`ALTER TABLE skills ADD COLUMN ${ddl}`); };
-  add('share_mode', "share_mode TEXT DEFAULT NULL");           // NULL | 'public' | 'password'
-  add('share_token_hash', 'share_token_hash TEXT DEFAULT NULL'); // sha256(链接 token)
-  add('share_password_hash', 'share_password_hash TEXT DEFAULT NULL'); // scrypt
-  add('share_expires_at', 'share_expires_at DATETIME DEFAULT NULL'); // NULL = 永久
-  add('share_created_at', 'share_created_at DATETIME DEFAULT NULL');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_skills_share ON skills(share_token_hash)');
+  if (cols.includes('share_token_hash')) {
+    db.exec('DROP INDEX IF EXISTS idx_skills_share');
+    for (const col of ['share_mode', 'share_token_hash', 'share_password_hash', 'share_expires_at', 'share_created_at']) {
+      if (cols.includes(col)) db.exec(`ALTER TABLE skills DROP COLUMN ${col}`);
+    }
+  }
 } catch (e) { console.error('migration:', e.message); }
+
+// 一个技能可以有多条分享链接（发给不同的人、不同期限），各自停用。
+// token 明文保存：链接本来就是要交出去的，主人随时能再复制；它只能读到这一份内容，而内容本身就在同一个库里，存哈希挡不住什么。
+// follow_latest=0 时 slug…files 是创建时冻结的快照；=1 时这些列为空，访问时读技能的当前已发布内容。
+// 时间戳（expires_at / last_accessed_at）是毫秒，与 auth_sessions 一致
+db.exec(`
+  CREATE TABLE IF NOT EXISTS skill_shares (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    skill_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL DEFAULT '',
+    follow_latest INTEGER NOT NULL DEFAULT 0,
+    slug TEXT,
+    name TEXT,
+    description TEXT,
+    tags TEXT,
+    version TEXT,
+    content TEXT,
+    files TEXT,
+    password_hash TEXT,
+    expires_at INTEGER,
+    view_count INTEGER NOT NULL DEFAULT 0,
+    download_count INTEGER NOT NULL DEFAULT 0,
+    last_accessed_at INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (skill_id) REFERENCES skills(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_skill_shares_skill ON skill_shares(skill_id);
+  CREATE INDEX IF NOT EXISTS idx_skill_shares_user ON skill_shares(user_id, created_at);
+`);
 
 // 新用户（注册或认领时）的内置目录
 function ensureUserDefaults(userId) {

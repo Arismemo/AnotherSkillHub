@@ -47,6 +47,8 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   const [copied, setCopied] = useState('');
   const [showVersions, setShowVersions] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  // 工具栏分享按钮上的计数：分享弹窗增删链接时通过 onCountChange 回写；详情接口的 share_count 到达后校准
+  const [shareCount, setShareCount] = useState(skill.share_count || 0);
   // 文件栏在滚动区 <640px 时自动收成细条（点击恢复），正文优先
   const [fileBarCollapsed, setFileBarCollapsed] = useState(false);
   const fileBarManualRef = useRef(false); // 用户手动展开过则不再自动收起
@@ -82,6 +84,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
         if (restoreDraft) setMode('edit');
         setFileTree(Array.isArray(detail.file_tree) ? detail.file_tree : []);
         setReviewDetail(detail);
+        if (Number.isFinite(detail.share_count)) setShareCount(detail.share_count);
       })
       .catch((error) => {
         if (!cancelled) setDetailError(error.message);
@@ -278,6 +281,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
         onCopy={copyToClipboard}
         onShowVersions={() => setShowVersions(true)}
         onShare={() => setShowShare(true)}
+        shareCount={shareCount}
         mode={mode}
         dirty={dirty}
         saving={saving}
@@ -289,7 +293,12 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
             const fresh = await requestJson(`/api/skills/${skill.id}`).catch(() => null);
             if (fresh) { setContent(fresh.content || ''); setSavedContent(fresh.content || ''); }
           }} />
-      <ShareModal isOpen={showShare} onClose={() => setShowShare(false)} skill={skill} />
+      <ShareModal
+        isOpen={showShare}
+        onClose={() => setShowShare(false)}
+        skill={skill}
+        onCountChange={setShareCount}
+      />
 
       <div className="detail-body">
         {fileTree.length > 1 && (

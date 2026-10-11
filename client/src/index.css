@@ -2,40 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* highlight.js GitHub Dark 主题——直接内联（Tailwind v3 CLI 不合并外链 @import，
-   之前用 @import 导致 .hljs-* 规则静默丢失、高亮无色） */
-pre code.hljs { display: block; overflow-x: auto; padding: 1em; }
-code.hljs { padding: 3px 5px; }
-.hljs { color: #c9d1d9; background: #0d1117; }
-.hljs-doctag, .hljs-keyword, .hljs-meta .hljs-keyword, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-variable.language_ { color: #ff7b72; }
-.hljs-title, .hljs-title.class_, .hljs-title.class_.inherited__, .hljs-title.function_ { color: #d2a8ff; }
-.hljs-attr, .hljs-attribute, .hljs-literal, .hljs-meta, .hljs-number, .hljs-operator, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .hljs-variable { color: #79c0ff; }
-.hljs-meta .hljs-string, .hljs-regexp, .hljs-string { color: #a5d6ff; }
-.hljs-built_in, .hljs-symbol { color: #ffa657; }
-.hljs-code, .hljs-comment, .hljs-formula { color: #8b949e; }
-.hljs-name, .hljs-quote, .hljs-selector-pseudo, .hljs-selector-tag { color: #7ee787; }
-.hljs-subst { color: #c9d1d9; }
-.hljs-section { color: #1f6feb; font-weight: 700; }
-.hljs-bullet { color: #f2cc60; }
-.hljs-emphasis { color: #c9d1d9; font-style: italic; }
-.hljs-strong { color: #c9d1d9; font-weight: 700; }
-.hljs-addition { color: #aff5b4; background-color: #033a16; }
-.hljs-deletion { color: #ffdcd7; background-color: #67060c; }
-
-
-:root[data-theme="light"] .hljs { color: #24292f; background: #f5f7fa; }
-:root[data-theme="light"] .hljs-doctag, :root[data-theme="light"] .hljs-keyword, :root[data-theme="light"] .hljs-meta .hljs-keyword, :root[data-theme="light"] .hljs-template-tag, :root[data-theme="light"] .hljs-template-variable, :root[data-theme="light"] .hljs-type, :root[data-theme="light"] .hljs-variable.language_ { color: #cf222e; }
-:root[data-theme="light"] .hljs-title, :root[data-theme="light"] .hljs-title.class_, :root[data-theme="light"] .hljs-title.function_ { color: #8250df; }
-:root[data-theme="light"] .hljs-attr, :root[data-theme="light"] .hljs-attribute, :root[data-theme="light"] .hljs-literal, :root[data-theme="light"] .hljs-meta, :root[data-theme="light"] .hljs-number, :root[data-theme="light"] .hljs-operator, :root[data-theme="light"] .hljs-selector-attr, :root[data-theme="light"] .hljs-selector-class, :root[data-theme="light"] .hljs-selector-id, :root[data-theme="light"] .hljs-variable { color: #0550ae; }
-:root[data-theme="light"] .hljs-meta .hljs-string, :root[data-theme="light"] .hljs-regexp, :root[data-theme="light"] .hljs-string { color: #0a5668; }
-:root[data-theme="light"] .hljs-built_in, :root[data-theme="light"] .hljs-symbol { color: #9a6700; }
-:root[data-theme="light"] .hljs-code, :root[data-theme="light"] .hljs-comment, :root[data-theme="light"] .hljs-formula { color: #596579; }
-:root[data-theme="light"] .hljs-name, :root[data-theme="light"] .hljs-quote, :root[data-theme="light"] .hljs-selector-pseudo, :root[data-theme="light"] .hljs-selector-tag { color: #116329; }
-:root[data-theme="light"] .hljs-subst, :root[data-theme="light"] .hljs-emphasis, :root[data-theme="light"] .hljs-strong { color: #24292f; }
-:root[data-theme="light"] .hljs-section { color: #0550ae; }
-:root[data-theme="light"] .hljs-bullet { color: #805400; }
-:root[data-theme="light"] .hljs-addition { color: #116329; background-color: #dafbe1; }
-:root[data-theme="light"] .hljs-deletion { color: #b42318; background-color: #ffebe9; }
+/* highlight.js 配色与 .markdown-document 排版在 markdown.css——应用（main.jsx）与懒加载的分享页共用，只定义一份 */
 
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 
@@ -341,12 +308,6 @@ button.row-tag:hover { border-color: var(--accent-border); color: var(--text); }
 .mode-switch button.is-active { background: var(--surface-hover); color: var(--text); }
 .mode-switch button.is-dirty { color: var(--text); }
 .dirty-dot { width: .35rem; height: .35rem; border-radius: 999px; background: var(--accent); }
-/* 正文段落收在 --measure 内保证可读行宽；pre/table 不设上限，吃满 .detail-content（破框） */
-.markdown-document > div > :is(p, ul, ol, blockquote, h1, h2, h3, h4, hr), .skill-summary { max-width: var(--measure); margin-inline: auto; transition: margin var(--dur-fast) var(--ease-out); }
-/* 代码块与段落同一 measure 体系：同宽同起点，任何容器宽度下严格对齐 */
-.markdown-document > div > pre { max-width: var(--measure); margin-inline: auto; transition: margin var(--dur-fast) var(--ease-out); }
-/* 列表内代码块维持列表文字对齐（上一条规则会被此负 margin 抵消） */
-.markdown-document li > pre { max-width: none; margin-left: -1.45rem; margin-right: 0; }
 .inline-error { padding: .65rem .75rem; border: 1px solid var(--danger-border); border-radius: var(--r-sm); background: var(--danger-muted); color: var(--danger-text); font-size: var(--fs-xs); line-height: 1.45; }
 /* 非 md 文件查看（脚本/json）：宽版式，与文件树/编辑器习惯一致 */
 .detail-content.is-wide-file { width: min(100% - 3rem, 78rem); max-width: none; }
@@ -389,37 +350,6 @@ button.row-tag:hover { border-color: var(--accent-border); color: var(--text); }
 .skill-summary :is(span, button)::before { content: '#'; color: var(--text-subtle); }
 .skill-summary button { cursor: pointer; transition: color var(--dur) ease, border-color var(--dur) ease; }
 .skill-summary button:hover { border-color: var(--accent-border); color: var(--text); }
-/* 工程文档节奏：SKILL.md 是「短小节 + 命令块 + check list」，不是散文，行高/段距都比博客正文紧 */
-.markdown-document { color: var(--text-body); font-size: var(--fs-md); line-height: 1.62; }
-.markdown-document > div { max-width: 100%; }
-.markdown-document h1, .markdown-document h2, .markdown-document h3, .markdown-document h4 { color: var(--text); font-weight: 650; line-height: 1.35; letter-spacing: -.018em; text-wrap: balance; }
-.markdown-document h1 { margin: .2rem 0 1.05rem; font-size: var(--fs-2xl); }
-.markdown-document h2 { margin: 1.45rem 0 .55rem; padding-bottom: .28rem; border-bottom: 1px solid var(--border-muted); font-size: var(--fs-xl); }
-.markdown-document h3 { margin: 1.05rem 0 .4rem; font-size: var(--fs-lg); font-weight: 600; letter-spacing: 0; }
-.markdown-document p, .markdown-document ul, .markdown-document ol, .markdown-document blockquote { margin: .65rem 0; }
-.markdown-document ul, .markdown-document ol { padding-left: 1.45rem; }
-/* 列表项内的代码块：负 margin 抵消 ul padding，与列表文字起点对齐 + 左侧竖线归属感 */
-.markdown-document li > pre { margin-left: -1.45rem; border-left: 2px solid var(--border-muted); }
-/* Tailwind preflight 清掉了 list-style，这里恢复；任务列表（checkbox）不出圆点 */
-.markdown-document ul { list-style: disc; }
-.markdown-document ol { list-style: decimal; }
-.markdown-document ul ul { list-style: circle; }
-.markdown-document li::marker { color: var(--text-subtle); }
-.markdown-document li:has(> input[type=checkbox]) { list-style: none; margin-left: -1.45rem; }
-.markdown-document li > input[type=checkbox] { margin: 0 .45rem 0 0; vertical-align: -.1em; accent-color: var(--accent); }
-.markdown-document li + li { margin-top: .14rem; }
-.markdown-document a { color: var(--accent); text-underline-offset: .18em; }
-.markdown-document blockquote { padding: .15rem 1rem; border-left: 3px solid var(--border-strong); color: var(--text-muted); }
-.markdown-document code, .frontmatter pre { font-family: var(--mono); }
-.markdown-document :not(pre) > code { padding: .12rem .32rem; border: 1px solid var(--border-muted); border-radius: var(--r-xs); background: var(--surface-raised); color: var(--text); font-size: .875em; }
-.markdown-document pre, .file-viewer pre { position: relative; overflow-x: auto; margin: .8rem 0; padding: .7rem .85rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface-code); color: var(--text-body); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; tab-size: 2; }
-.markdown-document pre[data-lang]::before, .file-viewer pre[data-lang]::before { content: attr(data-lang); position: absolute; top: .4rem; right: .6rem; color: var(--text-subtle); font-size: var(--fs-2xs); font-family: inherit; text-transform: lowercase; pointer-events: none; }
-.file-viewer pre[data-lang] code, .markdown-document pre code { background: transparent; padding: 0; border: 0; }
-.markdown-document table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: var(--fs-sm); }
-/* 表格与段落同一 measure 体系：同起点居中，任何容器宽度下对齐 */
-.markdown-document > div > table { max-width: var(--measure); margin-inline: auto; transition: margin var(--dur-fast) var(--ease-out); }
-.markdown-document th, .markdown-document td { padding: .45rem .65rem; border: 1px solid var(--border); }
-.markdown-document th { background: var(--surface-raised); color: var(--text); text-align: left; }
 .frontmatter { margin: .75rem -1rem -.85rem; border-top: 1px solid var(--border-muted); color: var(--text-muted); font-size: var(--fs-xs); }
 .frontmatter summary { display: flex; align-items: center; gap: .35rem; padding: .5rem 1rem; list-style: none; cursor: pointer; user-select: none; }
 .frontmatter summary::-webkit-details-marker { display: none; }
@@ -690,6 +620,39 @@ pre:hover .code-copy, .code-copy:focus-visible, .code-copy.is-copied { opacity: 
 
 .step-note { margin: .4rem 0 0; color: var(--text-subtle); font-size: var(--fs-xs); }
 .step-note code { color: var(--text-muted); }
+
+/* 技能分享：详情页分享弹窗 + 「我的分享」总览共用的链接行 */
+.share-content { display: grid; gap: 1.25rem; }
+.share-content section { display: grid; gap: .55rem; }
+.share-list { display: flex; flex-direction: column; gap: .5rem; }
+.share-row { display: grid; gap: .45rem; padding: .6rem .7rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface); }
+.share-row.is-expired { opacity: .6; }
+.share-row-head { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .5rem; min-width: 0; }
+.share-row-title { min-width: 0; overflow: hidden; color: var(--text); font-size: var(--fs-sm); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.share-skill-link { display: inline-flex; align-items: center; gap: .25rem; max-width: 12rem; overflow: hidden; padding: 0; border: 0; background: none; color: var(--accent); font-size: var(--fs-sm); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.share-skill-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.share-skill-link svg { flex: 0 0 auto; opacity: .6; }
+.share-badges { display: flex; flex: 0 0 auto; align-items: center; flex-wrap: wrap; gap: .3rem; }
+.share-badges .chip svg { margin-right: .1rem; }
+.chip-expired { color: var(--danger-text); border-color: var(--danger-border); background: var(--danger-muted); }
+.share-row-stats { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem; color: var(--text-subtle); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+.share-row-url { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .4rem; }
+.share-row-url code { min-width: 0; overflow: hidden; padding: .32rem .5rem; border: 1px solid var(--border-muted); border-radius: var(--r-sm); background: var(--surface-code); color: var(--text-muted); font-family: var(--mono); font-size: var(--fs-xs); text-overflow: ellipsis; white-space: nowrap; user-select: all; }
+.share-row .inline-error { font-size: var(--fs-2xs); padding: .4rem .55rem; }
+/* 分享弹窗的创建表单 */
+.share-form-fields { display: grid; gap: .85rem; min-width: 0; margin: 0; padding: 0; border: 0; }
+.share-form-title { margin: 0; color: var(--text-subtle); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.share-form-fields > label { display: grid; gap: .38rem; color: var(--text-muted); font-size: var(--fs-xs); font-weight: 600; }
+.radio-group { display: grid; gap: .45rem; min-width: 0; margin: 0; padding: 0; border: 0; }
+.radio-group legend { padding: 0; color: var(--text-muted); font-size: var(--fs-xs); font-weight: 600; }
+.radio-group .radio-option { display: flex; align-items: start; gap: .45rem; color: var(--text); font-size: var(--fs-sm); font-weight: 500; }
+.radio-group .radio-option input[type='radio'] { width: auto; height: auto; margin: .22rem 0 0; accent-color: var(--accent); }
+.radio-hint { display: block; color: var(--text-subtle); font-size: var(--fs-2xs); font-weight: 400; line-height: 1.45; }
+.radio-group input:not([type='radio']) { width: calc(100% - 1.35rem); height: 2.1rem; padding: 0 .65rem; margin-left: 1.35rem; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-sunken); color: var(--text); font-size: var(--fs-sm); font-weight: 400; }
+.dialog-panel select { width: 100%; height: 2.25rem; padding: 0 .5rem; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-sunken); color: var(--text); font-size: var(--fs-sm); }
+/* 工具栏分享按钮上的计数徽标 */
+.share-toolbar-button { position: relative; }
+.icon-count { position: absolute; top: -.3rem; right: -.35rem; min-width: .85rem; height: .85rem; padding: 0 .18rem; border-radius: 999px; background: var(--accent); color: var(--accent-fg); font-size: 9px; font-weight: 700; line-height: .85rem; text-align: center; font-variant-numeric: tabular-nums; }
 
 /* 注意：这里不要再覆盖 .app-shell 的列宽——clamp 下界已经够窄，
    多写一条会让窗口从 1301px 缩到 1300px 时两栏反而变宽（反向跳变） */

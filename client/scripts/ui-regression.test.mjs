@@ -64,7 +64,8 @@ test('dialog hooks are unconditional and dialogs support focus, Escape, and acce
 });
 
 test('three-pane shell and readable Markdown styles remain present', async () => {
-  const css = await source('src/index.css');
+  // markdown 排版与 hljs 配色拆到了 markdown.css（应用与分享页共用），两份都检查
+  const css = `${await source('src/index.css')}\n${await source('src/markdown.css')}`;
   assert.match(css, /\.app-shell\s*\{[^}]*grid-template-columns:\s*var\(--w-sidebar[^)]*\)\s*var\(--w-list[^)]*\)\s*minmax\(0, 1fr\)/s, 'shell columns must stay driven by the persisted width variables');
   assert.match(css, /\.pane-resizer\s*\{[^}]*cursor:\s*col-resize/s, 'panes need a shared resizer affordance');
   assert.match(css, /\.markdown-document\s*\{[^}]*line-height:\s*1\.6/s);
