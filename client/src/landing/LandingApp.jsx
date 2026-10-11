@@ -1,11 +1,13 @@
-// 公开入口：/ 是介绍页，/docs 是文档，/login 与 /register 是账号表单。服务端对这些路径都返回同一个 index.html，
-// 这里按 pathname 选页面（页面间用普通链接跳转，不引入路由库）。
-import { useEffect, useState } from 'react';
+// 公开入口：/ 是介绍页，/docs 是文档，/login 与 /register 是账号表单，/share/<token> 是分享页。
+// 服务端对这些路径都返回同一个 index.html，这里按 pathname 选页面（页面间用普通链接跳转，不引入路由库）。
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { requestJson } from '../utils/requestJson';
 import AuthPage from './AuthPage';
 import Docs from './Docs';
 import Landing from './Landing';
-import SharePage from './SharePage';
+
+// 分享页带 marked / highlight.js，懒加载：不拖进 landing 主包
+const SharePage = lazy(() => import('./SharePage'));
 
 export default function LandingApp() {
   const [user, setUser] = useState(null);
@@ -20,7 +22,13 @@ export default function LandingApp() {
 
   if (path === '/login') return <AuthPage mode="login" registration={registration} />;
   if (path === '/register') return <AuthPage mode="register" registration={registration} />;
+  if (path.startsWith('/share/') && path.length > '/share/'.length) {
+    return (
+      <Suspense fallback={<div className="share-loading" role="status">正在载入分享…</div>}>
+        <SharePage token={path.slice('/share/'.length)} />
+      </Suspense>
+    );
+  }
   if (path === '/docs') return <Docs user={user} registration={registration} />;
-  if (path.startsWith('/share/')) return <SharePage />;
   return <Landing user={user} registration={registration} />;
 }

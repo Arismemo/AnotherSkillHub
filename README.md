@@ -42,6 +42,13 @@ Agents multiply: you have one on your laptop, one on a rack server, one on a GPU
 - Review updates as a line diff (plus attached-file changes) and approve/reject in the detail view; the pusher can use `--pending` meanwhile
 - Pushes are security-scanned; findings are stored and shown on the skill, and high-risk hits always require review
 
+**Share links**
+- Share any published skill as a link — to someone outside the hub or another account on it. A skill can have many links (one per recipient, each with its own note, password and expiry), and you can revoke any of them at any time
+- **Snapshot by default:** a link freezes the version it was created from, so later edits never leak out; tick "always latest" to have it follow the published version instead
+- Recipients get a read-only page with every file, a zip download, a one-line install command (`curl … | bash` or `ash pull <link>`), and, if they're signed in to the same hub, **save to my library**. Agents fetching the link get Markdown
+- Password links reveal nothing until unlocked; unlocking gives a 24-hour grant (cookie for the page, embedded in the copied install command). Unlock attempts are rate-limited
+- Manage links from the 分享 button in the detail view, the 我的分享 overview, or `ash share` / `ash shares` / `ash unshare`; each link counts views and downloads
+
 **Protocol-friendly URLs**
 - `/s/<slug>.md` — clean Markdown for agents (default for every non-browser client; multi-file skills get a file manifest appended, `?raw=1` for the original)
 - `/s/<slug>/files/<path>` — a single attached file; `/s/<slug>/info` — plain-text summary
@@ -148,6 +155,10 @@ ash pull --all                             # 更新全部过期技能（本地�
 ash remove systematic-debugging            # 卸载（本地改过的先备份到 ~/.ash/backups）
 ash bundles                                # 列出技能组合
 ash pull bundle:感知工具箱                 # 按标识或名称安装整个组合
+ash share systematic-debugging --label 给小王 --expires 30d   # 创建分享链接（默认快照、7 天；--latest 跟随最新，--password 加密码）
+ash shares                                 # 我的全部分享链接：版本、访问方式、到期、浏览 / 取用次数
+ash unshare https://your-host/share/<token> # 停用（也可以用 #id）
+ash pull https://other-host/share/<token>  # 从分享链接安装（可以是别的服务器；密码分享会提示输入，或设 ASH_SHARE_PASSWORD）
 ash mine                                   # 我推送的技能及审核结果
 ash withdraw my-new-skill                  # 撤回尚在待审核的推送
 ash push ./my-skill/                       # 推送整个技能目录（含 references/scripts），进入待审核
@@ -196,10 +207,11 @@ Upload whitelist & limits: 扩展名白名单默认为文本类（.md/.json/.py/
 
 ## Security notes
 
-- **Accounts and private libraries.** Everything except the landing page, `/login`, `/register`, `/setup.sh`, `/cli.sh`, `/agent.md` and `/agent-full.md` requires a session or a token, and every query is scoped to the caller's own library (files live under `STORAGE_DIR/@users/<id>/`).
+- **Accounts and private libraries.** Everything except the landing page, `/login`, `/register`, `/setup.sh`, `/cli.sh`, `/agent.md`, `/agent-full.md` and share links (`/share/<token>`) requires a session or a token, and every query is scoped to the caller's own library (files live under `STORAGE_DIR/@users/<id>/`).
 - **Web sessions** are `HttpOnly; SameSite=Lax` cookies (`Secure` over https), valid 30 days; only a SHA-256 of the session id is stored. Cookie-authenticated writes must carry `X-ASH-Request: 1` and a same-site `Origin`, so cross-site forms can't act as you.
 - **API tokens** (`ash_…`) are shown once, stored hashed, revocable from the Account dialog, and can't be used to create tokens or change the password.
 - **Passwords** are hashed with scrypt; logins are rate-limited per IP and per username (10 failures / 10 minutes).
+- **Share links** are the only way content leaves a private library without a login. Tokens are 128-bit random and stored in plain text so the owner can copy a link again later; a link only grants read access to that one share, whose content sits in the same database anyway. Expired, revoked, trashed and pending skills all answer 404 alike. Share passwords use scrypt, and installs from a share never send the recipient's personal token (the share may live on another server).
 - **Upgrading a pre-auth instance:** existing data is migrated but owned by nobody (invisible to every account) until an admin claims it: `npm run user:create -- <name> --admin --claim-legacy` (inside Docker: `docker exec -it ash npm run user:create -- …`). Deploy with `ASH_REGISTRATION=closed` until you've done that.
 
 ## Contributing

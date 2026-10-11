@@ -9,7 +9,7 @@ import { SiteFooter, SiteHeader } from './SiteChrome';
 
 const TOC = [
   { group: '入门', items: [['overview', '概览'], ['quickstart', '快速开始'], ['accounts', '账号与 token']] },
-  { group: '技能', items: [['skill-format', '技能格式'], ['cli', 'ash 命令行'], ['local', '安装与本地管理'], ['push-review', '推送与审核'], ['versions', '版本历史'], ['references', '技能之间的引用'], ['bundles', '技能组合'], ['graph', '依赖图']] },
+  { group: '技能', items: [['skill-format', '技能格式'], ['cli', 'ash 命令行'], ['local', '安装与本地管理'], ['push-review', '推送与审核'], ['versions', '版本历史'], ['references', '技能之间的引用'], ['bundles', '技能组合'], ['share', '分享链接'], ['graph', '依赖图']] },
   { group: '使用', items: [['web', '网页端'], ['agents', '接入 Agent'], ['http', 'HTTP 接口']] },
   { group: '运维', items: [['self-host', '自托管与配置'], ['security', '安全模型'], ['faq', '常见问题']] },
 ];
@@ -245,12 +245,15 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
               [<C>ash versions &lt;slug&gt;</C>, '历史版本列表'],
               [<C>ash pull &lt;slug&gt;[@版本] [选项]</C>, <>安装技能及其依赖：只在 <C>~/.ash/skills</C> 存一份，再链接进本机每个 Agent 的技能目录（<C>--agent claude|codex|hermes|dsh|all</C> 只链接给那个 Agent；<C>--dir PATH</C> 直接装进指定目录、不建链接）。其余选项：<C>--pending</C>、<C>--force</C>、<C>--no-deps</C>；<C>@版本</C> 安装历史里的那一版并固定</>],
               [<C>ash pull bundle:&lt;标识或名称&gt;</C>, '安装整个技能组合'],
+              [<C>ash pull &lt;分享链接&gt;</C>, <>从别人发来的分享链接安装（可以是另一台服务器的链接，不会发送你的 token）；密码分享会提示输入，或事先设 <C>ASH_SHARE_PASSWORD</C></>],
               [<C>ash pull --all [--dir PATH] [--force]</C>, '更新所有过期的已装技能（本地改过的跳过，除非 --force）'],
               [<><C>ash installed [--dir PATH]</C> / <C>ash outdated [--dir PATH]</C></>, '本机已装技能及状态 / 只列需要处理的'],
               [<C>ash remove &lt;slug&gt; [--dir PATH] [--force]</C>, '卸载；本地改过的先备份'],
               [<><C>ash bundles</C> / <C>ash bundle &lt;标识或名称&gt;</C></>, '列出组合 / 查看组合成员'],
               [<C>ash new &lt;slug&gt; [--meta] [--dir PATH]</C>, '新技能不要从空白写起：生成符合规范的骨架（frontmatter、description 模板；--meta 带契约与被谁引用两节），写完用 ash lint <目录> 自查'],
               [<C>ash push &lt;目录|SKILL.md&gt; [--update] [--folder PATH]</C>, '推送技能；同名已存在时必须加 --update'],
+              [<C>ash share &lt;slug&gt; [--label 文本] [--password [密码]] [--expires 1d|7d|30d|never] [--latest]</C>, '创建分享链接：默认冻结当前版本、7 天有效；--latest 始终显示最新已发布版本，--password 不带值时提示输入'],
+              [<><C>ash shares [slug]</C> / <C>ash unshare &lt;#id|链接&gt;</C></>, '列出我的分享链接（版本、访问方式、到期、浏览 / 取用次数）/ 停用一条'],
               [<C>ash mine</C>, '本机推送过的技能及审核结果'],
               [<C>ash withdraw &lt;slug&gt;</C>, '撤回自己仍在待审核的推送'],
               [<C>ash feedback &lt;slug&gt; ok|fail ["说明"] [--dir PATH]</C>, '用完技能后回报结果，自动对应本机已装的版本'],
@@ -274,6 +277,7 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
               [<C>ASH_TERMINAL</C>, '推送时记录的来源名，默认是主机名；ash mine / withdraw 按它识别「本机的推送」'],
               [<C>ASH_BIN_DIR</C>, 'ash 自身的安装位置'],
               [<C>ASH_FEEDBACK_HINT</C>, <>设为 <C>0</C> 时安装不在 SKILL.md 末尾附加反馈提示</>],
+              [<C>ASH_SHARE_PASSWORD</C>, <><C>ash pull &lt;分享链接&gt;</C> 遇到密码分享时使用的密码（无人值守时用；不设则提示输入）</>],
             ]} />
           </Section>
 
@@ -358,6 +362,19 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
             <CodeBlock>{'ash bundles\nash bundle 感知工具箱\nash pull bundle:感知工具箱'}</CodeBlock>
           </Section>
 
+          <Section id="share" title="分享链接">
+            <p>把一个已发布的技能发给库外的人，或同一个服务上的其他账号。对方打开链接就能看全部文件、下载 zip、一行命令装进自己的 Agent；登录了同一个服务的，还可以「存到我的库」复制一份。</p>
+            <ul>
+              <li><strong>一个技能可以有多条链接</strong>：每发给一个人建一条，各自写备注、设密码和有效期（1 天 / 7 天 / 30 天 / 永久），哪条不想要了单独停用，立即失效。</li>
+              <li><strong>默认是快照</strong>：链接冻结创建时的版本，之后的修改和待审更新都不会出现在里面；勾选「始终最新」则跟随当前已发布版本。快照和最新之间不能切换，要换就新建一条。</li>
+              <li><strong>密码</strong>：解锁前不透露技能名等任何信息；解锁后 24 小时内刷新、下载不用再输，复制出的安装命令也带着这 24 小时的凭据。连续输错会被限流。</li>
+              <li><strong>失效</strong>：过期、停用、技能移进废纸篓（恢复后链接恢复）或被永久删除，链接一律显示「不存在」。待审核的技能不能分享。</li>
+              <li><strong>管理</strong>：详情页工具栏的「分享」按钮管理这个技能的链接，侧栏的「我的分享」看全部；每条链接记录浏览和取用（下载、安装、存到库）次数，也计入技能的使用统计。</li>
+              <li><strong>Agent 读链接</strong>：curl 或 Agent 抓取分享链接拿到的是 Markdown（附文件清单和安装命令），<C>?raw=1</C> 拿原文。</li>
+            </ul>
+            <CodeBlock>{'ash share systematic-debugging --label 给小王 --expires 30d\nash shares\nash unshare https://your-host/share/<token>\n\n# 收到链接的一方\nash pull https://your-host/share/<token>\ncurl -fsSL https://your-host/share/<token>/install.sh | bash'}</CodeBlock>
+          </Section>
+
           <Section id="references" title="技能之间的引用">
             <p>一段操作已经有技能（尤其是元技能）负责时，引用它，而不是把步骤抄进来：抄过来的两份会漂移，一个坑就要修两处。</p>
             <h3>怎么写</h3>
@@ -417,7 +434,7 @@ depends_on: [other-skill]   # 可选，引用的其他技能，见「技能之�
               <li><strong>系统视图</strong>：收件箱（新技能默认放这里）、收藏、最近浏览、待审核、需关注、全部、废纸篓。待审核和需关注只在有内容时出现。</li>
               <li><strong>整理</strong>：拖拽技能到文件夹、收藏、多选批量操作、右键菜单；文件夹可以多级嵌套、重命名和删除（删除时里面的技能移回收件箱）。</li>
               <li><strong>编辑</strong>：新建技能、粘贴整份 SKILL.md 导入（实时预览识别出的 slug、标签和冲突），详情页里直接编辑名称、描述和 SKILL.md 正文（附属文件随推送更新）。</li>
-              <li><strong>分享</strong>：地址栏的 <C>/app?skill=&lt;slug&gt;</C> 可以直接定位到某个技能；浏览器打开 <C>/s/&lt;slug&gt;</C> 也会跳到这里。详情页可以一键复制给 Agent 的指令。</li>
+              <li><strong>定位链接</strong>：地址栏的 <C>/app?skill=&lt;slug&gt;</C> 可以直接定位到某个技能（只对自己有效）；浏览器打开 <C>/s/&lt;slug&gt;</C> 也会跳到这里。详情页可以一键复制给 Agent 的指令。发给别人请用<a href="#share">分享链接</a>。</li>
               <li><strong>跨设备</strong>：上次浏览的位置按账号保存，换一台电脑登录会回到同一个技能。</li>
             </ul>
             <h3>快捷键</h3>

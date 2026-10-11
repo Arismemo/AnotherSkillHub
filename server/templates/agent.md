@@ -13,6 +13,7 @@
 - 接到项目特定或不熟悉的任务（部署、仿真、内部工具、排障）时，先 `ash suggest "<一两句话描述任务，中英文关键词都写上>"`。知道确切关键词时用 `ash search <关键词…>`。
 - 用 `ash info <slug>` 判断是否适用。只看说明用 `ash show <slug>`；要执行脚本用 `ash pull <slug>`（会一并装上依赖），再按安装目录下的 `SKILL.md` 执行。
 - 没有合适的就按常规方式完成，不要硬套。
+- 用户给了 `…/share/<token>` 形式的分享链接：直接 `ash pull <链接>` 安装（密码分享用环境变量 `ASH_SHARE_PASSWORD` 传密码，不要猜）；只看内容就 curl 这个链接，拿到的是 Markdown。分享装来的技能不在你的库里，不要对它 `ash feedback`。
 
 ## 用完回报结果
 

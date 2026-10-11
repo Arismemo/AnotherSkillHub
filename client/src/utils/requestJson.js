@@ -23,6 +23,8 @@ export async function requestJson(url, options = {}, { onUnauthorized = redirect
     if (response.status === 401 && onUnauthorized) onUnauthorized();
     const error = new Error(payload?.error || `请求失败（${response.status}）`);
     error.status = response.status;
+    // 把后端附带字段带上（password_required / conflict / suggested_slug 等），调用方按需读取
+    if (payload && typeof payload === 'object') Object.assign(error, payload);
     throw error;
   }
   if (payload === null) throw new Error('服务器返回了无效响应，请重试。');

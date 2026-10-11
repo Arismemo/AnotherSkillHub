@@ -15,6 +15,7 @@ export default function DetailToolbar({
   onCopy,
   onShowVersions,
   onShare,
+  shareCount = 0,
   mode,
   dirty,
   saving,
@@ -90,11 +91,13 @@ export default function DetailToolbar({
         <a className="icon-button bordered-button" href={`/s/${skill.slug}/archive.tar.gz`} download aria-label={`下载 ${skill.name} 完整技能包`}>
           <Download size={15} />
         </a>
+        <button type="button" className="icon-button bordered-button share-toolbar-button" onClick={onShare}
+          aria-label={shareCount > 0 ? `分享（${shareCount} 条有效链接）` : '分享'} title="分享">
+          <Share2 size={15} />
+          {shareCount > 0 && <span className="icon-count" aria-hidden="true">{shareCount > 9 ? '9+' : shareCount}</span>}
+        </button>
         <button type="button" className="icon-button bordered-button" onClick={onShowVersions} aria-label="历史版本" title="历史版本">
           <History size={15} />
-        </button>
-        <button type="button" className="icon-button bordered-button" onClick={onShare} aria-label="分享" title="分享">
-          <Share2 size={15} />
         </button>
         {/* 溢出菜单：一键取值（slug / 路径 / 链接）与「复制技能」——后者后端早有 API，前端一直没入口 */}
         <div className="folder-menu-wrap detail-more">

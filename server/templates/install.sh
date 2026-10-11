@@ -16,13 +16,23 @@ PIN=__PIN__
 FOOTER_MARK=__FOOTER_MARK__
 FOOTER=__FOOTER__
 DEPS=(__DEPS__)
+# 完整包与只取 SKILL.md 的地址；从分享链接安装时 SHARE_URL 非空（SHARE_ACCESS 是密码分享解锁后的访问凭据）
+ARCHIVE_URL=__ARCHIVE_URL__
+RAW_URL=__RAW_URL__
+SHARE_URL=__SHARE_URL__
+SHARE_ACCESS=__SHARE_ACCESS__
 TERMINAL="${ASH_TERMINAL:-$(hostname 2>/dev/null || echo Unknown-Host)}"
 
-# 个人 API token：不写进脚本，运行时从环境变量或 ash login 保存的文件读取，并导出给依赖安装
-ASH_TOKEN="${ASH_TOKEN:-$(cat "$HOME/.ash/token" 2>/dev/null || true)}"
-export ASH_TOKEN
 AUTH=()
-if [ -n "$ASH_TOKEN" ]; then AUTH=(-H "Authorization: Bearer $ASH_TOKEN"); fi
+if [ -n "$SHARE_URL" ]; then
+  # 分享可能来自别的服务器：不读取、不发送个人 token，只带分享自己的访问凭据
+  if [ -n "$SHARE_ACCESS" ]; then AUTH=(-H "X-ASH-Share-Access: $SHARE_ACCESS"); fi
+else
+  # 个人 API token：不写进脚本，运行时从环境变量或 ash login 保存的文件读取，并导出给依赖安装
+  ASH_TOKEN="${ASH_TOKEN:-$(cat "$HOME/.ash/token" 2>/dev/null || true)}"
+  export ASH_TOKEN
+  if [ -n "$ASH_TOKEN" ]; then AUTH=(-H "Authorization: Bearer $ASH_TOKEN"); fi
+fi
 
 echo "📦 AnotherSkillHub: 正在安装技能 [$SKILL_NAME]"
 
@@ -142,13 +152,13 @@ trap 'rm -rf "$STAGING" "$TMP_ARCHIVE"' EXIT
 # 归档顶层带 <slug>/ 目录，--strip-components=1 去掉
 # reason / terminal 让服务端记下「装到了哪台机器上」（安装、依赖、更新分开统计）
 if curl -fsSL -G ${AUTH[@]+"${AUTH[@]}"} --data-urlencode "pending=$PENDING" --data-urlencode "reason=$REASON" \
-  --data-urlencode "terminal=$TERMINAL" --data-urlencode "pin=$PIN" "$BASE_URL/s/$SKILL_NAME/archive.tar.gz" -o "$TMP_ARCHIVE"; then
+  --data-urlencode "terminal=$TERMINAL" --data-urlencode "pin=$PIN" "$ARCHIVE_URL" -o "$TMP_ARCHIVE"; then
   tar -xzf "$TMP_ARCHIVE" -C "$STAGING" --strip-components=1
   echo "✓ 完整技能包下载成功"
 else
   echo "⚠️  完整技能包下载失败，改为只拉取 SKILL.md" >&2
   curl -fsSL -G ${AUTH[@]+"${AUTH[@]}"} --data-urlencode "raw=1" --data-urlencode "pending=$PENDING" --data-urlencode "pin=$PIN" \
-    "$BASE_URL/s/$SKILL_NAME.md" -o "$STAGING/SKILL.md"
+    "$RAW_URL" -o "$STAGING/SKILL.md"
 fi
 rm -f "$STAGING/.ash"
 if [ -d "$STAGING/scripts" ]; then
@@ -173,6 +183,8 @@ mv "$STAGING" "$INSTALL_DIR"
   printf 'version=%s\n' "$VERSION"
   printf 'pending=%s\n' "$PENDING"
   printf 'pinned=%s\n' "$PIN"
+  # 来自分享链接：ash installed / pull --all 据此跳过本库比对，重新安装用 ash pull <分享链接>
+  printf 'share=%s\n' "$SHARE_URL"
   # 引用的技能（ash doctor 据此检查它们是否都在同一目录）
   printf 'deps=%s\n' "$(IFS=,; echo "${DEPS[*]+"${DEPS[*]}"}")"
   printf 'fingerprint=%s\n' "$(ash_fingerprint "$INSTALL_DIR")"
@@ -225,4 +237,8 @@ EOF
   done
 fi
 
-echo "   下一步：阅读 $INSTALL_DIR/SKILL.md 并按其步骤执行；用完运行 ash feedback $SKILL_NAME ok|fail"
+if [ -n "$SHARE_URL" ]; then
+  echo "   下一步：阅读 $INSTALL_DIR/SKILL.md 并按其步骤执行；分享者更新后重新运行 ash pull $SHARE_URL"
+else
+  echo "   下一步：阅读 $INSTALL_DIR/SKILL.md 并按其步骤执行；用完运行 ash feedback $SKILL_NAME ok|fail"
+fi

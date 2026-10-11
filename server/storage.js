@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const matter = require('gray-matter');
-const archiver = require('archiver');
+const archiver = require('archiver'); // v8 起没有 archiver('zip') 工厂函数，用 new archiver.ZipArchive()
 
 const baseStorageDir = process.env.STORAGE_DIR || path.join(__dirname, '../data/skills_files');
 if (!fs.existsSync(baseStorageDir)) {
@@ -188,10 +188,26 @@ function createTarGzFromContent(slug, content, files, res) {
   });
 }
 
+// 不在磁盘上的内容（分享快照）打包成 zip：顶层带 <slug>/ 目录，解压即得技能文件夹
+function createZipFromContent(slug, content, files, res) {
+  const name = String(slug);
+  if (!name || name.includes('/') || name === '.' || name === '..') throw new Error('非法的技能路径');
+  const archive = new archiver.ZipArchive({ zlib: { level: 9 } });
+  archive.on('error', (err) => { if (!res.headersSent) res.status(500).send('Zip error: ' + err.message); });
+  archive.pipe(res);
+  archive.append(String(content ?? ''), { name: `${name}/SKILL.md` });
+  for (const file of Array.isArray(files) ? files : []) {
+    const rel = file && file.path && file.content !== undefined ? path.posix.normalize(String(file.path)) : null;
+    if (!rel || rel.startsWith('../') || rel === '..' || path.posix.isAbsolute(rel) || rel === 'SKILL.md') continue;
+    archive.append(String(file.content), { name: `${name}/${rel}` });
+  }
+  return archive.finalize();
+}
+
 // 打包为 zip 流
 function createSkillArchive(userId, folderPath, slug, res) {
   const targetDir = skillDir(userId, folderPath, slug);
-  const archive = archiver('zip', { zlib: { level: 9 } });
+  const archive = new archiver.ZipArchive({ zlib: { level: 9 } });
   
   archive.pipe(res);
   archive.directory(targetDir, false);
@@ -211,6 +227,7 @@ module.exports = {
   moveSkillOnDisk,
   parseSkillContent,
   createSkillArchive,
+  createZipFromContent,
   createSkillTarGzArchive,
   createTarGzFromContent,
   getSkillFileTree,

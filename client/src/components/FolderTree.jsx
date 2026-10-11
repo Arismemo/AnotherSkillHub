@@ -13,6 +13,7 @@ import {
   MoreHorizontal,
   Plus,
   Settings,
+  Share2,
   ShieldCheck,
   Star,
   Trash2,
@@ -65,6 +66,7 @@ export default function FolderTree({
   onNewSkill,
   onPasteImport,
   onOpenSetup,
+  onOpenShares,
   user = null,
   onOpenAccount,
   recentSkills = [],
@@ -330,6 +332,7 @@ export default function FolderTree({
           <button type="button" className="nav-item rail-item" onClick={onNewSkill} aria-label="新建技能" title="新建技能"><Plus size={16} /></button>
           <button type="button" className="nav-item rail-item" onClick={onPasteImport} aria-label="粘贴导入" title="粘贴导入"><ClipboardPaste size={16} /></button>
           <button type="button" className="nav-item rail-item" onClick={onOpenSetup} aria-label="终端接入" title="终端接入"><Settings size={16} /></button>
+          <button type="button" className="nav-item rail-item" onClick={onOpenShares} aria-label="我的分享" title="我的分享"><Share2 size={16} /></button>
           <button type="button" className="nav-item rail-item" onClick={onOpenAccount} aria-label={accountLabel} title={accountLabel}><UserRound size={16} /></button>
         </div>
       </div>
@@ -450,6 +453,10 @@ export default function FolderTree({
         <button type="button" className="nav-item" onClick={onOpenSetup}>
           <Settings size={16} aria-hidden="true" />
           <span>终端接入</span>
+        </button>
+        <button type="button" className="nav-item" onClick={onOpenShares}>
+          <Share2 size={16} aria-hidden="true" />
+          <span className="nav-item-label">我的分享</span>
         </button>
         <button type="button" className="nav-item" onClick={onOpenAccount} title={accountLabel}>
           <UserRound size={16} aria-hidden="true" />

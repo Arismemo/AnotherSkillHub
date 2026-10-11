@@ -209,20 +209,67 @@ code, pre { font-family: var(--mono); }
 .auth-switch a { color: var(--accent); font-weight: 600; }
 
 /* ——— 分享页 ——— */
-.share-page { min-height: 100dvh; padding: 3rem 1rem; background: var(--bg); }
-.share-skill { max-width: 44rem; margin: 0 auto; }
-.share-skill header { margin-bottom: 2rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border-muted); }
-.share-skill h1 { font-size: var(--fs-2xl); font-weight: 700; }
-.share-description { margin-top: .5rem; color: var(--text-muted); font-size: var(--fs-md); }
-.share-meta { display: flex; gap: 1rem; margin-top: .75rem; color: var(--text-subtle); font-size: var(--fs-sm); }
-.share-error, .share-loading { display: grid; place-items: center; min-height: 60dvh; text-align: center; color: var(--text-muted); }
-.share-error h1 { font-size: var(--fs-xl); color: var(--text); }
-.share-password { display: grid; place-items: center; gap: 1rem; max-width: 22rem; margin: 20dvh auto 0; padding: 2rem; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-raised); text-align: center; }
-.share-password h1 { font-size: var(--fs-xl); }
-.share-password p { color: var(--text-muted); font-size: var(--fs-sm); }
-.share-password input { width: 100%; height: 2.5rem; padding: 0 .75rem; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-sunken); color: var(--text); }
-.share-password button { width: 100%; min-height: 2.5rem; border: 0; border-radius: var(--r-sm); background: var(--accent); color: var(--accent-fg); font-weight: 600; cursor: pointer; }
-.share-password button:disabled { opacity: .6; cursor: not-allowed; }
+/* markdown / hljs 的配色与排版在 markdown.css，由 SharePage 懒加载 chunk 引入 */
+.share-loading { display: grid; place-items: center; min-height: 60vh; color: var(--text-subtle); font-size: var(--fs-md); }
+.share-page { display: flex; min-height: 100dvh; flex-direction: column; }
+.share-header { display: grid; gap: 1.75rem; padding-top: 2rem; padding-bottom: 1.75rem; border-bottom: 1px solid var(--border-muted); }
+@media (min-width: 960px) { .share-header { grid-template-columns: minmax(0, 1.35fr) minmax(18rem, 1fr); align-items: start; gap: 2.5rem; } }
+.share-owner { color: var(--accent); font-size: var(--fs-sm); font-weight: 600; }
+.share-owner strong { font-weight: 700; }
+.share-header h1 { margin-top: .45rem; font-size: clamp(1.6rem, 3.5vw, 2.2rem); font-weight: 750; letter-spacing: -.02em; line-height: 1.2; text-wrap: balance; }
+.share-description { max-width: 40rem; margin-top: .65rem; color: var(--text-muted); font-size: var(--fs-lg); line-height: 1.6; }
+.share-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; margin-top: 1rem; color: var(--text-subtle); font-size: var(--fs-xs); }
+.share-chip { display: inline-flex; flex: 0 0 auto; align-items: center; height: 1.35rem; padding: 0 .5rem; border: 1px solid var(--border-muted); border-radius: 999px; background: var(--surface); color: var(--text-muted); font-size: var(--fs-2xs); font-weight: 500; white-space: nowrap; }
+.share-tag::before { content: '#'; margin-right: .12em; color: var(--text-subtle); }
+.share-actions-panel { display: grid; gap: 1rem; }
+.share-panel-block { display: grid; gap: .65rem; padding: 1rem; border: 1px solid var(--border-muted); border-radius: var(--r-lg); background: var(--surface); }
+.share-panel-block h2 { color: var(--text-subtle); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.share-install-tabs { display: inline-flex; width: fit-content; padding: .15rem; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-sunken); }
+.share-install-tabs button { padding: .25rem .75rem; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); font-weight: 600; cursor: pointer; }
+.share-install-tabs button:hover { color: var(--text); }
+.share-install-tabs button[aria-selected='true'] { background: var(--surface-hover); color: var(--text); }
+.share-get-row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+.share-save-owner { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+.share-text-link { color: var(--accent); font-size: var(--fs-sm); font-weight: 600; }
+.share-save-done { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; margin: 0; color: var(--success); font-size: var(--fs-sm); }
+.share-save-conflict { display: grid; gap: .5rem; }
+.share-save-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; }
+.share-save-row input { height: 2.25rem; min-width: 0; padding: 0 .6rem; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-sunken); color: var(--text); font-family: var(--mono); font-size: var(--fs-sm); }
+.share-save-row input:focus { border-color: var(--focus); outline: none; box-shadow: 0 0 0 3px var(--accent-muted); }
+.share-inline-error { margin: 0; padding: .5rem .65rem; border: 1px solid var(--danger-border); border-radius: var(--r-sm); background: var(--danger-muted); color: var(--danger-text); font-size: var(--fs-xs); line-height: 1.45; }
+.share-body { flex: 1; display: grid; align-items: start; gap: 1.5rem; padding-top: 1.5rem; padding-bottom: 3rem; }
+@media (min-width: 900px) { .share-body { grid-template-columns: 15rem minmax(0, 1fr); gap: 2.5rem; } }
+.share-files ul { display: grid; gap: .15rem; padding: .45rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface); }
+.share-files button { display: flex; align-items: center; gap: .45rem; width: 100%; padding: .38rem .5rem; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); text-align: left; cursor: pointer; }
+.share-files button:hover { color: var(--text); background: var(--surface-hover); }
+.share-files button.is-active { color: var(--text); background: var(--surface-hover); font-weight: 600; }
+.share-files button.is-active svg { color: var(--accent); }
+.share-files svg { flex: 0 0 auto; color: var(--text-subtle); }
+.share-files button > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-files small { flex: 0 0 auto; color: var(--text-subtle); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+.share-file-viewer { overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); }
+.share-file-viewer > header { display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: .6rem .8rem; border-bottom: 1px solid var(--border-muted); background: var(--surface); color: var(--text-body); font-size: var(--fs-xs); }
+.share-file-viewer > header button { border: 0; background: transparent; color: var(--accent); font-size: var(--fs-xs); cursor: pointer; }
+.share-file-md { padding: 1rem 1.25rem 1.5rem; }
+.share-hint { padding: 1.5rem 1rem; color: var(--text-subtle); font-size: var(--fs-sm); }
+.share-code { position: relative; min-height: 10rem; margin: 0; padding: .8rem .9rem; overflow-x: auto; background: var(--surface-code); color: var(--text-body); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.55; }
+/* hljs 类自带底色与内边距，这里交给外层 pre 统一控制 */
+.share-code code.hljs { padding: 0; background: transparent; }
+.share-code[data-lang]::before { content: attr(data-lang); position: absolute; top: .4rem; right: .6rem; color: var(--text-subtle); font-size: var(--fs-2xs); font-family: inherit; text-transform: lowercase; pointer-events: none; }
+.share-footnote { display: flex; justify-content: center; padding: 1.25rem 0 1.75rem; border-top: 1px solid var(--border-muted); color: var(--text-subtle); font-size: var(--fs-xs); }
+.share-gate-page .share-footnote { flex: 1; display: flex; align-items: flex-end; border-top: 0; }
+.share-footnote a { color: var(--text-muted); }
+.share-footnote a:hover { color: var(--text); }
+/* 密码门 / 不可用 / 出错：居中一张卡片 */
+.share-gate-page, .share-state-page { align-items: center; justify-content: center; padding: 2.5rem 1rem; }
+.share-state-card { display: grid; justify-items: center; gap: .8rem; width: 100%; max-width: 22rem; padding: 1.9rem 1.5rem 1.75rem; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-raised); box-shadow: var(--shadow-pop); text-align: center; }
+.share-state-card h1 { font-size: var(--fs-xl); font-weight: 700; }
+.share-state-card > p { color: var(--text-muted); font-size: var(--fs-sm); }
+.share-gate-icon { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 999px; background: var(--accent-muted); color: var(--accent); }
+.share-gate-form { display: grid; gap: .8rem; width: 100%; margin-top: .4rem; }
+.share-gate-form label { display: grid; gap: .35rem; color: var(--text-muted); font-size: var(--fs-sm); font-weight: 600; text-align: left; }
+.share-gate-form input { width: 100%; height: 2.5rem; padding: 0 .75rem; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-sunken); color: var(--text); font-size: var(--fs-md); font-weight: 400; }
+.share-gate-form input:focus { border-color: var(--focus); outline: none; box-shadow: 0 0 0 3px var(--accent-muted); }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

@@ -200,5 +200,6 @@ module.exports = {
   createSession, destroySession, currentSessionHash, issueToken, sha256,
   authenticate, requireAuth, csrfOk,
   isRateLimited, recordFailure, clearFailures,
+  parseCookies, cookieAttrs,
   MAX_SESSIONS_PER_USER,
 };

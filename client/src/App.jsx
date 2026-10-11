@@ -13,6 +13,7 @@ import CommandPalette from './components/CommandPalette';
 import ToastContainer from './components/Toast';
 import { showToast } from './components/toastBus';
 import { AccountModal, AgentSetupModal, NewSkillModal, PasteSkillModal, ShortcutsModal } from './components/Modals';
+import SharesModal from './components/SharesModal';
 import { BundleDetail, NewBundleModal, AddToBundleModal } from './components/Bundles';
 
 const SkillGraph = lazy(() => import('./components/SkillGraph'));
@@ -55,6 +56,7 @@ export default function App() {
   // 当前登录用户：侧栏账户入口用；未登录时 requestJson 的 401 处理会跳去登录页
   const [currentUser, setCurrentUser] = useState(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [showSharesModal, setShowSharesModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   // 多选模式：普通点击也会把 selectedIds 设成 1 项，光看 size 分不清「浏览」和「批量操作」。
   // 只有 Cmd/Shift 点选或 ⌘A 才进入多选模式，批量条据此显示——这样选到只剩 1 项时它也不会消失。
@@ -474,6 +476,22 @@ export default function App() {
     setCurrentFolder(target.folder_path || 'all');
   }, [allSkills, skills, rememberRecent, setCurrentFolder, setCurrentTag, setSelectedSkillId]);
 
+  // 「我的分享」里点技能名：按 slug 定位。不在全库索引里（刚保存/别人删了）就向服务端查一次
+  const handleRevealSkillBySlug = useCallback((slug) => {
+    const local = allSkills.find((s) => s.slug === slug);
+    if (local) { handleRevealSkill(local.id); return; }
+    requestJson(`/api/skills/${encodeURIComponent(slug)}`)
+      .then((skill) => {
+        if (!skill?.id) return;
+        setCurrentTag(null);
+        setSearchQuery('');
+        setCurrentFolder(skill.folder_path || 'all');
+        setSelectedSkillId(skill.id);
+        rememberRecent(skill.id);
+      })
+      .catch((error) => showToast(error.message));
+  }, [allSkills, handleRevealSkill, rememberRecent, setCurrentFolder, setCurrentTag, setSelectedSkillId]);
+
   const recentSkills = useMemo(
     () => recentSkillIds.map((id) => allSkills.find((s) => s.id === id)).filter(Boolean).slice(0, 5),
     [recentSkillIds, allSkills],
@@ -592,7 +610,7 @@ export default function App() {
   const defaultTargetFolder = targetFolderForView(currentFolder);
 
   const overlayOpen = showPalette || showShortcuts || showNewModal || showPasteModal
-    || showSetupModal || showAccountModal || showBundleModal || Boolean(activeBundle) || Boolean(addToBundleTarget);
+    || showSetupModal || showAccountModal || showSharesModal || showBundleModal || Boolean(activeBundle) || Boolean(addToBundleTarget);
 
   // 唯一的快捷键注册表：速查面板（?）由它生成，键位不再散落在各组件的 keydown 里。
   // 每次渲染重建（useHotkeys 只把它存进 ref），这样处理函数永远闭包到最新状态。
@@ -727,6 +745,7 @@ export default function App() {
             onNewSkill={() => setShowNewModal(true)}
             onPasteImport={() => setShowPasteModal(true)}
             onOpenSetup={() => setShowSetupModal(true)}
+            onOpenShares={() => setShowSharesModal(true)}
             user={currentUser}
             onOpenAccount={() => setShowAccountModal(true)}
             recentSkills={recentSkills}
@@ -910,6 +929,11 @@ export default function App() {
         isOpen={showAccountModal}
         onClose={() => setShowAccountModal(false)}
         user={currentUser}
+      />
+      <SharesModal
+        isOpen={showSharesModal}
+        onClose={() => setShowSharesModal(false)}
+        onOpenSkill={(slug) => { setShowSharesModal(false); handleRevealSkillBySlug(slug); }}
       />
       <ShortcutsModal
         isOpen={showShortcuts}

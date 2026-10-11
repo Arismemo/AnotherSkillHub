@@ -23,7 +23,11 @@ app.get('/healthz', (req, res) => res.json({ ok: true }));
 
 // 挂载 API：除 /api/auth 外全部需要登录（网页会话）或 API token（CLI / Agent）
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/share', require('./routes/shares'));
+// 分享链接免登录访问（密码分享自己校验；「存到我的库」单独要求登录），分享管理要登录
+const sharePublic = require('./routes/sharePublic');
+app.use('/api/share', sharePublic.api);
+app.use('/api/shares', requireAuth, require('./routes/shares'));
+app.use('/share', sharePublic.page);
 app.use('/api/skills', requireAuth, skillsRoutes);
 app.use('/api/session', requireAuth, require('./routes/session'));
 app.use('/api/bundles', requireAuth, require('./routes/bundles'));
@@ -57,6 +61,8 @@ if (fs.existsSync(clientDist)) {
     sendPage(res, landingPage);
   });
   app.get('/docs', (req, res) => sendPage(res, landingPage));
+  // 分享链接：浏览器打开时由 landing 入口渲染分享页（curl / Agent 在上面的 /share 路由拿到 Markdown）
+  app.get('/share/:token', (req, res) => sendPage(res, landingPage));
   app.get(['/login', '/register'], (req, res) => {
     if (authenticate(req)) return res.redirect('/app');
     sendPage(res, landingPage);

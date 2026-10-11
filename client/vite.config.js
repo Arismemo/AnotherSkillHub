@@ -15,7 +15,9 @@ function pageRoutes() {
         const [pathname, query = ''] = req.url.split('?');
         const search = query ? `?${query}` : '';
         if (pathname === '/app' || pathname.startsWith('/app/')) req.url = `/app.html${search}`;
-        else if (['/login', '/register', '/docs'].includes(pathname) || pathname.startsWith('/share/')) req.url = `/index.html${search}`;
+        else if (['/login', '/register', '/docs'].includes(pathname)) req.url = `/index.html${search}`;
+        // 分享链接：浏览器打开走分享页，curl / Agent 与 install.sh 等子路径转给后端
+        else if (/^\/share\/[^/]+$/.test(pathname) && (req.headers.accept || '').includes('text/html')) req.url = `/index.html${search}`;
         next();
       });
     },
@@ -37,6 +39,7 @@ export default defineConfig({
       '/api': backend,
       // 前缀匹配：写成 '/s' 会把 /src/*.jsx 也转给后端，只代理 /s/ 下的技能短链
       '^/s/': backend,
+      '^/share/': backend,
       '/healthz': backend,
       '/setup.sh': backend,
       '/cli.sh': backend,

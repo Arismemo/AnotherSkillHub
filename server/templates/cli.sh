@@ -169,16 +169,27 @@ fetch_revisions() {
   local args=(-X POST) dir
   while IFS= read -r dir; do
     [ -n "$dir" ] || continue
+    [ -z "$(meta "$dir" share)" ] || continue   # 分享装的技能不在自己的库里，不参与比对
     args+=(--data-urlencode "slug=$(meta "$dir" slug)")
   done
-  if [ "${#args[@]}" -gt 1 ]; then http "${args[@]}" "$SERVER_URL/api/agent/revisions"; fi
+  if [ "${#args[@]}" -gt 2 ]; then http "${args[@]}" "$SERVER_URL/api/agent/revisions"; fi
 }
 
 # 单个已装技能的状态：输出 "代码<TAB>说明"
-# 代码: ok | outdated | modified | modified-outdated | missing | trashed | other-server
+# 代码: ok | outdated | modified | modified-outdated | missing | trashed | other-server | share | share-modified
 skill_state() {
-  local dir="$1" revs="$2" slug server rev line rstatus rrev rver pending_rev modified=0
+  local dir="$1" revs="$2" slug server rev share line rstatus rrev rver pending_rev modified=0
   slug="$(meta "$dir" slug)"; server="$(meta "$dir" server)"; rev="$(meta "$dir" revision)"
+  # 来自分享链接的技能不比对本地库（slug 属于分享者的库）：installed 标出来源，outdated / pull --all 跳过
+  share="$(meta "$dir" share)"
+  if [ -n "$share" ]; then
+    if [ "$(meta "$dir" fingerprint)" != "$(ash_fingerprint "$dir")" ]; then
+      printf 'share-modified\t来自分享 %s · 本地有修改（ash pull %s 会先备份再覆盖）\n' "$share" "$share"
+    else
+      printf 'share\t来自分享 %s（ash pull %s 重新安装）\n' "$share" "$share"
+    fi
+    return
+  fi
   if [ "$server" != "$SERVER_URL" ]; then printf 'other-server\t来自其它服务 %s\n' "$server"; return; fi
   line="$(printf '%s\n' "$revs" | awk -F'\t' -v s="$slug" '$1 == s { print; exit }')"
   rstatus="$(printf '%s' "$line" | cut -f2)"; rrev="$(printf '%s' "$line" | cut -f3)"; rver="$(printf '%s' "$line" | cut -f4)"; pending_rev="$(printf '%s' "$line" | cut -f5)"
@@ -216,6 +227,54 @@ run_install() {
   local script
   script="$(curl -sS -G ${AUTH[@]+"${AUTH[@]}"} "$@" "$url")" || die "无法连接 $SERVER_URL"
   printf '%s\n' "$script" | bash
+}
+
+# 分享链接的安装脚本：与 run_install 一样不看状态码（错误响应也是可执行脚本），但不带个人 token——
+# 分享可能来自别的服务器；access 是密码分享解锁后的访问凭据
+run_share_install() {
+  local url="$1" access="$2"; shift 2
+  local script access_args=()
+  if [ -n "$access" ]; then access_args+=(--data-urlencode "access=$access"); fi
+  script="$(curl -sS -G ${access_args[@]+"${access_args[@]}"} "$@" "$url")" || die "无法连接 $url"
+  printf '%s\n' "$script" | bash
+}
+
+# 从分享链接安装（ash pull <分享链接>）：查 /info（不带个人 token）；密码分享先用 ASH_SHARE_PASSWORD 或
+# 终端输入的密码换访问凭据，再取 install.sh 执行。链接可以指向任何服务器，绝不把本机 token 发过去
+pull_share() {
+  local url="$1" base token out code body msg password access
+  shift
+  url="${url%/}"
+  token="${url##*/share/}"
+  case "$token" in *\?*) token="${token%%\?*}" ;; esac
+  [[ "$token" =~ ^[A-Za-z0-9_-]{16,64}$ ]] || die "不是有效的分享链接: $url"
+  base="${url%%/share/*}"
+  out="$(curl -sS -w '\n%{http_code}' "$url/info")" || die "无法连接 $base"
+  code="${out##*$'\n'}"; body="${out%$'\n'*}"; body="${body%$'\n'}"
+  access=""
+  if [ "$code" = 200 ]; then
+    echo "→ $(printf '%s' "$body" | json_first name) v$(printf '%s' "$body" | json_first version)（来自 $(printf '%s' "$body" | json_first owner) 的分享）" >&2
+  elif [ "$code" = 401 ]; then
+    password="${ASH_SHARE_PASSWORD:-}"
+    if [ -z "$password" ]; then
+      # 真正试着打开 /dev/tty：没有控制终端时（cron、CI）[ -r ] 仍可能为真，但 open 会失败
+      : 2>/dev/null </dev/tty || die "这个分享需要密码，而当前没有终端可输入：设置 ASH_SHARE_PASSWORD 环境变量后重试 ash pull $url"
+      printf '分享访问密码: ' >&2
+      IFS= read -rs password </dev/tty; echo >&2
+    fi
+    out="$(curl -sS -w '\n%{http_code}' -X POST --data-urlencode "password=$password" "$base/api/share/$token/unlock")" || die "无法连接 $base"
+    code="${out##*$'\n'}"; body="${out%$'\n'*}"; body="${body%$'\n'}"
+    if [ "$code" != 200 ]; then
+      msg="$(printf '%s' "$body" | json_first error)"
+      die "${msg:-解锁失败（HTTP $code）}"
+    fi
+    access="$(printf '%s' "$body" | json_first access)"
+    [ -n "$access" ] || die "解锁失败：服务端没有返回访问凭据"
+  else
+    msg="$(printf '%s' "$body" | json_first error)"
+    die "${msg:-HTTP $code}"
+  fi
+  run_share_install "$url/install.sh" "$access" "$@"
 }
 
 # 安装到 bin 目录：优先可写目录，其次免密 sudo（sudo -n 不会卡住无人值守的 Agent），最后 ~/.local/bin
@@ -257,6 +316,24 @@ pack_skill_dir() {
 
 # 从单行 JSON 里取第一次出现的字符串字段（json_field 取的是最后一次）
 json_first() { grep -o "\"$1\":\"[^\"]*\"" | head -n 1 | sed "s/^\"$1\":\"//; s/\"$//"; }
+
+# 文本接口（share / shares / unshare 用）：成功时输出响应体；出错时解析 JSON 里的 error，报一行中文错误退出
+http_text() {
+  local out code body msg
+  out=$(curl -sS -w '\n%{http_code}' ${AUTH[@]+"${AUTH[@]}"} "$@") || die "无法连接 $SERVER_URL"
+  code="${out##*$'\n'}"
+  body="${out%$'\n'*}"
+  body="${body%$'\n'}"
+  if [ "$code" -ge 400 ] 2>/dev/null; then
+    if [ "$code" = 401 ]; then
+      if [ -n "$ASH_TOKEN" ]; then echo "提示: token 无效或已吊销，请重新运行 ash login" >&2
+      else echo "提示: 尚未登录，请先运行 ash login" >&2; fi
+    fi
+    msg="$(printf '%s' "$body" | json_first error)"
+    die "${msg:-HTTP $code}"
+  fi
+  printf '%s\n' "$body"
+}
 
 # 把一个已在库里的本地技能目录登记为 ash 管理：写入与 install.sh 相同格式的 .ash，
 # 之后 ash installed / outdated / pull --all 就能管到它（ash import 用）
@@ -382,17 +459,17 @@ except Exception:
   fi
 }
 
-# name:/dir: → 本服务装的技能目录（不是 ash 装的、来自别的服务的都忽略）
+# name:/dir: → 本服务装的技能目录（不是 ash 装的、来自别的服务的都忽略；分享装的也忽略：slug 不在自己的库里）
 resolve_used_dir() {
   local item="$1" root
   case "$item" in
-    dir:*) item="${item#dir:}"; if [ -f "$item/.ash" ] && [ "$(meta "$item" server)" = "$SERVER_URL" ]; then echo "$item"; fi ;;
+    dir:*) item="${item#dir:}"; if [ -f "$item/.ash" ] && [ -z "$(meta "$item" share)" ] && [ "$(meta "$item" server)" = "$SERVER_URL" ]; then echo "$item"; fi ;;
     name:*)
       item="${item#name:}"
       case "$item" in ''|*/*|.*) return ;; esac
       while IFS= read -r root; do
         [ -n "$root" ] || continue
-        if [ -f "$root/$item/.ash" ] && [ "$(meta "$root/$item" server)" = "$SERVER_URL" ]; then echo "$root/$item"; return; fi
+        if [ -f "$root/$item/.ash" ] && [ -z "$(meta "$root/$item" share)" ] && [ "$(meta "$root/$item" server)" = "$SERVER_URL" ]; then echo "$root/$item"; return; fi
       done <<EOF
 $(skill_roots ""; echo "$HOME/.claude/skills"; echo "$PWD/.claude/skills")
 EOF
@@ -497,10 +574,12 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash bundle <标识或名称>          查看组合成员
 
 安装与本地管理
-  ash pull <slug>[@版本] [--agent claude|codex|hermes|dsh|all] [--dir PATH] [--pending] [--force] [--no-deps]
+  ash pull <slug>[@版本]|<分享链接> [--agent claude|codex|hermes|dsh|all] [--dir PATH] [--pending] [--force] [--no-deps]
                                   安装技能及其依赖：只在 ~/.ash/skills 存一份，再链接进本机每个 Agent 的技能目录
                                   （--agent 只链接给那个 Agent；--dir 直接装进指定目录、不建链接）；
-                                  本地改过的同名目录先备份到 ~/.ash/backups（--force 不备份）；slug@1.2.0 安装那一版并固定
+                                  本地改过的同名目录先备份到 ~/.ash/backups（--force 不备份）；slug@1.2.0 安装那一版并固定；
+                                  <分享链接>（ash share 生成的 /share/ 链接）安装别人分享的技能，不需要登录，
+                                  带密码的分享会提示输入密码（设 ASH_SHARE_PASSWORD 免交互）
   ash pull bundle:<标识或名称>     一次安装整个技能组合
   ash pull --all [--dir PATH] [--force]   更新所有过期的已装技能（本地改过的跳过，除非 --force）
   ash installed [--dir PATH]      本机已装技能及状态（最新 / 有更新 / 本地有修改 / 远端已删除）
@@ -525,6 +604,11 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
                                   同名已在库里的跳过（--update 提交为更新）；导入的目录登记为 ash 管理（--no-adopt 不登记）
   ash mine                        我（本机）推送的技能及审核状态
   ash withdraw <slug>             撤回自己尚在待审核的推送
+  ash share <slug> [--label 文本] [--password [密码]] [--expires 1d|7d|30d|never] [--latest]
+                                  创建技能的分享链接，发给别的 Agent 用 ash pull <链接> 安装（默认 7 天有效、
+                                  当前版本的快照；--latest 跟随最新版本；--password 加密码访问，省略密码值时在终端里问）
+  ash shares [slug]               列出自己的分享链接（可只看某个技能的）
+  ash unshare <编号|token|链接>    停用一条分享链接（对方那边立即失效）
 
 账号
   ash login [--token TOKEN]       登录：输入用户名密码换取 token，或直接保存网页「账户」里创建的 token
@@ -538,7 +622,7 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash <命令> --help               只看这条命令的用法
 
 完整文档：$SERVER_URL/docs
-环境变量：ASH_AGENT 默认安装到哪个 Agent（claude|codex|hermes|dsh|all）；ASH_SERVER_URL 服务地址；ASH_TOKEN API token（默认读 ~/.ash/token）；ASH_STORE 共享存储目录（默认 ~/.ash/skills）；ASH_SKILLS_DIR 不用共享存储、直接装进这个目录；ASH_BIN_DIR ash 安装位置；ASH_TERMINAL 推送来源名（默认 hostname）
+环境变量：ASH_AGENT 默认安装到哪个 Agent（claude|codex|hermes|dsh|all）；ASH_SERVER_URL 服务地址；ASH_TOKEN API token（默认读 ~/.ash/token）；ASH_STORE 共享存储目录（默认 ~/.ash/skills）；ASH_SKILLS_DIR 不用共享存储、直接装进这个目录；ASH_SHARE_PASSWORD 带密码的分享链接的访问密码（ash pull <分享链接> 免交互）；ASH_BIN_DIR ash 安装位置；ASH_TERMINAL 推送来源名（默认 hostname）
 EOF
 }
 
@@ -577,7 +661,7 @@ done
 
 case "$cmd" in
   pull)
-    [ -n "${1:-}" ] || die "请提供技能标识 (slug)、组合 (bundle:<标识或名称>) 或 --all"
+    [ -n "${1:-}" ] || die "请提供技能标识 (slug)、组合 (bundle:<标识或名称>)、分享链接 (https://…/share/…) 或 --all"
     target="$1"; shift
     args=(); dir=""; force=0; agent=""
     while [ "$#" -gt 0 ]; do
@@ -595,7 +679,14 @@ case "$cmd" in
     if [ -z "$agent" ] && [ -z "$dir" ] && [ -z "${ASH_SKILLS_DIR:-}" ] && [ -n "${ASH_AGENT:-}" ] && [ "$target" != "--all" ]; then
       args+=(--data-urlencode "agent=$ASH_AGENT")
     fi
-    if [ "$target" = "--all" ]; then
+    # 分享链接：https://host[:port][/prefix]/share/<token>，可以来自任何服务器，直接按链接安装
+    share_target=""
+    case "$target" in
+      http://*/share/*|https://*/share/*) share_target="$target" ;;
+    esac
+    if [ -n "$share_target" ]; then
+      pull_share "$share_target" "${args[@]+"${args[@]}"}"
+    elif [ "$target" = "--all" ]; then
       dirs="$(installed_dirs "$dir")"
       [ -n "$dirs" ] || { echo "本机没有通过 ash 安装的技能"; exit 0; }
       revs="$(printf '%s\n' "$dirs" | fetch_revisions)"
@@ -643,7 +734,7 @@ EOF
     shown=0
     while IFS= read -r d; do
       state="$(skill_state "$d" "$revs")"; code="${state%%$'\t'*}"; note="${state#*$'\t'}"
-      if [ "$cmd" = "outdated" ] && { [ "$code" = "ok" ] || [ "$code" = "pinned" ]; }; then continue; fi
+      if [ "$cmd" = "outdated" ] && { [ "$code" = "ok" ] || [ "$code" = "pinned" ] || [ "$code" = "share" ] || [ "$code" = "share-modified" ]; }; then continue; fi
       printf '%s  ·  v%s  ·  %s  ·  %s\n' "$(meta "$d" slug)" "$(meta "$d" version)" "$note" "$d"
       if [ "$(dirname "$d")" = "$STORE" ]; then
         linked="$(links_of "$(meta "$d" slug)" | while IFS= read -r r; do printf '%s ' "$(root_agent "$r")"; done)"
@@ -730,11 +821,16 @@ EOF
     fi
     [ -n "$cands" ] || { echo "本机 Agent 目录里没有技能"; exit 0; }
     revs="$(printf '%s\n' "$cands" | while IFS= read -r d; do
-      if [ -f "$d/.ash" ]; then meta "$d" slug; else basename "$d"; fi
-    done | awk '!seen[$0]++' | { args=(-X POST); while IFS= read -r x; do args+=(--data-urlencode "slug=$x"); done; http "${args[@]}" "$SERVER_URL/api/agent/revisions"; })"
+      if [ -f "$d/.ash" ]; then
+        [ -z "$(meta "$d" share)" ] || continue   # 分享装的技能不在自己的库里，不查修订
+        meta "$d" slug
+      else basename "$d"; fi
+    done | awk '!seen[$0]++' | { args=(-X POST); while IFS= read -r x; do args+=(--data-urlencode "slug=$x"); done; if [ "${#args[@]}" -gt 2 ]; then http "${args[@]}" "$SERVER_URL/api/agent/revisions"; fi })"
     plan=""; n=0
     while IFS= read -r d; do
       [ -n "$d" ] || continue
+      # 分享装的技能不属于本地库，不参与迁移（更新用 ash pull <分享链接>）
+      if [ -f "$d/.ash" ] && [ -n "$(meta "$d" share)" ]; then continue; fi
       root="$(dirname "$d")"; name="$(basename "$d")"
       if [ -f "$d/.ash" ]; then slug="$(meta "$d" slug)"; else slug="$name"; fi
       line="$(printf '%s\n' "$revs" | awk -F'\t' -v s="$slug" '$1 == s { print; exit }')"
@@ -1305,6 +1401,62 @@ EOF
   withdraw)
     [ -n "${1:-}" ] || die "请提供技能标识 (slug)"; valid_slug "$1"
     http -X POST --data-urlencode "slug=$1" --data-urlencode "terminal=$TERMINAL" "$SERVER_URL/api/agent/withdraw"
+    ;;
+  share)
+    [ -n "${1:-}" ] || die "用法: ash share <slug> [--label 文本] [--password [密码]] [--expires 1d|7d|30d|never] [--latest]"
+    slug="$1"; shift; valid_slug "$slug"
+    label=""; password=""; ask_password=0; expires="7d"; latest=0
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --label) [ -n "${2:-}" ] || die "--label 需要参数"; label="$2"; shift 2 ;;
+        # --password 后面没跟值（到参数末尾或下一个是 --xxx）时改为在终端里问，输入不回显
+        --password)
+          shift
+          case "${1:-}" in ''|--*) ask_password=1 ;; *) password="$1"; shift ;; esac
+          ;;
+        --expires) [ -n "${2:-}" ] || die "--expires 需要参数（1d / 7d / 30d / never）"; expires="$2"; shift 2 ;;
+        --latest) latest=1; shift ;;
+        *) die "未知参数: $1" ;;
+      esac
+    done
+    case "$expires" in 1d|7d|30d|never) ;; *) die "--expires 只能是 1d / 7d / 30d / never" ;; esac
+    if [ "$ask_password" = 1 ]; then
+      # 真正试着打开 /dev/tty：没有控制终端时（cron、CI）[ -r ] 仍可能为真，但 open 会失败
+      : 2>/dev/null </dev/tty || die "无法交互输入密码：改用 ash share $slug --password <密码>"
+      printf '访问密码（4 到 200 位）: ' >&2
+      IFS= read -rs password </dev/tty; echo >&2
+      [ -n "$password" ] || die "没有输入密码"
+    fi
+    form=(-X POST --data-urlencode "skill=$slug" --data-urlencode "expires=$expires" --data-urlencode "format=text")
+    if [ -n "$label" ]; then form+=(--data-urlencode "label=$label"); fi
+    if [ -n "$password" ]; then form+=(--data-urlencode "password=$password"); fi
+    if [ "$latest" = 1 ]; then form+=(--data-urlencode "follow_latest=1"); fi
+    http_text "${form[@]}" "$SERVER_URL/api/shares"
+    ;;
+  shares)
+    slug=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -*) die "未知参数: $1" ;;
+        *) [ -z "$slug" ] || die "用法: ash shares [slug]"; slug="$1"; shift ;;
+      esac
+    done
+    args=(-G --data-urlencode "format=text")
+    if [ -n "$slug" ]; then valid_slug "$slug"; args+=(--data-urlencode "skill=$slug"); fi
+    http_text "${args[@]}" "$SERVER_URL/api/shares"
+    ;;
+  unshare)
+    [ -n "${1:-}" ] || die "请提供分享编号、token 或完整分享链接"
+    ref="$1"; shift
+    [ "$#" -gt 0 ] && die "未知参数: $1"
+    # 完整链接只留 /share/ 后面的 token（可能带 ?access=… 之类的查询串）
+    case "$ref" in
+      */share/*)
+        ref="${ref##*/share/}"
+        case "$ref" in *\?*) ref="${ref%%\?*}" ;; esac
+        ;;
+    esac
+    http_text -X DELETE "$SERVER_URL/api/shares/$ref?format=text"
     ;;
   login)
     token=""
