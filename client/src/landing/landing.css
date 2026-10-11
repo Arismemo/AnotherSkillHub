@@ -208,6 +208,22 @@ code, pre { font-family: var(--mono); }
 .auth-switch { margin-top: 1.25rem; color: var(--text-muted); font-size: var(--fs-sm); text-align: center; }
 .auth-switch a { color: var(--accent); font-weight: 600; }
 
+/* ——— 分享页 ——— */
+.share-page { min-height: 100dvh; padding: 3rem 1rem; background: var(--bg); }
+.share-skill { max-width: 44rem; margin: 0 auto; }
+.share-skill header { margin-bottom: 2rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border-muted); }
+.share-skill h1 { font-size: var(--fs-2xl); font-weight: 700; }
+.share-description { margin-top: .5rem; color: var(--text-muted); font-size: var(--fs-md); }
+.share-meta { display: flex; gap: 1rem; margin-top: .75rem; color: var(--text-subtle); font-size: var(--fs-sm); }
+.share-error, .share-loading { display: grid; place-items: center; min-height: 60dvh; text-align: center; color: var(--text-muted); }
+.share-error h1 { font-size: var(--fs-xl); color: var(--text); }
+.share-password { display: grid; place-items: center; gap: 1rem; max-width: 22rem; margin: 20dvh auto 0; padding: 2rem; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-raised); text-align: center; }
+.share-password h1 { font-size: var(--fs-xl); }
+.share-password p { color: var(--text-muted); font-size: var(--fs-sm); }
+.share-password input { width: 100%; height: 2.5rem; padding: 0 .75rem; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-sunken); color: var(--text); }
+.share-password button { width: 100%; min-height: 2.5rem; border: 0; border-radius: var(--r-sm); background: var(--accent); color: var(--accent-fg); font-weight: 600; cursor: pointer; }
+.share-password button:disabled { opacity: .6; cursor: not-allowed; }
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   * { transition: none !important; }

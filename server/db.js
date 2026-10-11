@@ -283,6 +283,18 @@ db.exec(`
   INSERT OR IGNORE INTO app_meta (key, value) VALUES ('usage_tracking_since', strftime('%Y-%m-%d %H:%M:%S', 'now'));
 `);
 
+// 分享：一技能一链接，token 只存 sha256，密码用 scrypt（与账号密码同参数）
+try {
+  const cols = db.prepare('PRAGMA table_info(skills)').all().map((c) => c.name);
+  const add = (name, ddl) => { if (!cols.includes(name)) db.exec(`ALTER TABLE skills ADD COLUMN ${ddl}`); };
+  add('share_mode', "share_mode TEXT DEFAULT NULL");           // NULL | 'public' | 'password'
+  add('share_token_hash', 'share_token_hash TEXT DEFAULT NULL'); // sha256(链接 token)
+  add('share_password_hash', 'share_password_hash TEXT DEFAULT NULL'); // scrypt
+  add('share_expires_at', 'share_expires_at DATETIME DEFAULT NULL'); // NULL = 永久
+  add('share_created_at', 'share_created_at DATETIME DEFAULT NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_skills_share ON skills(share_token_hash)');
+} catch (e) { console.error('migration:', e.message); }
+
 // 新用户（注册或认领时）的内置目录
 function ensureUserDefaults(userId) {
   db.prepare('INSERT OR IGNORE INTO folders (user_id, path, name, parent_path) VALUES (?, ?, ?, ?)').run(userId, 'inbox', '收件箱 (Inbox)', '');

@@ -570,4 +570,61 @@ router.delete('/:id', (req, res) => {
   }
 });
 
+// ——— 分享管理 ———
+const { hashPassword } = require('../auth');
+const crypto = require('crypto');
+const sha256 = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
+const randomToken = () => crypto.randomBytes(32).toString('base64url');
+
+// 当前分享状态（不回 token 明文）
+router.get('/:id/share', (req, res) => {
+  const skill = findOwnSkillById(req.user.id, req.params.id);
+  if (!skill) return res.status(404).json({ error: 'Skill not found' });
+  res.json({
+    mode: skill.share_mode,
+    has_password: Boolean(skill.share_password_hash),
+    expires_at: skill.share_expires_at,
+    share_created_at: skill.share_created_at,
+  });
+});
+
+// 创建 / 更新分享
+router.put('/:id/share', async (req, res) => {
+  try {
+    const skill = findOwnSkillById(req.user.id, req.params.id);
+    if (!skill || skill.is_deleted) return res.status(404).json({ error: 'Skill not found' });
+    if (skill.status !== 'approved') return res.status(400).json({ error: '待审核的技能不能分享' });
+
+    const { mode, password, expires_in } = req.body || {};
+    if (!['public', 'password'].includes(mode)) return res.status(400).json({ error: 'mode 必须是 public 或 password' });
+    if (mode === 'password' && (!password || String(password).length < 4)) {
+      return res.status(400).json({ error: '密码至少 4 位' });
+    }
+
+    const token = randomToken();
+    const expiresAt = expires_in ? new Date(Date.now() + Number(expires_in) * 1000).toISOString() : null;
+    const passwordHash = mode === 'password' ? await hashPassword(String(password)) : null;
+
+    db.prepare(`
+      UPDATE skills SET share_mode = ?, share_token_hash = ?, share_password_hash = ?, share_expires_at = ?, share_created_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(mode, sha256(token), passwordHash, expiresAt, skill.id);
+
+    res.json({ share_url: `${req.protocol}://${req.get('host')}/share/${token}`, expires_at: expiresAt });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 停止分享
+router.delete('/:id/share', (req, res) => {
+  const skill = findOwnSkillById(req.user.id, req.params.id);
+  if (!skill) return res.status(404).json({ error: 'Skill not found' });
+  db.prepare(`
+    UPDATE skills SET share_mode = NULL, share_token_hash = NULL, share_password_hash = NULL, share_expires_at = NULL, share_created_at = NULL
+    WHERE id = ?
+  `).run(skill.id);
+  res.json({ success: true });
+});
+
 module.exports = router;

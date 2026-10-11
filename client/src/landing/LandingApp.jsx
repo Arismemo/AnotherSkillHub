@@ -5,6 +5,7 @@ import { requestJson } from '../utils/requestJson';
 import AuthPage from './AuthPage';
 import Docs from './Docs';
 import Landing from './Landing';
+import SharePage from './SharePage';
 
 export default function LandingApp() {
   const [user, setUser] = useState(null);
@@ -20,5 +21,6 @@ export default function LandingApp() {
   if (path === '/login') return <AuthPage mode="login" registration={registration} />;
   if (path === '/register') return <AuthPage mode="register" registration={registration} />;
   if (path === '/docs') return <Docs user={user} registration={registration} />;
+  if (path.startsWith('/share/')) return <SharePage />;
   return <Landing user={user} registration={registration} />;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, ChevronRight, Copy, Download, Edit3, Eye, History, MoreHorizontal, Terminal } from 'lucide-react';
+import { Check, ChevronRight, Copy, Download, Edit3, Eye, History, MoreHorizontal, Share2, Terminal } from 'lucide-react';
 import { showToast } from '../toastBus';
 import { installCommand, skillPrompt } from '../../utils/agentPrompts';
 import { formatDateTime, relativeTime } from '../../utils/date';
@@ -14,6 +14,7 @@ export default function DetailToolbar({
   copied,
   onCopy,
   onShowVersions,
+  onShare,
   mode,
   dirty,
   saving,
@@ -91,6 +92,9 @@ export default function DetailToolbar({
         </a>
         <button type="button" className="icon-button bordered-button" onClick={onShowVersions} aria-label="历史版本" title="历史版本">
           <History size={15} />
+        </button>
+        <button type="button" className="icon-button bordered-button" onClick={onShare} aria-label="分享" title="分享">
+          <Share2 size={15} />
         </button>
         {/* 溢出菜单：一键取值（slug / 路径 / 链接）与「复制技能」——后者后端早有 API，前端一直没入口 */}
         <div className="folder-menu-wrap detail-more">

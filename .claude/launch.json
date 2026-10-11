@@ -1,0 +1,38 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "skillhub",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "start"
+      ],
+      "port": 9444
+    },
+    {
+      "name": "skillhub-sandbox",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=9445",
+        "DATA_DIR=/private/tmp/claude-501/-Users-liukun-workspace-AnotherSkillHub/7116bf4b-60d1-4477-8bd5-254153a99981/scratchpad/sandbox-data",
+        "STORAGE_DIR=/private/tmp/claude-501/-Users-liukun-workspace-AnotherSkillHub/7116bf4b-60d1-4477-8bd5-254153a99981/scratchpad/sandbox-data/skills_files",
+        "node",
+        "server/index.js"
+      ],
+      "port": 9445
+    },
+    {
+      "name": "skillhub-usage",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=9446",
+        "DATA_DIR=/private/tmp/claude-501/-Users-liukun-workspace-AnotherSkillHub/09e29b75-34f8-4947-920d-ca0ecfb92847/scratchpad/usage-data",
+        "STORAGE_DIR=/private/tmp/claude-501/-Users-liukun-workspace-AnotherSkillHub/09e29b75-34f8-4947-920d-ca0ecfb92847/scratchpad/usage-data/skills_files",
+        "ASH_EMBED_URL=http://127.0.0.1:11434",
+        "node",
+        "server/index.js"
+      ],
+      "port": 9446
+    }
+  ]
+}

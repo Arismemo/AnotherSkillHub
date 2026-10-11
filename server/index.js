@@ -23,6 +23,7 @@ app.get('/healthz', (req, res) => res.json({ ok: true }));
 
 // 挂载 API：除 /api/auth 外全部需要登录（网页会话）或 API token（CLI / Agent）
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/share', require('./routes/shares'));
 app.use('/api/skills', requireAuth, skillsRoutes);
 app.use('/api/session', requireAuth, require('./routes/session'));
 app.use('/api/bundles', requireAuth, require('./routes/bundles'));

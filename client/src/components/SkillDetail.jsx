@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { VersionHistoryModal } from './Modals';
+import ShareModal from './ShareModal';
 import ReviewPanel from './ReviewPanel';
 import UsagePanel from './UsagePanel';
 import RelationsPanel from './RelationsPanel';
@@ -45,6 +46,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
   const [fileError, setFileError] = useState('');
   const [copied, setCopied] = useState('');
   const [showVersions, setShowVersions] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   // 文件栏在滚动区 <640px 时自动收成细条（点击恢复），正文优先
   const [fileBarCollapsed, setFileBarCollapsed] = useState(false);
   const fileBarManualRef = useRef(false); // 用户手动展开过则不再自动收起
@@ -275,6 +277,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
         copied={copied}
         onCopy={copyToClipboard}
         onShowVersions={() => setShowVersions(true)}
+        onShare={() => setShowShare(true)}
         mode={mode}
         dirty={dirty}
         saving={saving}
@@ -286,6 +289,7 @@ export default function SkillDetail({ skill, onSave, onSelectFolder, onSelectTag
             const fresh = await requestJson(`/api/skills/${skill.id}`).catch(() => null);
             if (fresh) { setContent(fresh.content || ''); setSavedContent(fresh.content || ''); }
           }} />
+      <ShareModal isOpen={showShare} onClose={() => setShowShare(false)} skill={skill} />
 
       <div className="detail-body">
         {fileTree.length > 1 && (
