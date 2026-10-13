@@ -101,13 +101,13 @@ function filePathsOf(skill) {
 }
 
 // 「交给 X」里写的技能：只认带连字符的 slug 写法（单个英文词多半是普通名词），取到第一个逗号为止；
-// 同一个括号里注明「不在本库 / 库外」的不算（如「交给 hermes-agent，不在本库」）
+// 同一个括号里注明不在本库的不算（「交给 hermes-agent，不在本库」「交给 Hermes Profile `x`（不是本库技能）」）
 const HANDOFF_CLAUSE = /交给([^。；;）)\n]*)/g;
 const SLUG_TOKEN = /(?<![\w.-])[a-z0-9]+(?:-[a-z0-9]+)+(?![\w-])/g;
 function handoffTargets(text) {
   const found = new Set();
   for (const m of String(text || '').matchAll(HANDOFF_CLAUSE)) {
-    if (/不在本库|库外/.test(m[1])) continue;
+    if (/不在本库|不是本库|非本库|库外/.test(m[1])) continue;
     for (const token of m[1].split(/[，,]/)[0].match(SLUG_TOKEN) || []) found.add(token);
   }
   return [...found];
