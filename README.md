@@ -33,7 +33,7 @@ Agents multiply: you have one on your laptop, one on a rack server, one on a GPU
 - `ash push <dir> [--update]` — push a local skill; overwriting an existing slug requires `--update`
 - `ash import [dir…]` — push every local skill that ash didn't install (default: all agent skill dirs) in one go; skips ones already in the hub (`--update` to submit as updates), registers imported dirs so `ash installed` / `ash outdated` track them
 - `ash stats` — usage, feedback count and **feedback rate** over the last 30 days, per machine (also shown atop the 需关注 view)
-- `ash hooks install` — a Claude Code Stop hook: records which ash skills a session actually used, and reminds the agent once to `ash feedback` any it didn't report
+- `ash hooks install` — a Claude Code Stop hook: records which ash skills a session actually used and in what order (the call chain, shown in `ash info` and the detail view), and reminds the agent once to `ash feedback` any it didn't report — to the layer that actually failed
 - `ash guide` — the short agent guide served by the hub (`/agent.md`); `ash guide --full` for authoring, references, meta-skills and HTTP (`/agent-full.md`). Onboarding prompts just point here
 - Install layout: shared store `$ASH_STORE` (default `~/.ash/skills`) + links into `~/.claude/skills`, `~/.agents/skills`, `~/.hermes/skills` (or the single Hermes profile), `~/.dsh/skills`; `--agent` links into one agent only; `--dir` / `$ASH_SKILLS_DIR` install straight into a directory without links
 

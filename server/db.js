@@ -251,7 +251,7 @@ db.exec(`
     actor_id INTEGER,
     kind TEXT NOT NULL,              -- install | dependency | update | view | feedback
     outcome TEXT,                    -- feedback: ok | fail
-    note TEXT,
+    note TEXT,                       -- feedback: 原因；use: 'chain: a > b > c'（本次会话按先后顺序用到的技能）
     terminal TEXT,
     revision TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
