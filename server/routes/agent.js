@@ -11,7 +11,7 @@ const { execFileSync } = require('child_process');
 const multer = require('multer');
 const db = require('../db');
 const { replaceSkillOnDisk, removeSkillFromDisk, skillDirExists, cleanFolderPath, createSkillArchive, createSkillTarGzArchive, createTarGzFromContent, getSkillFileTree, getSkillFileContent } = require('../storage');
-const { normalizeSkillMeta, referencesOf, onlyLocalizationChanged, stripInstallFooter, INSTALL_FOOTER_MARK } = require('../skillMeta');
+const { normalizeSkillMeta, referencesOf, onlyLocalizationChanged, stripInstallFooter, INSTALL_FOOTER_MARK, parseFrontmatter, effectsOf, callModeOf, EFFECT_LABELS } = require('../skillMeta');
 const { libraryAnalysis, lintFor, isLocal } = require('../skillRefs');
 const { findBundle, bundleMembers } = require('../bundleLookup');
 const { scanSkill, hasHighRisk, looksLikeSecret } = require('../security');
@@ -38,6 +38,19 @@ function pinnedLookup(req, skill) {
   if (!resolved) return { error: [404, `技能 ${skill.slug} 没有 ${pin} 版本（ash versions ${skill.slug} 查看历史；当前是 ${skill.version}）`] };
   return { resolved, pin };
 }
+// ash info 里的副作用与调用方式：Agent 据此判断做之前要不要先找用户确认、能不能放进子代理
+function effectLines(skill) {
+  const { data } = parseFrontmatter(skill.content || '');
+  const effects = effectsOf(data);
+  const lines = [];
+  if (effects.value) {
+    const hint = { 'read-only': '', temporary: '（会留下进程、隧道或窗口，用完要收）', mutating: '（部署启停、改配置、删数据或对外发布：做之前先找用户确认）' };
+    lines.push(`副作用: ${EFFECT_LABELS[effects.value]}（effects: ${effects.value}）${hint[effects.value]}`);
+  }
+  if (callModeOf(data).value === 'fork') lines.push('调用方式: 独立调用（call: fork）—— Claude Code 里在子代理执行，只交回契约约定的结果；调用时把输入写全');
+  return lines;
+}
+
 const feedbackHint = (slug) => `按本技能完成任务后，请运行 \`ash feedback ${slug} ok\`；没走通则运行 \`ash feedback ${slug} fail "一句话原因"\`。`;
 const LINT_ICON = { warn: '⚠️ ', info: 'ℹ️ ' };
 // 写作风格类提示（info）：全库检查时默认不列，见 GET /lint
@@ -129,6 +142,7 @@ router.get('/:slug/info', (req, res) => {
     `目录: ${skill.folder_path}${tags.length ? ` · 标签: ${tags.join(', ')}` : ''} · 修订 ${skillRevision(skill)}`,
     ...(deps.length ? [`依赖: ${deps.join(', ')}${missing.length ? `（库中缺失或未发布: ${missing.join(', ')}）` : ''}  —— ash pull 会一并安装`] : []),
     ...(dependents.length ? [`被引用: ${dependents.length} 个技能（${dependents.join(', ')}）—— 修改它会影响这些技能`] : []),
+    ...effectLines(skill),
     `使用: ${usageLine(usage)}`,
     ...usage.health.map((h) => `⚠️  ${h.label}：${h.detail}`),
     ...usage.recent_feedback.filter((f) => f.outcome === 'fail' && f.current && f.note).slice(0, 3)
@@ -490,6 +504,8 @@ api.post('/push', upload.single('file'), async (req, res) => {
     const base = getBaseUrl(req);
 
     let result;
+    // 直接发布的更新：库里马上就是新内容，契约检查要拿推送前已发布的那份来比
+    let previousContent;
     if (existing) {
       if (existing.is_deleted) return fail(409, `标识符 ${slug} 属于废纸篓中的技能，请先在网页上恢复或彻底删除`, { slug });
       if (!truthy(body.update)) {
@@ -518,6 +534,7 @@ api.post('/push', upload.single('file'), async (req, res) => {
           meta.frontmatter.version ? meta.version : existing.version, terminalSource, JSON.stringify(securityWarnings),
           isPending ? 'pending' : 'approved', existing.id);
         replaceSkillOnDisk(uid, existing.folder_path, slug, content, archiveFiles);
+        if (!isPending) previousContent = existing.content;
         result = { ...common, action: 'updated', status: isPending ? 'pending' : 'approved' };
       } else {
         db.prepare(`
@@ -553,7 +570,7 @@ api.post('/push', upload.single('file'), async (req, res) => {
 
     // 技能检查（引用、元技能契约、重复的步骤）；双语描述缺失已经在上面的元数据提示里
     const pushed = findSkill(uid, slug);
-    const lint = lintFor(uid, pushed, { username: req.user.username, content: result.action === 'update-pending' ? content : undefined })
+    const lint = lintFor(uid, pushed, { username: req.user.username, content: result.action === 'update-pending' ? content : undefined, previous: previousContent })
       .filter((i) => i.code !== 'bilingual');
 
     const payload = {

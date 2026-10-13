@@ -5,7 +5,7 @@
 //   · 正文里指向 ../<slug>/SKILL.md 的本地链接，以及指向别的技能里文件的相对路径（../<slug>/references/x.md、../<slug>/scripts/run.sh）
 //   · 同一行里既有「元技能 / meta-skill」又有某个元技能完整 slug 的写法，如「用元技能 `verification-discipline`」
 // 随口提到另一个技能的名字不算——仲裁规则里写「否则用 X」并不是引用 X；「交给 X」只检查 X 存不存在，不算引用。
-const { parseFrontmatter, referencesOf, missingLanguages, localizedMeta, LANGUAGE_HINT } = require('./skillMeta');
+const { parseFrontmatter, referencesOf, missingLanguages, localizedMeta, LANGUAGE_HINT, effectsOf, callModeOf, EFFECT_LEVELS, EFFECT_LABELS } = require('./skillMeta');
 const { extractCommands, sharedRuns, extractProseSteps, sharedProseRuns } = require('./skillSteps');
 
 const META_WORD = /元技能|meta[- ]skill/i;
@@ -136,6 +136,30 @@ function section(body, titles) {
   return next ? rest.slice(0, next.index) : rest;
 }
 
+// 「## 契约」里的各项：表格行「| **输入** | … |」或列表行「- 输入：…」→ Map(项名 → 内容，空白已归一)。表头和分隔行不算
+const CONTRACT_TITLES = ['契约', 'Contract', '接口', 'Interface'];
+const CONTRACT_HEADER = /^(项|字段|item|field)$/i;
+function contractRows(text) {
+  const rows = new Map();
+  const clean = (value) => value.replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+  for (const line of String(text || '').split('\n')) {
+    const cells = /^\s*\|(.+)\|\s*$/.exec(line);
+    if (cells) {
+      const [label, ...rest] = cells[1].split('|').map(clean);
+      if (label && !/^[-:\s]+$/.test(label) && !CONTRACT_HEADER.test(label)) rows.set(label, rest.join(' | '));
+      continue;
+    }
+    const item = /^\s*[-*]\s*\**([^：:*\n]{1,12}?)\**\s*[：:]\s*(.*)$/.exec(line);
+    if (item) rows.set(clean(item[1]), clean(item[2]));
+  }
+  return rows;
+}
+
+const majorOf = (version) => {
+  const m = /^v?(\d+)\.\d+/.exec(String(version || '').trim());
+  return m ? Number(m[1]) : null;
+};
+
 // 「## 被谁引用」里列出的技能：反引号里的 slug，或列表项开头的 slug（库里已经没有的也要列出来，才能提示它过时了）
 function listedSlugs(text, self) {
   const found = new Set();
@@ -154,7 +178,11 @@ function analyzeSkill(skill, library) {
   const { refs: inBody, inline: inBodyInline, absolute, files } = bodyReferences(body, library.metaSlugs);
   inBody.delete(skill.slug);
   inBodyInline.delete(skill.slug);
-  const contract = section(body, ['契约', 'Contract', '接口', 'Interface']);
+  const contract = section(body, CONTRACT_TITLES);
+  const rows = contractRows(contract);
+  const has = (re) => [...rows.keys()].some((k) => re.test(k));
+  const effects = effectsOf(data);
+  const call = callModeOf(data);
   const usedBy = section(body, ['被谁引用', 'Used by', '调用方']);
   return {
     id: skill.id, slug: skill.slug, name: skill.name, status: skill.status, version: skill.version, meta, frontmatterError, body,
@@ -167,7 +195,12 @@ function analyzeSkill(skill, library) {
     filePaths: filePathsOf(skill),
     contract: contract === null ? null : {
       input: /输入|input/i.test(contract), output: /输出|output|返回|拿回/i.test(contract),
+      resources: has(/^(资源|resources?)$/i), rows,
     },
+    // frontmatter 里的版本号：待审内容的版本以它为准（库里那一行还是旧版本）
+    declaredVersion: data.version !== undefined && data.version !== null ? String(data.version).trim() : (skill.version || null),
+    effects: effects.value, effectsRaw: effects.raw, effectsInvalid: effects.invalid,
+    call: call.value, callRaw: call.raw, callInvalid: call.invalid,
     usedByListed: usedBy === null ? null : listedSlugs(usedBy, skill.slug),
     missingLanguages: skill.description ? missingLanguages(skill.description, localizedMeta(data)) : [],
     hasEnglishDescription: Boolean(localizedMeta(data).description_en),
@@ -212,7 +245,7 @@ const pinAvailable = (analysis, ref) => Boolean(analysis.historyVersions?.get(re
 
 // 从 slug 出发的引用链：
 //   cycle    沿所有引用边找回到自己的环
-//   longest  只沿指向元技能、且要读进上下文的边走出的最长链（层数提醒用）
+//   longest  只沿指向元技能、且要读进上下文的边走出的最长链（层数提醒用）；独立调用的元技能不往下走
 function chainFrom(analysis, slug) {
   let longest = [slug];
   let cycle = null;
@@ -225,7 +258,9 @@ function chainFrom(analysis, slug) {
   const walkDepth = (path) => {
     if (path.length > longest.length) longest = path;
     for (const next of (analysis.inlineOutgoing || analysis.outgoing).get(path[path.length - 1]) || []) {
-      if (path.includes(next) || !analysis.bySlug.get(next)?.meta) continue;
+      const target = analysis.bySlug.get(next);
+      // 独立调用（call: fork）的元技能在子代理里执行，是新的上下文：它自己的层数在检查它时单算
+      if (path.includes(next) || !target?.meta || target.call === 'fork') continue;
       if (path.length <= 6) walkDepth([...path, next]);
     }
   };
@@ -252,6 +287,56 @@ function sharedStepsOf(analysis, entry) {
   const runs = inLibrary ? analysis.runs : computeRuns([entry, ...analysis.entries.filter((e) => e.id !== entry.id)]);
   return runs.filter((r) => r.skills.includes(entry.id))
     .map((r) => ({ others: idsToSlugs(analysis, r.skills.filter((id) => id !== entry.id)), commands: r.commands, kind: r.kind }));
+}
+
+// ——— 副作用与调用方式（effects / call）———
+const RANK = Object.fromEntries(EFFECT_LEVELS.map((level, i) => [level, i]));
+const effectName = (level) => `${level}（${EFFECT_LABELS[level]}）`;
+
+function effectIssues(analysis, entry, add) {
+  if (entry.effectsInvalid) add('effects-invalid', 'warn', `effects 写成了「${entry.effectsRaw}」：只能是 read-only（只读）、temporary（临时占用，用完要收）或 mutating（改动）`);
+  if (entry.callInvalid) add('call-invalid', 'warn', `call 写成了「${entry.callRaw}」：只能是 inline（默认，读进调用方的上下文）或 fork（独立调用，在子代理里执行）`);
+  // 像 const：按本技能做事会经过被调用技能的步骤，副作用至少和它一样大
+  const callees = [...new Set([...entry.declared.filter((r) => !r.owner).map((r) => r.slug), ...entry.inBody])]
+    .map((slug) => analysis.bySlug.get(slug)).filter((t) => t && t.effects && t.slug !== entry.slug);
+  if (entry.effects) {
+    for (const t of callees) {
+      if (RANK[t.effects] <= RANK[entry.effects]) continue;
+      add('effects-escalation', 'warn', `声明了 effects: ${entry.effects}，但引用的 ${t.slug} 是 ${effectName(t.effects)}：按本技能做事会经过它的步骤，`
+        + `effects 至少要写 ${t.effects}；如果只用到 ${t.slug} 里不改东西的部分，改成引用那一部分（例如它的 references 文件）`);
+    }
+  } else if (!entry.effectsInvalid) {
+    const risky = callees.filter((t) => t.effects !== 'read-only');
+    if (entry.meta) add('effects-missing', 'info', '元技能没有声明 effects（read-only / temporary / mutating）：调用方要靠它判断能不能放进子代理、做之前要不要先找用户确认');
+    else if (risky.length) add('effects-missing', 'info', `引用了 ${risky.map((t) => `${t.slug}（${effectName(t.effects)}）`).join('、')}，本技能却没有声明 effects：写上本技能的级别，Agent 才知道哪一步要先确认`);
+  }
+  if (entry.call === 'fork') {
+    if (entry.effects === 'mutating') {
+      add('fork-mutating', 'warn', 'call: fork 的技能在子代理里执行：子代理没法当场找用户确认，在后台跑用户也看不见。改动级（mutating）的技能不能独立调用，去掉 call: fork');
+    } else if (!entry.effects) {
+      add('fork-effects', 'info', 'call: fork 的技能要声明 effects（read-only 或 temporary）：调用方据此确认它能放进子代理');
+    }
+    if (!entry.contract || !entry.contract.input || !entry.contract.output) {
+      add('fork-contract', 'warn', '独立调用（call: fork）的技能在子代理里执行，子代理看不到调用方的对话，调用方也只拿得到它交回的结果：「## 契约」要写清输入（调用时要传什么）和输出（交回什么、什么格式）');
+    }
+  }
+  if (entry.contract && (entry.effects === 'temporary' || entry.effects === 'mutating') && !entry.contract.resources) {
+    add('contract-resources', 'info', `effects 是 ${effectName(entry.effects)}，但「## 契约」没有「资源」一项：写清会占用什么（后台进程、隧道、窗口、临时文件）、由谁在什么时候收，中途失败也要收`);
+  }
+}
+
+// 契约里已有的项改了或删了，等于改了函数签名：要升主版本，依赖它的技能要复核。只新增项向后兼容
+function contractChangeIssues(analysis, entry, previous, add) {
+  if (previous.status === 'pending' || !previous.contract || !previous.contract.rows.size) return;
+  const after = entry.contract ? entry.contract.rows : new Map();
+  const changed = [...previous.contract.rows].filter(([label, text]) => !after.has(label) || after.get(label) !== text).map(([label]) => label);
+  if (!changed.length) return;
+  const before = majorOf(previous.declaredVersion);
+  const now = majorOf(entry.declaredVersion);
+  if (before === null || now === null || now > before) return;
+  const dependents = (analysis.dependents.get(entry.slug) || []).filter((s) => s !== entry.slug);
+  add('contract-major', 'warn', `「## 契约」里的 ${changed.join('、')} 改了或删了，但版本 ${previous.declaredVersion} → ${entry.declaredVersion} 没有升主版本：`
+    + `按旧契约写的调用方可能对不上。升到 ${before + 1}.0.0${dependents.length ? `，并复核依赖它的 ${dependents.join('、')}` : ''}（只新增项不用升主版本）`);
 }
 
 // ——— 全库写作约定（meta-skill-spec「全库写作约定」节的机器检查）———
@@ -296,7 +381,8 @@ function conventionIssues(entry) {
 }
 
 // 检查一个技能：[{ code, level: warn | info, msg }]。entry 默认取库里的分析结果，也可以传入待审内容的分析
-function lintSkill(analysis, entry, { username = null } = {}) {
+// previous：同一技能上一个已发布版本的分析结果（推送更新、ash lint 本地目录时由 lintFor 给出），用来检查契约改动
+function lintSkill(analysis, entry, { username = null, previous = null } = {}) {
   const issues = [];
   const add = (code, level, msg) => issues.push({ code, level, msg });
   // frontmatter 解析失败时 name / description / depends_on 全部丢失，Agent 框架也读不到——最先修
@@ -369,6 +455,9 @@ function lintSkill(analysis, entry, { username = null } = {}) {
       add('deep-chain', 'info', `元技能引用链有 ${longest.length - 1} 层（${longest.join(' → ')}）：每多一层元技能，Agent 就要多读一个文件、多一个可能断的地方；考虑把中间层的内容收进调用方，或把下层的确定性步骤做成脚本`);
     }
   }
+
+  effectIssues(analysis, entry, add);
+  if (previous && previous !== entry) contractChangeIssues(analysis, entry, previous, add);
 
   if (entry.meta) {
     const actual = (analysis.dependents.get(entry.slug) || []).filter((s) => s !== entry.slug);
@@ -457,12 +546,18 @@ function entryFor(userId, skill, content) {
   return { analysis, entry };
 }
 
-function lintFor(userId, skill, { username = null, content } = {}) {
+// previous：上一版的 SKILL.md 全文（直接发布的更新，库里已经是新内容时由调用方传入）；
+// 不传时，检查待审内容就和库里已发布的那份比
+function lintFor(userId, skill, { username = null, content, previous } = {}) {
   const { analysis, entry } = entryFor(userId, skill, content);
-  return lintSkill(analysis, entry, { username });
+  const inLibrary = analysis.bySlug.get(skill.slug);
+  let before = null;
+  if (previous !== undefined && previous !== null) before = analyzeSkill({ ...skill, content: previous, version: null }, analysis.library);
+  else if (inLibrary && inLibrary !== entry) before = inLibrary;
+  return lintSkill(analysis, entry, { username, previous: before });
 }
 
 module.exports = {
   analyzeLibrary, analyzeSkill, lintSkill, sharedStepsOf, chainFrom, isMetaSkill, isLocal, bodyReferences, structuralFlags,
-  libraryAnalysis, entryFor, lintFor, splitBody, pinAvailable, EXTRACT_MIN,
+  libraryAnalysis, entryFor, lintFor, splitBody, pinAvailable, contractRows, EXTRACT_MIN,
 };

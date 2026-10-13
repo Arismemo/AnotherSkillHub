@@ -256,6 +256,20 @@ test('references end to end: push hints, ash lint, local resolution after instal
     assert.match(ok(['show', 'replay']).stdout, /本技能引用：`dev-build`（ash show dev-build）/);
   });
 
+  await t.test('call: fork becomes Claude Code fork fields on install and is stripped again on push', async () => {
+    const forked = md('name: page-check\ndescription: 【元技能】页面体检。不要用于交互（交给 dev-build）。Use when checking pages.\ncall: fork\neffects: read-only',
+      '# 体检\n\n## 契约\n- 输入：base URL\n- 输出：通过 / 不通过 + 问题清单\n\n## 被谁引用\n');
+    ok(['push', writeSkill(forked)]);
+    await approve('page-check');
+    const dir = path.join(work, 'forked');
+    ok(['pull', 'page-check', '--dir', dir]);
+    const installed = fs.readFileSync(path.join(dir, 'page-check', 'SKILL.md'), 'utf8');
+    assert.match(installed, /^context: fork # ash:call-fork\nbackground: false # ash:call-fork\n---$/m, 'added at the end of the frontmatter');
+    assert.match(ok(['installed', '--dir', dir]).stdout, /page-check .* 最新/, 'the added fields are part of the recorded fingerprint');
+    assert.match(ok(['push', path.join(dir, 'page-check'), '--update']).stdout, /内容无变化/);
+    assert.match(ok(['info', 'page-check']).stdout, /副作用: 只读[\s\S]*调用方式: 独立调用/);
+  });
+
   await t.test('inside Claude Code, skills install where Claude Code loads them', () => {
     ok(['pull', 'replay'], { CLAUDECODE: '1' });
     assert.ok(fs.existsSync(path.join(home, '.claude', 'skills', 'replay', 'SKILL.md')));

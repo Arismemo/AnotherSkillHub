@@ -164,6 +164,25 @@ rm -f "$STAGING/.ash"
 if [ -d "$STAGING/scripts" ]; then
   chmod +x "$STAGING/scripts"/* 2>/dev/null || true
 fi
+# 声明了 call: fork（独立调用）的技能：给 Claude Code 补上 context: fork / background: false，让它在子代理里执行、调用方等结果。
+# 其他 Agent 不认这两个字段，照常当普通技能读；作者自己写了 context / background 的不动；推送回库时服务端会去掉这两行
+add_fork_fields() {
+  awk '
+    NR == 1 { fm = ($0 == "---"); print; next }
+    fm && $0 == "---" {
+      if (fork && !ctx) print "context: fork # ash:call-fork"
+      if (fork && !bg) print "background: false # ash:call-fork"
+      fm = 0; print; next
+    }
+    fm && /^call:[ \t]*"?fork"?[ \t]*(#.*)?$/ { fork = 1 }
+    fm && /^context:/ { ctx = 1 }
+    fm && /^background:/ { bg = 1 }
+    { print }
+  ' "$1" > "$1.ash-tmp" && mv "$1.ash-tmp" "$1"
+}
+if [ -f "$STAGING/SKILL.md" ] && grep -Eq '^call:[[:space:]]*"?fork"?[[:space:]]*(#.*)?$' "$STAGING/SKILL.md"; then
+  add_fork_fields "$STAGING/SKILL.md"
+fi
 # 末尾附一段说明：引用的技能在本机哪里、用完怎么反馈。Agent 每次按技能干活都会读 SKILL.md，这是告诉它的唯一地方。
 # 推送回库时服务端会去掉这段；ASH_FEEDBACK_HINT=0 可不加
 if [ "${ASH_FEEDBACK_HINT:-1}" != "0" ] && [ -f "$STAGING/SKILL.md" ]; then

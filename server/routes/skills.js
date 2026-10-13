@@ -40,6 +40,9 @@ function relations(user, skill) {
   const out = {
     refs: {
       meta: entry.meta,
+      // 副作用级别与调用方式：详情页标题旁的标记
+      effects: entry.effects,
+      call: entry.call,
       declared,
       undeclared: [...entry.inBody].filter((slug) => !declared.some((d) => d.slug === slug) && analysis.bySlug.has(slug)),
       dependents: (analysis.dependents.get(skill.slug) || []).map((slug) => brief(analysis.bySlug.get(slug))),

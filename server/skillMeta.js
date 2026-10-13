@@ -66,6 +66,32 @@ function referencesOf(content) {
   return { refs, invalid };
 }
 
+// ——— 副作用与调用方式 ———
+// effects：按本技能做事会对被操作的系统做什么，像 C++ 的 const，调用方据此判断能不能放进子代理、要不要先找用户确认
+//   read-only  只读：只查看、读取；在本机写结果、在自己的工作目录放脚本不算改动
+//   temporary  临时占用：会留下持续运行的东西（后台进程、隧道、tmux 窗口、监测服务），用完必须收（契约里写「资源」）
+//   mutating   改动：部署、启停、改配置、删数据、推送代码、发布或发消息
+// call：inline（默认，读进调用方的上下文照做）| fork（独立调用：在子代理里执行，只交回契约约定的结果）
+// 中文写法也认；Agent Skills 规范要求 metadata 的值是字符串，所以 metadata.effects / metadata.call 也认
+const EFFECT_LEVELS = ['read-only', 'temporary', 'mutating'];
+const EFFECT_LABELS = { 'read-only': '只读', temporary: '临时占用', mutating: '改动' };
+const EFFECT_ALIASES = {
+  'read-only': 'read-only', readonly: 'read-only', 只读: 'read-only',
+  temporary: 'temporary', 临时: 'temporary', 临时占用: 'temporary',
+  mutating: 'mutating', 改动: 'mutating',
+};
+const CALL_ALIASES = { inline: 'inline', 内联: 'inline', fork: 'fork', 独立调用: 'fork' };
+
+function enumField(data, key, aliases, fallback) {
+  const raw = data?.[key] ?? data?.metadata?.[key];
+  if (raw === undefined || raw === null || String(raw).trim() === '') return { value: fallback, raw: null, invalid: false };
+  const text = String(raw).trim();
+  const value = aliases[text.toLowerCase()] || aliases[text] || null;
+  return { value: value || fallback, raw: text, invalid: !value };
+}
+const effectsOf = (data = {}) => enumField(data, 'effects', EFFECT_ALIASES, null);
+const callModeOf = (data = {}) => enumField(data, 'call', CALL_ALIASES, 'inline');
+
 // ——— 双语描述 ———
 // 两种语言都有，中文任务和英文任务才都能找到它，查重也才能跨语言对上；以后网页做双语界面直接用这两个字段。
 // 只要求元数据双语，不要求正文写两份：两份正文要同步维护、迟早漂移，而读正文的 Agent 本来就中英文都懂
@@ -152,11 +178,15 @@ function normalizeSkillMeta(content, explicit = {}, { fileName = '' } = {}) {
 // 只去掉这一段——Agent 常在文件末尾（这段之后）追加修正，那些内容必须保留
 const INSTALL_FOOTER_MARK = '<!-- ash:installed -->';
 const INSTALL_FOOTER = /\n<!-- ash:installed -->\n(?:> [^\n]*(?:\n|$))+/g;
+// 声明了 call: fork 的技能，安装时在 frontmatter 里补上 Claude Code 的 context: fork / background: false（见 templates/install.sh），
+// 行尾带这个标记；推送回库时和尾注一起去掉
+const INSTALL_FORK_FIELDS = /^(?:context: fork|background: false) # ash:call-fork\r?\n/gm;
 function stripInstallFooter(content) {
-  return String(content || '').replace(INSTALL_FOOTER, '');
+  return String(content || '').replace(INSTALL_FOOTER, '').replace(INSTALL_FORK_FIELDS, '');
 }
 
 module.exports = {
   slugify, normalizeSkillMeta, normalizeTags, parseFrontmatter, declaredDependencies, parseReference, referencesOf,
   languagesOf, localizedMeta, missingLanguages, onlyLocalizationChanged, LANGUAGE_HINT, stripInstallFooter, INSTALL_FOOTER_MARK,
+  effectsOf, callModeOf, EFFECT_LEVELS, EFFECT_LABELS,
 };

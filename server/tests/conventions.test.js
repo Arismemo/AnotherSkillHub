@@ -146,6 +146,9 @@ test('CLI 把规则递到 Agent 手上：--help 规则块、push --help、ash ne
     assert.match(meta, /^## 契约$/m);
     assert.match(meta, /^## 被谁引用$/m);
     assert.match(meta, /^description: 【元技能】/m);
+    assert.match(meta, /^effects: read-only/m, 'meta skills start with an explicit effects level');
+    assert.match(meta, /^- 资源：/m);
+    assert.doesNotMatch(ok(['lint', path.join(metaDir, 'meta-demo')]).stdout, /⚠️/, 'the meta scaffold has no warnings either');
 
     const bad = ash(['new', 'Bad_Slug', '--dir', dir]);
     assert.notEqual(bad.status, 0);

@@ -58,12 +58,20 @@ export function SharedSteps({ items, onOpenSkill }) {
 }
 
 // 详情页的引用关系：引用了谁、被谁引用、与谁有相同的步骤，以及技能检查（双语描述、引用写法、元技能契约）
+// 副作用级别（frontmatter effects）：改动级要先找用户确认，临时占用要收尾
+const EFFECTS = {
+  'read-only': { label: '只读', className: 'chip-muted', title: '只查看、读取，不改变被操作的系统' },
+  temporary: { label: '临时占用', className: 'chip-warning', title: '会留下后台进程、隧道或窗口，用完要收' },
+  mutating: { label: '改动', className: 'chip-danger', title: '部署启停、改配置、删数据或对外发布：做之前先找用户确认，不能放进子代理' },
+};
+
 export default function RelationsPanel({ detail, onOpenSkill }) {
   const refs = detail?.refs;
   if (!refs) return null;
   const lint = detail.status === 'pending' ? [] : (detail.lint || []);
   const shared = detail.shared_steps || [];
-  const hasContent = refs.meta || refs.declared.length || refs.undeclared.length || refs.dependents.length || shared.length || lint.length;
+  const effects = EFFECTS[refs.effects];
+  const hasContent = refs.meta || effects || refs.call === 'fork' || refs.declared.length || refs.undeclared.length || refs.dependents.length || shared.length || lint.length;
   if (!hasContent) return null;
 
   return (
@@ -72,6 +80,8 @@ export default function RelationsPanel({ detail, onOpenSkill }) {
         <GitBranch size={14} aria-hidden="true" />
         <strong>引用关系</strong>
         {refs.meta && <span className="chip chip-muted" title="被别的技能在流程中引用的基础动作">元技能</span>}
+        {effects && <span className={`chip ${effects.className}`} title={effects.title}>{effects.label}</span>}
+        {refs.call === 'fork' && <span className="chip chip-accent" title="call: fork：Claude Code 里在子代理执行，只交回契约约定的结果">独立调用</span>}
         <span className="usage-stats">
           引用 {refs.declared.length} 个 · 被 {refs.dependents.length} 个技能引用
         </span>
