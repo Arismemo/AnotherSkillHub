@@ -566,7 +566,7 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   ash info <slug>                 描述、依赖、文件清单、版本与安装命令
   ash show <slug>[@版本] [--version ID] [--pending]       直接输出 SKILL.md（不安装）；@版本 取那一版
   ash versions <slug>             历史版本列表
-  ash lint [slug|技能目录] [--only CODE] [--all] [--json]  技能检查：写作约定、双语描述、引用、元技能契约、重复的步骤、能否被 Agent 调用
+  ash lint [slug|技能目录] [--only CODE] [--all] [--json]  技能检查：写作约定、双语描述、引用、元技能契约、副作用与调用方式、重复的步骤、能否被 Agent 调用
                                   传本地目录时检查还没推送的版本；不带参数检查全库（默认只列 ⚠️，--all 连写作风格提示一起列）
 
 技能组合
@@ -1119,13 +1119,16 @@ EOF
     fi
     mkdir -p "$target"
     if [ "$meta" = 1 ]; then
-      prefix="【元技能】"; extra='
+      prefix="【元技能】"; effects_line='effects: read-only   # read-only 只读 | temporary 临时占用（用完要收）| mutating 改动（部署启停、改配置、删数据、发布）
+# call: fork          # 只读且输出量大的动作可以独立调用：Claude Code 里在子代理执行，只交回契约约定的结果'; extra='
 ## 契约
 
 - 输入：调用方要给什么
-- 输出：调用方拿回什么
+- 输出：调用方拿回什么（独立调用时写明交回的格式）
 - 前置：需要什么环境
-- 失败：失败时返回什么、调用方该怎么办
+- 失败：失败时返回什么、调用方该怎么办（原样交回错误，不要改写成别的结论）
+- 副作用：会改动什么（只读就写「只读」）
+- 资源：会留下什么要收（后台进程、隧道、窗口、临时文件）、谁在什么时候收；没有就写「无」
 
 ## 陷阱
 
@@ -1137,7 +1140,7 @@ EOF
 |---|---|
 '
     else
-      prefix=""; extra='
+      prefix=""; effects_line='# effects: read-only   # read-only 只读 | temporary 临时占用（用完要收）| mutating 改动（部署启停、改配置、删数据、发布）'; extra='
 ## 验证
 
 怎样确认完成、常见失败怎么处理。需要判定证据是否足够时引用验收纪律的元技能，并把它加进 depends_on（ash suggest "验收 证据" 能找到）。
@@ -1149,7 +1152,8 @@ name: $slug
 description: ${prefix}<中文：做什么>。用户说「<触发说法>」时使用。不要用于<相近但不归本技能的事>（交给 <slug>）。Use when <English trigger>.
 version: 1.0.0
 tags: []
-# depends_on: [<做事时真要读或要跑的技能>]   只列流程里用到的；「交给 X」这类边界不列
+# depends_on: [<做事时真要读或要跑的技能>]   只列流程里用到的，用到的一定要列；「交给 X」这类边界不列
+$effects_line
 ---
 
 # <人读标题>
