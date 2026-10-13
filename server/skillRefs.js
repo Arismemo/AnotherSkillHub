@@ -2,14 +2,16 @@
 //
 // 引用只认明确的信号（与依赖图一致）：
 //   · frontmatter depends_on（ash pull 据此一并安装）
-//   · 正文里指向 ../<slug>/SKILL.md 的本地链接
+//   · 正文里指向 ../<slug>/SKILL.md 的本地链接，以及指向别的技能里文件的相对路径（../<slug>/references/x.md、../<slug>/scripts/run.sh）
 //   · 同一行里既有「元技能 / meta-skill」又有某个元技能完整 slug 的写法，如「用元技能 `verification-discipline`」
-// 随口提到另一个技能的名字不算——仲裁规则里写「否则用 X」并不是引用 X。
+// 随口提到另一个技能的名字不算——仲裁规则里写「否则用 X」并不是引用 X；「交给 X」只检查 X 存不存在，不算引用。
 const { parseFrontmatter, referencesOf, missingLanguages, localizedMeta, LANGUAGE_HINT } = require('./skillMeta');
 const { extractCommands, sharedRuns, extractProseSteps, sharedProseRuns } = require('./skillSteps');
 
 const META_WORD = /元技能|meta[- ]skill/i;
-const MAX_CHAIN = 2;       // 引用链超过这么多层给出提醒：每多一层，Agent 就多读一个文件、多一个可能断的地方
+// 元技能引用链超过这么多层给出提醒：调用一个技能就是把它的正文读进同一个上下文，每多一层元技能，Agent 就多读一个文件、
+// 多一个可能断的地方。只沿指向元技能的边数：业务技能把一整段阶段交给另一个业务技能，是那个技能自己的结构，不算进调用方
+const MAX_CHAIN = 2;
 const EXTRACT_MIN = 3;     // 三次法则：≥3 个技能在重复同一段操作才建议提炼元技能
 
 function list(value) {
@@ -46,26 +48,81 @@ function slugPattern(slug) {
   return slugPatterns.get(slug);
 }
 
-// 正文里的引用：{ refs: Set<slug>, absolute: [绝对路径链接] }
+// 指向别的技能目录里文件的相对路径（SKILL.md 之外）：../<slug>/references/x.md、../<slug>/scripts/run.sh
+const SIBLING_FILE = /^(?:\.\/)?\.\.\/([A-Za-z0-9_.-]+)\/(.+)$/;
+
+// 正文里的引用：
+//   refs     Set<slug>：引用了哪些技能
+//   inline   Set<slug>：其中要读进上下文的（链接到 SKILL.md 或 references/、写着「元技能 x」）；只跑对方脚本的不算，脚本是叶子
+//   absolute [绝对路径链接]
+//   files    [{ slug, path }]：链接到别的技能里的哪个文件，检查时核对文件在不在
 function bodyReferences(body, metaSlugs) {
   const prose = stripFences(body);
   const refs = new Set();
+  const inline = new Set();
   const absolute = [];
+  const files = [];
+  const sibling = (path) => {
+    const m = SIBLING_FILE.exec(path);
+    if (!m || /^SKILL\.md$/i.test(m[2])) return;
+    const rel = m[2].replace(/\/+$/, '');
+    refs.add(m[1]);
+    if (!/^scripts\//.test(rel)) inline.add(m[1]);
+    if (!files.some((f) => f.slug === m[1] && f.path === rel)) files.push({ slug: m[1], path: rel });
+  };
   for (const match of prose.matchAll(/\[[^\]]*\]\(<?([^\s)>]+)(?:>?(?:\s+"[^"]*")?)\)/g)) {
     const href = match[1];
     if (/^[a-z][a-z\d+.-]*:/i.test(href)) continue;
     let path;
     try { path = decodeURIComponent(href.split(/[?#]/)[0]); } catch { continue; }
     const target = path.match(/(?:^|\/)([^/]+)\/SKILL\.md$/i);
-    if (!target) continue;
+    if (!target) { sibling(path); continue; }
     refs.add(target[1]);
+    inline.add(target[1]);
     if (/^(~|\/|[A-Za-z]:\\)/.test(path)) absolute.push(path);
   }
+  // 行内代码里写的相对路径也算：`../verification-discipline/references/evidence.md`
+  for (const match of prose.matchAll(/`(\.{1,2}\/[^`\s]+)`/g)) sibling(match[1]);
   for (const line of prose.split('\n')) {
     if (!META_WORD.test(line)) continue;
-    for (const slug of metaSlugs) if (slugPattern(slug).test(line)) refs.add(slug);
+    for (const slug of metaSlugs) if (slugPattern(slug).test(line)) { refs.add(slug); inline.add(slug); }
   }
-  return { refs, absolute };
+  return { refs, inline, absolute, files };
+}
+
+// 技能目录里有哪些附属文件：库里的技能带 file_paths（见 skillIndex）或 files；拿不到时为 null，不做文件核对
+function filePathsOf(skill) {
+  const raw = skill.file_paths ?? skill.files;
+  if (raw === undefined || raw === null) return null;
+  try {
+    const list = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(list) ? new Set(list.map((f) => (typeof f === 'string' ? f : f?.path)).filter(Boolean)) : null;
+  } catch { return null; }
+}
+
+// 「交给 X」里写的技能：只认带连字符的 slug 写法（单个英文词多半是普通名词），取到第一个逗号为止；
+// 同一个括号里注明「不在本库 / 库外」的不算（如「交给 hermes-agent，不在本库」）
+const HANDOFF_CLAUSE = /交给([^。；;）)\n]*)/g;
+const SLUG_TOKEN = /(?<![\w.-])[a-z0-9]+(?:-[a-z0-9]+)+(?![\w-])/g;
+function handoffTargets(text) {
+  const found = new Set();
+  for (const m of String(text || '').matchAll(HANDOFF_CLAUSE)) {
+    if (/不在本库|库外/.test(m[1])) continue;
+    for (const token of m[1].split(/[，,]/)[0].match(SLUG_TOKEN) || []) found.add(token);
+  }
+  return [...found];
+}
+
+// 改名 / 合并留下的去向（analysis.redirects 由 libraryAnalysis 从 skill_redirects 填入）：顺着走到库里还在的技能，最多 5 跳
+function movedTo(analysis, slug) {
+  let current = slug;
+  for (let hops = 0; hops < 5; hops += 1) {
+    const next = analysis.redirects?.get(current);
+    if (!next) return null;
+    if (analysis.bySlug.has(next)) return next;
+    current = next;
+  }
+  return null;
 }
 
 // 「## 标题」下的一节正文（到下一个同级或更高级标题为止）
@@ -94,8 +151,9 @@ function analyzeSkill(skill, library) {
   const body = splitBody(skill.content);
   const meta = isMetaSkill(skill, data);
   const { refs: declared, invalid } = referencesOf(skill.content);
-  const { refs: inBody, absolute } = bodyReferences(body, library.metaSlugs);
+  const { refs: inBody, inline: inBodyInline, absolute, files } = bodyReferences(body, library.metaSlugs);
   inBody.delete(skill.slug);
+  inBodyInline.delete(skill.slug);
   const contract = section(body, ['契约', 'Contract', '接口', 'Interface']);
   const usedBy = section(body, ['被谁引用', 'Used by', '调用方']);
   return {
@@ -104,7 +162,9 @@ function analyzeSkill(skill, library) {
     description: String(skill.description || ''),
     // Claude Code 不会自动调用设置了这个字段的技能——别的技能也就引用不到它
     disableModelInvocation: /^(true|yes|on|1)$/i.test(String(data['disable-model-invocation'] ?? '')),
-    declared: declared.filter((r) => r.slug !== skill.slug), invalid, inBody, absolute,
+    declared: declared.filter((r) => r.slug !== skill.slug), invalid, inBody, inBodyInline, absolute,
+    fileLinks: files.filter((f) => f.slug !== skill.slug),
+    filePaths: filePathsOf(skill),
     contract: contract === null ? null : {
       input: /输入|input/i.test(contract), output: /输出|output|返回|拿回/i.test(contract),
     },
@@ -129,9 +189,13 @@ function analyzeLibrary(skills) {
   // 被谁引用：声明的本库引用 + 正文引用（跨账号的引用不计入本库的反向索引）
   const dependents = new Map();
   const outgoing = new Map();
+  // 读进上下文的引用（声明的依赖 + 正文里要读的）：数引用链层数只走这些边，只跑对方脚本的不算
+  const inlineOutgoing = new Map();
   for (const e of entries) {
-    const targets = new Set([...e.declared.filter((r) => !r.owner).map((r) => r.slug), ...e.inBody]);
+    const declared = e.declared.filter((r) => !r.owner).map((r) => r.slug);
+    const targets = new Set([...declared, ...e.inBody]);
     outgoing.set(e.slug, [...targets].filter((t) => bySlug.has(t)));
+    inlineOutgoing.set(e.slug, [...new Set([...declared, ...e.inBodyInline])].filter((t) => bySlug.has(t)));
     for (const t of targets) {
       if (!bySlug.has(t)) continue;
       if (!dependents.has(t)) dependents.set(t, []);
@@ -140,24 +204,33 @@ function analyzeLibrary(skills) {
   }
   // 共有的命令段、文字步骤段：所有技能（含待审核，推送时的新技能也要能比对）
   const runs = computeRuns(entries);
-  return { library, entries, bySlug, dependents, outgoing, runs };
+  return { library, entries, bySlug, dependents, outgoing, inlineOutgoing, runs };
 }
 
 // 固定的版本在历史里有没有（analysis.historyVersions 由 libraryAnalysis 从 skill_versions 填入）
 const pinAvailable = (analysis, ref) => Boolean(analysis.historyVersions?.get(ref.slug)?.has(String(ref.pin)));
 
-// 从 slug 出发最长的引用链，以及遇到的环
+// 从 slug 出发的引用链：
+//   cycle    沿所有引用边找回到自己的环
+//   longest  只沿指向元技能、且要读进上下文的边走出的最长链（层数提醒用）
 function chainFrom(analysis, slug) {
   let longest = [slug];
   let cycle = null;
-  const walk = (path) => {
-    if (path.length > longest.length) longest = path;
+  const walkCycle = (path) => {
     for (const next of analysis.outgoing.get(path[path.length - 1]) || []) {
       if (path.includes(next)) { if (!cycle && next === slug) cycle = [...path, next]; continue; }
-      if (path.length <= 6) walk([...path, next]);
+      if (path.length <= 6) walkCycle([...path, next]);
     }
   };
-  walk([slug]);
+  const walkDepth = (path) => {
+    if (path.length > longest.length) longest = path;
+    for (const next of (analysis.inlineOutgoing || analysis.outgoing).get(path[path.length - 1]) || []) {
+      if (path.includes(next) || !analysis.bySlug.get(next)?.meta) continue;
+      if (path.length <= 6) walkDepth([...path, next]);
+    }
+  };
+  walkCycle([slug]);
+  walkDepth([slug]);
   return { longest, cycle };
 }
 
@@ -254,8 +327,10 @@ function lintSkill(analysis, entry, { username = null } = {}) {
     declaredLocal.add(ref.slug);
     const target = analysis.bySlug.get(ref.slug);
     if (target?.disableModelInvocation) add('ref-not-invocable', 'warn', `引用的 ${ref.slug} 设置了 disable-model-invocation: true：Claude Code 里调用不到它（仍可读 ../${ref.slug}/SKILL.md）`);
-    if (!target) add('missing-ref', 'warn', `引用的 ${ref.slug} 不在库里（或已删除）：ash pull 装不上它`);
-    else if (target.status === 'pending') add('pending-ref', 'info', `引用的 ${ref.slug} 还在待审核：采纳前别的机器装不上它`);
+    if (!target) {
+      const moved = movedTo(analysis, ref.slug);
+      add('missing-ref', 'warn', moved ? `引用的 ${ref.slug} 已改名为 ${moved}：depends_on 和正文都改成新名字` : `引用的 ${ref.slug} 不在库里（或已删除）：ash pull 装不上它`);
+    } else if (target.status === 'pending') add('pending-ref', 'info', `引用的 ${ref.slug} 还在待审核：采纳前别的机器装不上它`);
     else if (ref.pin && target.version && ref.pin !== target.version) {
       if (pinAvailable(analysis, ref)) add('pin-old', 'info', `固定在 ${ref.slug}@${ref.pin}（历史版本，ash pull 会装那一版），库里当前是 ${target.version}：确认新版适用后可以改掉固定`);
       else add('pin-missing', 'warn', `固定在 ${ref.slug}@${ref.pin}，但库里没有这个版本（当前是 ${target.version}）：ash pull 会失败`);
@@ -266,12 +341,32 @@ function lintSkill(analysis, entry, { username = null } = {}) {
     add('undeclared-ref', 'warn', `正文引用了 ${slug}，但 depends_on 没有声明：ash pull 不会一并装上它，本地 Agent 可能找不到`);
   }
   for (const path of entry.absolute) add('absolute-link', 'warn', `链接 ${path} 用了绝对路径：换一台机器或换一个 Agent 就找不到，请写成相对路径 ../<slug>/SKILL.md`);
+  // 链接到别的技能里的文件（references/、scripts/）：技能和文件都要在
+  for (const { slug, path } of entry.fileLinks) {
+    const target = analysis.bySlug.get(slug);
+    if (!target) {
+      const moved = movedTo(analysis, slug);
+      add('broken-link', 'warn', `链接 ../${slug}/${path} 指向的技能不在库里${moved ? `：它已改名为 ${moved}` : ''}`);
+    } else if (target.filePaths && !target.filePaths.has(path) && ![...target.filePaths].some((f) => f.startsWith(`${path}/`))) {
+      add('broken-link', 'warn', `链接 ../${slug}/${path} 指向的文件在 ${slug} 里不存在：Agent 打开会失败（ash info ${slug} 查看它现在的文件清单）`);
+    }
+  }
+  // 「交给 X」写的是路由：X 不存在时模型会把任务交给一个找不到的技能
+  for (const [where, text, level] of [['description', entry.description, 'warn'], ['正文', stripFences(entry.body || ''), 'info']]) {
+    for (const slug of handoffTargets(text)) {
+      if (slug === entry.slug || analysis.bySlug.has(slug)) continue;
+      const moved = movedTo(analysis, slug);
+      add('handoff-missing', level, `${where}里「交给 ${slug}」指向的技能不在库里${moved
+        ? `：它已改名为 ${moved}，改成新名字`
+        : '：名字写错了，或技能已删除；改成库里现有的 slug，库外的技能注明「不在本库」'}`);
+    }
+  }
 
   if (analysis.bySlug.get(entry.slug) === entry) {
     const { longest, cycle } = chainFrom(analysis, entry.slug);
     if (cycle) add('cycle', 'warn', `引用成环：${cycle.join(' → ')}`);
     else if (longest.length - 1 > MAX_CHAIN) {
-      add('deep-chain', 'info', `引用链有 ${longest.length - 1} 层（${longest.join(' → ')}）：每多一层，Agent 就要多读一个文件、多一个可能断的地方；考虑把中间层的内容收进调用方或元技能`);
+      add('deep-chain', 'info', `元技能引用链有 ${longest.length - 1} 层（${longest.join(' → ')}）：每多一层元技能，Agent 就要多读一个文件、多一个可能断的地方；考虑把中间层的内容收进调用方，或把下层的确定性步骤做成脚本`);
     }
   }
 
@@ -347,6 +442,9 @@ function libraryAnalysis(userId) {
       if (!analysis.historyVersions.has(slug)) analysis.historyVersions.set(slug, new Set());
       analysis.historyVersions.get(slug).add(String(version));
     }
+    // 改名去向：引用了旧名字时提示改成哪个新名字
+    analysis.redirects = new Map(require('./db').prepare('SELECT old_slug, new_slug FROM skill_redirects WHERE user_id = ?')
+      .all(userId).map((r) => [r.old_slug, r.new_slug]));
     return analysis;
   });
 }

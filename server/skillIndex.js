@@ -154,8 +154,11 @@ function indexFor(userId) {
   const signature = librarySignature(userId);
   const hit = cache.get(userId);
   if (hit && hit.signature === signature) return hit.index;
+  // file_paths：附属文件的路径清单（不取文件内容），引用检查据此核对别的技能链接到的 references/、scripts/ 文件在不在
   const skills = db.prepare(`
-    SELECT id, slug, name, description, folder_path, tags, content, status, version FROM skills WHERE user_id = ? AND is_deleted = 0
+    SELECT id, slug, name, description, folder_path, tags, content, status, version,
+      (SELECT json_group_array(json_extract(f.value, '$.path')) FROM json_each(CASE WHEN json_valid(files) THEN files ELSE '[]' END) f) AS file_paths
+    FROM skills WHERE user_id = ? AND is_deleted = 0
   `).all(userId);
   const index = buildIndex(skills);
   index.skills = skills;
