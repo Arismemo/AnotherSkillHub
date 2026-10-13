@@ -1,19 +1,10 @@
 const matter = require('gray-matter');
 const { declaredDependencies, parseReference } = require('./skillMeta');
-const { isMetaSkill } = require('./skillRefs');
+const { isMetaSkill, bodyReferences } = require('./skillRefs');
 
-const META_WORD = /元技能|meta[- ]skill/i;
-const slugPatterns = new Map();
-function slugPattern(slug) {
-  if (!slugPatterns.has(slug)) {
-    const escaped = slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    slugPatterns.set(slug, new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`));
-  }
-  return slugPatterns.get(slug);
-}
-
-// Relationships come only from explicit signals: declared metadata, local SKILL.md links, and lines that
-// name a meta skill by its exact slug on the same line as the word 元技能 / meta-skill. Bare prose mentions never count.
+// Relationships come only from explicit signals: declared metadata, local links to another skill (its SKILL.md or a file
+// under it), and lines that name a meta skill by its exact slug on the same line as the word 元技能 / meta-skill.
+// Bare prose mentions never count. Body parsing is shared with the reference checks (skillRefs.bodyReferences).
 function buildSkillGraph(skills) {
   const parsed = skills.filter((skill) => !skill.is_deleted).map((skill) => {
     let data = {}, body = skill.content || '', warning = false;
@@ -34,24 +25,8 @@ function buildSkillGraph(skills) {
     };
     // 声明的依赖：@账号/slug 指向别的库，不在本库的图里；slug@版本 取 slug
     declaredDependencies(data).map(parseReference).filter((ref) => ref && !ref.owner).forEach((ref) => add(ref.slug, 'dependency'));
-    // Local links such as ../verification-discipline/SKILL.md. Ignore fenced examples and remote URLs.
-    const prose = body.replace(/^(`{3,}|~{3,}).*\n[\s\S]*?^\1[^\n]*$/gm, '');
-    for (const match of prose.matchAll(/\[[^\]]*\]\(<?([^\s)>]+)(?:>?(?:\s+"[^"]*")?)\)/g)) {
-      const href = match[1];
-      if (/^[a-z][a-z\d+.-]*:/i.test(href)) continue;
-      let path;
-      try { path = decodeURIComponent(href.split(/[?#]/)[0]); } catch { continue; }
-      const target = path.match(/(?:^|\/)([^/]+)\/SKILL\.md$/i);
-      if (target) add(target[1], 'reference');
-    }
-    // 库里约定俗成的引用写法："见元技能 `verification-discipline`"、"`bench-access`（元技能）"、"see meta-skill `x`"。
-    // 同一行里既有元技能关键字、又有某个元技能的完整 slug（不是更长名字的一部分）才算。
-    for (const line of prose.split('\n')) {
-      if (!META_WORD.test(line)) continue;
-      for (const slug of metaSlugs) {
-        if (slugPattern(slug).test(line)) add(slug, 'reference');
-      }
-    }
+    // 正文引用（代码块里的示例与远程链接不算）：../x/SKILL.md、../x/references/y.md、「用元技能 `x`」
+    bodyReferences(body, metaSlugs).refs.forEach((slug) => add(slug, 'reference'));
   }
   return {
     nodes: parsed.map(({ skill, meta, warning }) => ({ id: skill.id, slug: skill.slug, name: skill.name,

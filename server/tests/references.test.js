@@ -16,8 +16,8 @@ const { buildIndex, similarInIndex } = require('../skillIndex');
 
 const fence = (lines) => `\`\`\`bash\n${lines.join('\n')}\n\`\`\``;
 const BUILD = ['ssh dev@10.0.0.8', 'docker exec -it devbox bash', 'bazel build --config=j6 //app:main', 'bazel test //app:all'];
-const skill = (id, slug, { description = `${slug} 何时使用`, content = '', status = 'approved', version = '1.0.0', tags = '[]' } = {}) => ({
-  id, slug, name: slug, description, status, version, tags, folder_path: 'inbox', content,
+const skill = (id, slug, { description = `${slug} 何时使用`, content = '', status = 'approved', version = '1.0.0', tags = '[]', files } = {}) => ({
+  id, slug, name: slug, description, status, version, tags, folder_path: 'inbox', content, ...(files ? { files: JSON.stringify(files) } : {}),
 });
 const md = (front, body) => `---\n${front}\n---\n\n${body}\n`;
 
@@ -82,10 +82,11 @@ test('lint: references, meta-skill contract, copied steps and extraction candida
     skill(1, 'dev-build', { description: '【元技能】在开发容器里编译。Use when building inside the dev container', content: md('description: x', metaBody('\n## 被谁引用\n- `replay`\n- `ghost-caller`')) }),
     skill(2, 'replay', { content: md('depends_on: [dev-build]', `# 回放\n\n> 用元技能 \`dev-build\`\n\n${fence(BUILD)}`) }),
     skill(3, 'sloppy', { content: md('depends_on: [missing-skill, "@bob/shared", "dev-build@0.9.0", "bad ref!"]', '# x\n\n见 [chain-a](~/.claude/skills/chain-a/SKILL.md)\n\n> 用元技能 `dev-build`') }),
+    // 层数只沿指向元技能的边数：chain-a 往下是三层元技能
     skill(4, 'chain-a', { content: md('depends_on: [chain-b]', '# a') }),
-    skill(5, 'chain-b', { content: md('depends_on: [chain-c]', '# b') }),
-    skill(6, 'chain-c', { content: md('depends_on: [chain-d]', '# c') }),
-    skill(7, 'chain-d', { content: md('description: d', '# d') }),
+    skill(5, 'chain-b', { description: '【元技能】b', content: md('depends_on: [chain-c]', '# b') }),
+    skill(6, 'chain-c', { description: '【元技能】c', content: md('depends_on: [chain-d]', '# c') }),
+    skill(7, 'chain-d', { description: '【元技能】d', content: md('description: d', '# d') }),
     skill(8, 'loop-a', { content: md('depends_on: [loop-b]', '# a') }),
     skill(9, 'loop-b', { content: md('depends_on: [loop-a]', '# b') }),
     ...[10, 11, 12].map((id) => skill(id, `git-${id}`, { content: md('description: g', fence(['git fetch origin', 'git rebase origin/main', 'git push --force-with-lease'])) })),
@@ -129,6 +130,55 @@ test('lint: references, meta-skill contract, copied steps and extraction candida
   // 待审内容单独分析：把抄来的步骤换成引用后，提示消失
   const fixed = analyzeSkill({ ...library[1], content: md('depends_on: [dev-build]', '# 回放\n\n> 用元技能 `dev-build`\n> - target: //app:main') }, analysis.library);
   assert.ok(!lintSkill(analysis, fixed).some((i) => i.code === 'copies-meta'));
+});
+
+test('lint: depth counts meta-skill edges only; file links and handoffs are checked', () => {
+  const verifyFiles = [{ path: 'references/grading.md', content: '# 分级' }, { path: 'scripts/check.sh', content: 'echo ok' }];
+  const library = [
+    // 业务技能之间把一整段阶段交出去：是被交出去的技能自己的结构，不算进调用方的层数
+    skill(1, 'biz-a', { content: md('depends_on: [biz-b]', '# a') }),
+    skill(2, 'biz-b', { content: md('depends_on: [biz-c]', '# b') }),
+    skill(3, 'biz-c', { content: md('depends_on: [biz-d]', '# c') }),
+    skill(4, 'biz-d', { content: md('description: d', '# d') }),
+    skill(5, 'verify', { description: '【元技能】验收纪律', content: md('description: x', '# 验收'), files: verifyFiles }),
+    skill(6, 'probe', { description: '【元技能】探针', content: md('depends_on: [verify]', '# 探针') }),
+    skill(7, 'probe-deep', { description: '【元技能】更深的探针', content: md('depends_on: [probe]', '# 深') }),
+    skill(8, 'caller', { content: md('depends_on: [probe-deep]', '# 调用方') }),
+    // 只跑对方的脚本：脚本是叶子，不算层数；但没声明依赖就装不上
+    skill(9, 'script-user', { content: md('description: s', '# 跑\n\n运行 `../probe-deep/scripts/run.sh`') }),
+    skill(10, 'reader', { content: md('depends_on: [verify]', '# 读\n\n分级见 `../verify/references/grading.md`，自检跑 `../verify/scripts/check.sh`，旧文件 [x](../verify/references/gone.md)') }),
+    skill(11, 'runner', { content: md('description: r', '# 跑\n\n直接跑 `../verify/scripts/check.sh`；[说明](../nowhere/references/a.md)') }),
+    skill(12, 'router', {
+      description: '路由。不要用于验收（交给 verify）、旧编译（交给 old-build）、写错的（交给 ghost-skill）、库外的（交给 hermes-agent，不在本库）',
+      content: md('description: x', '# 路由\n\n别的事交给 another-ghost 处理'),
+    }),
+    skill(13, 'dev-build', { content: md('description: b', '# b') }),
+  ];
+  const analysis = analyzeLibrary(library);
+  analysis.redirects = new Map([['old-build', 'dev-build']]);
+  const lint = (slug) => lintSkill(analysis, analysis.bySlug.get(slug));
+  const codes = (slug) => lint(slug).map((i) => i.code);
+  const msgs = (slug, code) => lint(slug).filter((i) => i.code === code).map((i) => i.msg);
+
+  assert.ok(!codes('biz-a').includes('deep-chain'), 'business-to-business handoffs do not count');
+  assert.match(msgs('caller', 'deep-chain')[0], /caller → probe-deep → probe → verify/);
+  assert.ok(!codes('probe-deep').includes('deep-chain'), 'two meta levels are fine');
+  assert.ok(!codes('script-user').includes('deep-chain'), 'running another skill\'s script is a leaf call');
+  assert.match(msgs('script-user', 'undeclared-ref')[0], /probe-deep/, 'a script you run must still be declared so ash pull installs it');
+
+  assert.deepEqual(msgs('reader', 'broken-link').length, 1);
+  assert.match(msgs('reader', 'broken-link')[0], /references\/gone\.md.*不存在/);
+  assert.ok(!codes('reader').includes('undeclared-ref'));
+  assert.match(msgs('runner', 'undeclared-ref')[0], /verify/);
+  assert.match(msgs('runner', 'broken-link')[0], /nowhere.*技能不在库里/);
+  assert.deepEqual(analysis.dependents.get('verify').sort(), ['probe', 'reader', 'runner']);
+
+  const handoffs = lint('router').filter((i) => i.code === 'handoff-missing');
+  assert.deepEqual(handoffs.map((i) => i.level), ['warn', 'warn', 'info']);
+  assert.match(handoffs[0].msg, /old-build.*已改名为 dev-build/);
+  assert.match(handoffs[1].msg, /ghost-skill/);
+  assert.match(handoffs[2].msg, /正文里「交给 another-ghost」/);
+  assert.ok(!handoffs.some((i) => /hermes-agent|「交给 verify」/.test(i.msg)), 'existing skills and skills noted as outside the library are fine');
 });
 
 test('references end to end: push hints, ash lint, local resolution after install', async (t) => {

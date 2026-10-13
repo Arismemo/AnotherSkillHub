@@ -552,7 +552,7 @@ AnotherSkillHub CLI · 服务地址: $SERVER_URL
   1. 接到任务先 ash suggest "<任务>"；有现成技能就按它做，不要另写一份
   2. 写或改技能前读规范：ash show meta-skill-spec（元技能怎么引用、什么时候抽、description 怎么写）
   3. 新技能用 ash new <slug> 生成骨架；推送前 ash lint <目录或slug> 修到没有 ⚠️
-  4. depends_on 只列做事时真要读或要跑的技能；「不要用于…（交给 X）」这类边界只写在 description 和正文
+  4. depends_on 只列做事时真要读或要跑的技能，用到的一定要列（不要为了引用链层数少报）；「不要用于…（交给 X）」这类边界只写在 description 和正文
   5. 已有元技能负责的动作写一行「用元技能 \`<slug>\`」+ 本技能特有参数，不要抄它的步骤
   6. 中文为主：description 用中文写「做什么 + 什么时候用 + 不要用于…（交给 X）」，末尾加一句英文 Use when …
   7. 不写口令、token、内网地址、个人路径：写变量名，值放 ~/.comate/secrets/creds.env
