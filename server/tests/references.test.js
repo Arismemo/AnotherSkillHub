@@ -147,7 +147,7 @@ test('lint: depth counts meta-skill edges only; file links and handoffs are chec
     // 只跑对方的脚本：脚本是叶子，不算层数；但没声明依赖就装不上
     skill(9, 'script-user', { content: md('description: s', '# 跑\n\n运行 `../probe-deep/scripts/run.sh`') }),
     skill(10, 'reader', { content: md('depends_on: [verify]', '# 读\n\n分级见 `../verify/references/grading.md`，自检跑 `../verify/scripts/check.sh`，旧文件 [x](../verify/references/gone.md)') }),
-    skill(11, 'runner', { content: md('description: r', '# 跑\n\n直接跑 `../verify/scripts/check.sh`；[说明](../nowhere/references/a.md)') }),
+    skill(11, 'runner', { content: md('description: r', '# 跑\n\n直接跑 `../verify/scripts/check.sh`；[说明](../nowhere/references/a.md)；地图在 `../xodr/<map>.xodr`') }),
     skill(12, 'router', {
       description: '路由。不要用于验收（交给 verify）、旧编译（交给 old-build）、写错的（交给 ghost-skill）、库外的（交给 hermes-agent，不在本库）',
       content: md('description: x', '# 路由\n\n别的事交给 another-ghost 处理'),
@@ -171,6 +171,7 @@ test('lint: depth counts meta-skill edges only; file links and handoffs are chec
   assert.ok(!codes('reader').includes('undeclared-ref'));
   assert.match(msgs('runner', 'undeclared-ref')[0], /verify/);
   assert.match(msgs('runner', 'broken-link')[0], /nowhere.*技能不在库里/);
+  assert.equal(msgs('runner', 'broken-link').length, 1, 'a relative path into a data directory is not a skill link');
   assert.deepEqual(analysis.dependents.get('verify').sort(), ['probe', 'reader', 'runner']);
 
   const handoffs = lint('router').filter((i) => i.code === 'handoff-missing');

@@ -431,6 +431,8 @@ function lintSkill(analysis, entry, { username = null, previous = null } = {}) {
   for (const { slug, path } of entry.fileLinks) {
     const target = analysis.bySlug.get(slug);
     if (!target) {
+      // ../xodr/map.xodr 这类指向数据目录的相对路径不是技能：只有技能目录结构（references/、scripts/）才算指向技能
+      if (!/^(references|scripts)\//.test(path)) continue;
       const moved = movedTo(analysis, slug);
       add('broken-link', 'warn', `链接 ../${slug}/${path} 指向的技能不在库里${moved ? `：它已改名为 ${moved}` : ''}`);
     } else if (target.filePaths && !target.filePaths.has(path) && ![...target.filePaths].some((f) => f.startsWith(`${path}/`))) {
