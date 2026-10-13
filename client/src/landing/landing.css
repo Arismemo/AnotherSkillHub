@@ -212,14 +212,14 @@ code, pre { font-family: var(--mono); }
 /* markdown / hljs 的配色与排版在 markdown.css，由 SharePage 懒加载 chunk 引入 */
 .share-loading { display: grid; place-items: center; min-height: 60vh; color: var(--text-subtle); font-size: var(--fs-md); }
 .share-page { display: flex; min-height: 100dvh; flex-direction: column; }
-.share-header { display: grid; gap: 1.75rem; padding-top: 2rem; padding-bottom: 1.75rem; border-bottom: 1px solid var(--border-muted); }
+.share-header { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.75rem; padding-top: 2rem; padding-bottom: 1.75rem; border-bottom: 1px solid var(--border-muted); }
 @media (min-width: 960px) { .share-header { grid-template-columns: minmax(0, 1.35fr) minmax(18rem, 1fr); align-items: start; gap: 2.5rem; } }
 .share-owner { color: var(--accent); font-size: var(--fs-sm); font-weight: 600; }
 .share-owner strong { font-weight: 700; }
-.share-header h1 { margin-top: .45rem; font-size: clamp(1.6rem, 3.5vw, 2.2rem); font-weight: 750; letter-spacing: -.02em; line-height: 1.2; text-wrap: balance; }
-.share-description { max-width: 40rem; margin-top: .65rem; color: var(--text-muted); font-size: var(--fs-lg); line-height: 1.6; }
+.share-header h1 { margin-top: .45rem; font-size: clamp(1.6rem, 3.5vw, 2.2rem); font-weight: 750; letter-spacing: -.02em; line-height: 1.2; text-wrap: balance; overflow-wrap: anywhere; }
+.share-description { max-width: 40rem; margin-top: .65rem; color: var(--text-muted); font-size: var(--fs-lg); line-height: 1.6; overflow-wrap: anywhere; }
 .share-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; margin-top: 1rem; color: var(--text-subtle); font-size: var(--fs-xs); }
-.share-chip { display: inline-flex; flex: 0 0 auto; align-items: center; height: 1.35rem; padding: 0 .5rem; border: 1px solid var(--border-muted); border-radius: 999px; background: var(--surface); color: var(--text-muted); font-size: var(--fs-2xs); font-weight: 500; white-space: nowrap; }
+.share-chip { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 1.35rem; max-width: 100%; padding: 0 .5rem; border: 1px solid var(--border-muted); border-radius: 999px; background: var(--surface); color: var(--text-muted); font-size: var(--fs-2xs); font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
 .share-tag::before { content: '#'; margin-right: .12em; color: var(--text-subtle); }
 .share-actions-panel { display: grid; gap: 1rem; }
 .share-panel-block { display: grid; gap: .65rem; padding: 1rem; border: 1px solid var(--border-muted); border-radius: var(--r-lg); background: var(--surface); }
@@ -237,9 +237,14 @@ code, pre { font-family: var(--mono); }
 .share-save-row input { height: 2.25rem; min-width: 0; padding: 0 .6rem; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-sunken); color: var(--text); font-family: var(--mono); font-size: var(--fs-sm); }
 .share-save-row input:focus { border-color: var(--focus); outline: none; box-shadow: 0 0 0 3px var(--accent-muted); }
 .share-inline-error { margin: 0; padding: .5rem .65rem; border: 1px solid var(--danger-border); border-radius: var(--r-sm); background: var(--danger-muted); color: var(--danger-text); font-size: var(--fs-xs); line-height: 1.45; }
-.share-body { flex: 1; display: grid; align-items: start; gap: 1.5rem; padding-top: 1.5rem; padding-bottom: 3rem; }
+.share-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 1.5rem; padding-top: 1.5rem; padding-bottom: 3rem; }
 @media (min-width: 900px) { .share-body { grid-template-columns: 15rem minmax(0, 1fr); gap: 2.5rem; } }
-.share-files ul { display: grid; gap: .15rem; padding: .45rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface); }
+/* 网格各层子项允许收缩到轨道内：长 markdown 不再把轨道撑到 min-content 宽 */
+.share-header > div, .share-actions-panel, .share-panel-block, .share-files, .share-content { min-width: 0; }
+/* 正文里贴的长 URL / 行内代码放不下时逐字符断行；pre 是 white-space: pre，不受影响照旧横向滚动 */
+.share-content { overflow-wrap: anywhere; }
+.share-files ul { display: grid; grid-template-columns: minmax(0, 1fr); gap: .15rem; padding: .45rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface); max-height: 12rem; overflow-y: auto; }
+.share-files li { min-width: 0; }
 .share-files button { display: flex; align-items: center; gap: .45rem; width: 100%; padding: .38rem .5rem; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); text-align: left; cursor: pointer; }
 .share-files button:hover { color: var(--text); background: var(--surface-hover); }
 .share-files button.is-active { color: var(--text); background: var(--surface-hover); font-weight: 600; }
@@ -247,9 +252,15 @@ code, pre { font-family: var(--mono); }
 .share-files svg { flex: 0 0 auto; color: var(--text-subtle); }
 .share-files button > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .share-files small { flex: 0 0 auto; color: var(--text-subtle); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+/* 文件几十个时列表限高自己滚动，别把正文挤到几屏之外；桌面两栏后列表吸顶、窗口给高一些 */
+@media (min-width: 900px) {
+  .share-files { position: sticky; top: 1rem; }
+  .share-files ul { max-height: min(65vh, 36rem); }
+}
 .share-file-viewer { overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); }
 .share-file-viewer > header { display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: .6rem .8rem; border-bottom: 1px solid var(--border-muted); background: var(--surface); color: var(--text-body); font-size: var(--fs-xs); }
-.share-file-viewer > header button { border: 0; background: transparent; color: var(--accent); font-size: var(--fs-xs); cursor: pointer; }
+.share-file-viewer > header strong { min-width: 0; overflow-wrap: anywhere; }
+.share-file-viewer > header button { flex: 0 0 auto; border: 0; background: transparent; color: var(--accent); font-size: var(--fs-xs); cursor: pointer; }
 .share-file-md { padding: 1rem 1.25rem 1.5rem; }
 .share-hint { padding: 1.5rem 1rem; color: var(--text-subtle); font-size: var(--fs-sm); }
 .share-code { position: relative; min-height: 10rem; margin: 0; padding: .8rem .9rem; overflow-x: auto; background: var(--surface-code); color: var(--text-body); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.55; }
