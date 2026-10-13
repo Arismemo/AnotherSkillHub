@@ -150,7 +150,7 @@ test('lint: depth counts meta-skill edges only; file links and handoffs are chec
     skill(11, 'runner', { content: md('description: r', '# 跑\n\n直接跑 `../verify/scripts/check.sh`；[说明](../nowhere/references/a.md)；地图在 `../xodr/<map>.xodr`') }),
     skill(12, 'router', {
       description: '路由。不要用于验收（交给 verify）、旧编译（交给 old-build）、写错的（交给 ghost-skill）、库外的（交给 hermes-agent，不在本库）',
-      content: md('description: x', '# 路由\n\n别的事交给 another-ghost 处理'),
+      content: md('description: x', '# 路由\n\n别的事交给 another-ghost 处理；飞书核验交给 Hermes Profile `inceptio-lark`（不是本库技能）'),
     }),
     skill(13, 'dev-build', { content: md('description: b', '# b') }),
   ];
@@ -179,7 +179,7 @@ test('lint: depth counts meta-skill edges only; file links and handoffs are chec
   assert.match(handoffs[0].msg, /old-build.*已改名为 dev-build/);
   assert.match(handoffs[1].msg, /ghost-skill/);
   assert.match(handoffs[2].msg, /正文里「交给 another-ghost」/);
-  assert.ok(!handoffs.some((i) => /hermes-agent|「交给 verify」/.test(i.msg)), 'existing skills and skills noted as outside the library are fine');
+  assert.ok(!handoffs.some((i) => /hermes-agent|inceptio-lark|「交给 verify」/.test(i.msg)), 'existing skills and skills noted as outside the library are fine');
 });
 
 test('references end to end: push hints, ash lint, local resolution after install', async (t) => {
