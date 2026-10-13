@@ -325,18 +325,31 @@ function effectIssues(analysis, entry, add) {
   }
 }
 
-// 契约里已有的项改了或删了，等于改了函数签名：要升主版本，依赖它的技能要复核。只新增项向后兼容
+// 契约里已有的项改了或删了，等于改了函数签名：要升主版本，依赖它的技能要复核。只新增项向后兼容。
+// 只比「签名」项（输入、输出、前置、失败、交回格式……）；「副作用」「资源」是说明，改了只提醒核对 effects——
+// 级别本身的变化由调用方的 effects-escalation 检查兜住。比较前去掉格式差异（全半角标点、空白、反引号、加粗）
+const DESCRIPTIVE_ROW = /^(副作用|资源|side effects?|resources?)$/i;
+const FULLWIDTH = { '，': ',', '。': '.', '：': ':', '；': ';', '（': '(', '）': ')', '、': ',', '“': '"', '”': '"', '‘': "'", '’': "'" };
+const sameMeaning = (a, b) => {
+  const norm = (t) => String(t || '').replace(/[，。：；（）、“”‘’]/g, (c) => FULLWIDTH[c]).replace(/[`*\s]/g, '').replace(/[.;]$/, '');
+  return norm(a) === norm(b);
+};
 function contractChangeIssues(analysis, entry, previous, add) {
   if (previous.status === 'pending' || !previous.contract || !previous.contract.rows.size) return;
   const after = entry.contract ? entry.contract.rows : new Map();
-  const changed = [...previous.contract.rows].filter(([label, text]) => !after.has(label) || after.get(label) !== text).map(([label]) => label);
-  if (!changed.length) return;
+  const changed = [...previous.contract.rows].filter(([label, text]) => !after.has(label) || !sameMeaning(after.get(label), text)).map(([label]) => label);
+  const signature = changed.filter((label) => !DESCRIPTIVE_ROW.test(label));
+  const descriptive = changed.filter((label) => DESCRIPTIVE_ROW.test(label));
+  if (descriptive.length) {
+    add('contract-effects-changed', 'info', `「## 契约」里的 ${descriptive.join('、')} 改了：确认 frontmatter 的 effects 是否也要跟着变（升级了的话，调用方的 effects 也要跟上）`);
+  }
+  if (!signature.length) return;
   const before = majorOf(previous.declaredVersion);
   const now = majorOf(entry.declaredVersion);
   if (before === null || now === null || now > before) return;
   const dependents = (analysis.dependents.get(entry.slug) || []).filter((s) => s !== entry.slug);
-  add('contract-major', 'warn', `「## 契约」里的 ${changed.join('、')} 改了或删了，但版本 ${previous.declaredVersion} → ${entry.declaredVersion} 没有升主版本：`
-    + `按旧契约写的调用方可能对不上。升到 ${before + 1}.0.0${dependents.length ? `，并复核依赖它的 ${dependents.join('、')}` : ''}（只新增项不用升主版本）`);
+  add('contract-major', 'warn', `「## 契约」里的 ${signature.join('、')} 改了或删了，但版本 ${previous.declaredVersion} → ${entry.declaredVersion} 没有升主版本：`
+    + `按旧契约写的调用方可能对不上。升到 ${before + 1}.0.0${dependents.length ? `，并复核依赖它的 ${dependents.join('、')}` : ''}（只新增项、只改措辞格式不用升主版本）`);
 }
 
 // ——— 全库写作约定（meta-skill-spec「全库写作约定」节的机器检查）———

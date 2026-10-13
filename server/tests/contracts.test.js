@@ -99,6 +99,18 @@ test('lint: changing or removing a contract item needs a major version; adding o
   const added = lintCandidate('version: 1.3.0\neffects: read-only', [...rows, ['资源', '无']]);
   assert.ok(!added.some((i) => i.code === 'contract-major'), 'a new item is backward compatible');
 
+  const punctuation = lintCandidate('version: 1.2.1\neffects: read-only', [['输入', '`target`'], ['输出', '构建是否成功。'], ['失败', '返回错误']]);
+  assert.ok(!punctuation.some((i) => i.code === 'contract-major'), 'formatting-only edits are not a signature change');
+
+  const withResources = [...rows, ['资源', '无常驻进程']];
+  const resPublished = skill(4, 'tunnel', md('version: 1.2.0\neffects: read-only', `# 隧道\n\n${contract(withResources)}`), { description: '【元技能】隧道' });
+  const resAnalysis = analyzeLibrary([resPublished]);
+  const resLint = lintSkill(resAnalysis,
+    analyzeSkill({ ...resPublished, content: md('version: 1.2.1\neffects: read-only', `# 隧道\n\n${contract([...rows, ['资源', '用到隧道模式时要 kill 后台 ssh']])}`) }, resAnalysis.library),
+    { previous: resAnalysis.bySlug.get('tunnel') });
+  assert.ok(!resLint.some((i) => i.code === 'contract-major'), 'rewording 资源 is a description, not a signature change');
+  assert.match(resLint.find((i) => i.code === 'contract-effects-changed')?.msg || '', /资源.*effects/);
+
   const major = lintCandidate('version: 2.0.0\neffects: read-only', [['输入', 'target, config'], ['输出', '构建是否成功']]);
   assert.ok(!major.some((i) => i.code === 'contract-major'));
 
