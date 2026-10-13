@@ -1,20 +1,14 @@
 // 分享页：/share/<token> 免登录查看别人分享的技能。marked / highlight.js 只在这里引入（懒加载 chunk），
 // 公共的 markdown / hljs 样式来自 src/markdown.css；页面自身布局在 landing.css 的「分享页」一节。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, FileText, Lock, PackagePlus } from 'lucide-react';
+import { Download, Lock, PackagePlus } from 'lucide-react';
 import { requestJson } from '../utils/requestJson';
 import { formatDateTime } from '../utils/date';
 import { splitFrontmatter } from '../utils/markdownDoc';
 import { cachedRender, highlightCode, languageForPath, renderMarkdown } from '../utils/highlight';
 import { CopyCommand } from './Landing';
+import ShareFileTree from './ShareFileTree';
 import '../markdown.css';
-
-function humanSize(bytes) {
-  if (!Number.isFinite(bytes) || bytes < 0) return '';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 102.4) / 10} KB`;
-  return `${Math.round(bytes / 1024 / 102.4) / 10} MB`;
-}
 
 // 密码门：解锁成功后种下 httpOnly cookie，重新拉取即得全文
 function PasswordGate({ token, onUnlocked }) {
@@ -181,30 +175,15 @@ function ShareBody({ token, data }) {
     return cachedRender(`file:${language || 'text'}`, (fileState.content || '').replace(/\n$/, ''), (text) => highlightCode(text, language));
   }, [fileState.phase, fileState.content, selectedFile]);
 
-  const skillMdSize = useMemo(() => humanSize(new Blob([data.content || '']).size), [data.content]);
+  // SKILL.md 也在树上：正文就是 data.content，大小按字节数现场算
+  const files = useMemo(() => [
+    { path: 'SKILL.md', size: new Blob([data.content || '']).size, isMain: true },
+    ...data.files,
+  ], [data.content, data.files]);
 
   return (
     <div className="container share-body">
-      <aside className="share-files" aria-label="技能文件">
-        <ul>
-          <li>
-            <button type="button" className={selectedFile === 'SKILL.md' ? 'is-active' : ''} onClick={() => openFile('SKILL.md')}>
-              <FileText size={13} aria-hidden="true" />
-              <span>SKILL.md</span>
-              <small>{skillMdSize}</small>
-            </button>
-          </li>
-          {data.files.map((file) => (
-            <li key={file.path}>
-              <button type="button" className={selectedFile === file.path ? 'is-active' : ''} onClick={() => openFile(file.path)} title={file.path}>
-                <FileText size={13} aria-hidden="true" />
-                <span>{file.path}</span>
-                <small>{humanSize(file.size)}</small>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
+      <ShareFileTree files={files} selectedFile={selectedFile} onOpenFile={openFile} />
       <div className="share-content">
         {selectedFile === 'SKILL.md' ? (
           <article className="markdown-document" aria-label="SKILL.md">

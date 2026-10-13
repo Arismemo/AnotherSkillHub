@@ -1,23 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, FileCode2, FileText, Folder, PanelLeftClose } from 'lucide-react';
 import useResizableWidth from '../../hooks/useResizableWidth';
-
-function buildFileTree(files) {
-  const root = { name: '', path: '', children: new Map(), file: null };
-  for (const file of files) {
-    const parts = file.path.split('/');
-    let node = root;
-    parts.forEach((part, depth) => {
-      const isLeaf = depth === parts.length - 1;
-      if (!node.children.has(part)) {
-        node.children.set(part, { name: part, path: parts.slice(0, depth + 1).join('/'), children: new Map(), file: null });
-      }
-      node = node.children.get(part);
-      if (isLeaf) node.file = file;
-    });
-  }
-  return root;
-}
+import { buildFileTree } from '../../utils/fileTree';
 
 function FileTreeNode({ node, depth, selectedFile, openFile, openDirs, toggleDir, hasSelectionInside, filterActive }) {
   const dirEntries = [...node.children.values()].sort((a, b) => {

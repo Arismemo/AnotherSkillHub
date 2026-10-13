@@ -243,19 +243,28 @@ code, pre { font-family: var(--mono); }
 .share-header > div, .share-actions-panel, .share-panel-block, .share-files, .share-content { min-width: 0; }
 /* 正文里贴的长 URL / 行内代码放不下时逐字符断行；pre 是 white-space: pre，不受影响照旧横向滚动 */
 .share-content { overflow-wrap: anywhere; }
-.share-files ul { display: grid; grid-template-columns: minmax(0, 1fr); gap: .15rem; padding: .45rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface); max-height: 12rem; overflow-y: auto; }
+.share-files { padding: .55rem; border: 1px solid var(--border-muted); border-radius: var(--r-md); background: var(--surface); }
+.share-files-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; padding: .15rem .3rem .45rem; }
+.share-files-heading h3 { margin: 0; color: var(--text-subtle); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.share-files-heading span { color: var(--text-subtle); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+/* 树只有一个滚动容器（.share-tree-scroll）；嵌套 ul 只做列表结构，不再各自带边框和限高 */
+.share-tree-scroll { max-height: 12rem; overflow-y: auto; }
+.share-files .share-tree-list, .share-files .share-tree-list ul { display: grid; grid-template-columns: minmax(0, 1fr); gap: .1rem; margin: 0; padding: 0; list-style: none; }
 .share-files li { min-width: 0; }
 .share-files button { display: flex; align-items: center; gap: .45rem; width: 100%; padding: .38rem .5rem; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-muted); font-size: var(--fs-xs); text-align: left; cursor: pointer; }
+/* 缩进跟随层级，但封顶 8 层，再深的路径不再往右挤；文件行用 13px 占位对齐目录行的箭头 */
+.share-files .share-tree-row { padding-left: calc(.5rem + min(var(--tree-depth, 0), 8) * .6rem); }
+.share-files .share-tree-spacer { flex: 0 0 auto; width: 13px; }
 .share-files button:hover { color: var(--text); background: var(--surface-hover); }
 .share-files button.is-active { color: var(--text); background: var(--surface-hover); font-weight: 600; }
 .share-files button.is-active svg { color: var(--accent); }
 .share-files svg { flex: 0 0 auto; color: var(--text-subtle); }
 .share-files button > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .share-files small { flex: 0 0 auto; color: var(--text-subtle); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
-/* 文件几十个时列表限高自己滚动，别把正文挤到几屏之外；桌面两栏后列表吸顶、窗口给高一些 */
+/* 文件几十个时树限高自己滚动，别把正文挤到几屏之外；桌面两栏后面板吸顶、窗口给高一些 */
 @media (min-width: 900px) {
   .share-files { position: sticky; top: 1rem; }
-  .share-files ul { max-height: min(65vh, 36rem); }
+  .share-tree-scroll { max-height: min(65vh, 36rem); }
 }
 .share-file-viewer { overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); }
 .share-file-viewer > header { display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: .6rem .8rem; border-bottom: 1px solid var(--border-muted); background: var(--surface); color: var(--text-body); font-size: var(--fs-xs); }
