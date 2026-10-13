@@ -54,7 +54,13 @@ function usageSummary(skill) {
     SELECT outcome, note, terminal, revision, created_at FROM skill_events
     WHERE skill_id = ? AND kind = 'feedback' ORDER BY created_at DESC, id DESC LIMIT 10
   `).all(skill.id).map((f) => ({ ...f, current: f.revision === revision }));
-  return { ...row, revision, recent_feedback: recent, health: healthFlags(skill, row) };
+  // 近 30 天的会话里它和哪些技能按什么顺序一起用（Stop hook 记的调用链），最常见的几条
+  const chains = db.prepare(`
+    SELECT note, COUNT(*) AS count FROM skill_events
+    WHERE skill_id = ? AND kind = 'use' AND note LIKE 'chain: %' AND created_at >= datetime('now', '-30 days')
+    GROUP BY note ORDER BY count DESC, MAX(created_at) DESC LIMIT 3
+  `).all(skill.id).map((r) => ({ chain: r.note.slice('chain: '.length).split(' > '), count: r.count }));
+  return { ...row, revision, recent_feedback: recent, chains, health: healthFlags(skill, row) };
 }
 
 function daysSince(timestamp) {

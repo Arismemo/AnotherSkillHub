@@ -359,7 +359,8 @@ adopt_dir() {
 # ——— Claude Code hook（ash hooks install）———
 # Claude Code 的 Skill 工具不触发 PreToolUse/PostToolUse，所以只挂一个 Stop hook：会话每轮结束时扫一遍会话记录（transcript JSONL），
 # 认出用到了哪些 ash 装的技能（Skill 工具调用、Read 了 <技能>/SKILL.md）、哪些已经 ash feedback 过。
-# 用到的记到库里（每个会话每个技能一次）；用了却没回报的，提醒 Agent 回报一次（每个技能每个会话只提醒一次）。
+# 用到的记到库里（每个会话每个技能一次），连同本次会话用到这些技能的先后顺序（调用链，反馈时据此找出真正出问题的那一层）；
+# 用了却没回报的，提醒 Agent 回报一次（每个技能每个会话只提醒一次）。
 HOOK_MARK='hook claude-stop'
 
 # 结构化读 hook 输入与 JSONL：只认真实工具调用，反馈还必须有对应工具结果的成功确认。
@@ -423,7 +424,7 @@ try:
         for line in f:
             try: rows.append(json.loads(line))
             except ValueError: pass
-    calls, used, fed = {}, set(), set()
+    calls, used, fed = {}, [], set()
     for row in rows:
         if not isinstance(row, dict) or row.get("type") != "assistant": continue
         content = row.get("message", {}).get("content", [])
@@ -431,10 +432,10 @@ try:
         for tool in content:
             if tool.get("type") != "tool_use": continue
             data = tool.get("input") or {}
-            if tool.get("name") == "Skill" and isinstance(data.get("skill"), str): used.add("name:" + data["skill"])
+            if tool.get("name") == "Skill" and isinstance(data.get("skill"), str): used.append("name:" + data["skill"])
             p = data.get("file_path")
             if tool.get("name") == "Read" and isinstance(p, str) and p.endswith("/SKILL.md"):
-                used.add("dir:" + os.path.dirname(os.path.abspath(os.path.join(arg.get("cwd") or os.getcwd(), os.path.expanduser(p)))))
+                used.append("dir:" + os.path.dirname(os.path.abspath(os.path.join(arg.get("cwd") or os.getcwd(), os.path.expanduser(p)))))
             command = data.get("command")
             feedback = re.search(r"(?:^|[\s;&|])ash\s+feedback\s+([A-Za-z0-9_.-]+)\s+(?:ok|fail)\b", command) if isinstance(command, str) else None
             if tool.get("name") == "Bash" and feedback: calls[tool.get("id")] = feedback.group(1)
@@ -450,7 +451,8 @@ try:
             if match and calls.get(result.get("tool_use_id")) == match.group(1): fed.add(match.group(1))
     print("session:" + session)
     print("active:" + ("1" if arg.get("stop_hook_active") is True else "0"))
-    for item in sorted(used):
+    # 按第一次用到的顺序输出：hook 据此记下本次会话的调用顺序
+    for item in dict.fromkeys(used):
         if not re.search(r"[\r\n\t]", item): print(item)
     for slug in sorted(fed): print("fed:" + slug)
 except Exception:
@@ -1357,7 +1359,7 @@ EOF
     scope="$(printf '%s\n%s' "$SERVER_URL" "$ASH_TOKEN" | cksum | awk '{print $1}')"
     state="$state_dir/stop-$scope-$session"; (umask 077; touch "$state") 2>/dev/null || exit 0
     fed=",$(printf '%s\n' "$parsed" | sed -n 's/^fed://p' | tr '\n' ',')"
-    new_used=(); new_revs=(); remind=(); seen_slugs=""
+    new_used=(); new_revs=(); remind=(); seen_slugs=""; chain=()
     while IFS= read -r item; do
       [ -n "$item" ] || continue
       d="$(resolve_used_dir "$item")"; [ -n "$d" ] || continue
@@ -1366,6 +1368,7 @@ EOF
       # Read 和 Skill 可以指向同一份存储，只在本次请求中发送一次。
       case ",${seen_slugs:-}," in *",$slug,"*) continue ;; esac
       seen_slugs="${seen_slugs:-},$slug"
+      chain+=("$slug")
       if ! grep -qxF "used:$slug" "$state"; then
         new_used+=("$slug"); new_revs+=("$(meta "$d" revision)")
       fi
@@ -1379,6 +1382,8 @@ EOF
       i=0
       while [ "$i" -lt "${#new_used[@]}" ]; do
         post=(-X POST --data-urlencode "terminal=$TERMINAL"); batch=(); n=0
+        # 本次会话按先后顺序用到的技能（两个以上才有意义）：服务端记在这几条使用记录上
+        if [ "${#chain[@]}" -gt 1 ]; then post+=(--data-urlencode "chain=$(IFS=,; echo "${chain[*]}")"); fi
         while [ "$i" -lt "${#new_used[@]}" ] && [ "$n" -lt 50 ]; do
           post+=(--data-urlencode "slug=${new_used[$i]}" --data-urlencode "revision=${new_revs[$i]}")
           batch+=("${new_used[$i]}"); i=$((i + 1)); n=$((n + 1))
@@ -1395,7 +1400,13 @@ EOF
     if [ "${#remind[@]}" -gt 0 ] && [ "${ASH_HOOK_REMIND:-1}" != "0" ] && [ "$active" != 1 ]; then
       for slug in "${remind[@]}"; do echo "reminded:$slug" >> "$state"; done
       list="$(printf '%s、' "${remind[@]}")"; list="${list%、}"
-      printf '{"decision":"block","reason":"%s"}\n' "本次会话用到了技能库里的技能 ${list}，但还没有回报结果。请对每个技能运行一次 ash feedback <slug> ok，没走通则 ash feedback <slug> fail 加一句哪一步、为什么。回报后再结束；不要为此重做任务。"
+      if [ "${#chain[@]}" -gt 1 ]; then
+        order="$(printf '%s → ' "${chain[@]}")"; order="${order% → }"
+        reason="本次会话按顺序用到了技能库里的 ${order}，其中 ${list} 还没有回报结果。请对每个技能运行一次 ash feedback <slug> ok；没走通的回报给真正出问题的那一层（例如连不上设备回报给连接技能，而不是调用它的流程技能），用 ash feedback <slug> fail 加一句哪一步、为什么。回报后再结束；不要为此重做任务。"
+      else
+        reason="本次会话用到了技能库里的技能 ${list}，但还没有回报结果。请对每个技能运行一次 ash feedback <slug> ok，没走通则 ash feedback <slug> fail 加一句哪一步、为什么。回报后再结束；不要为此重做任务。"
+      fi
+      printf '{"decision":"block","reason":"%s"}\n' "$reason"
     fi
     exit 0
     ;;

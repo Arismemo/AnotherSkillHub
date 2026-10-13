@@ -84,6 +84,14 @@ export default function UsagePanel({ detail, onOpenSkill }) {
           <FeedbackList items={usage.recent_feedback} />
         </details>
       )}
+      {usage.chains?.length > 0 && (
+        <details className="usage-section">
+          <summary>调用顺序（近 30 天的会话，{usage.chains.length} 种）</summary>
+          <ul className="usage-chains">
+            {usage.chains.map((c) => <li key={c.chain.join('>')}>{c.chain.join(' → ')}<span className="usage-empty">（{c.count} 次）</span></li>)}
+          </ul>
+        </details>
+      )}
       {similar.length > 0 && (
         <details className="usage-section" open={similar.some((s) => s.duplicate)}>
           <summary>相似技能（{similar.length}）</summary>

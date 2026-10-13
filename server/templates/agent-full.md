@@ -192,7 +192,7 @@ ash guide [--full]
 ## 本机已有的技能、自动回报
 
 - 本机技能目录里已有、但不是 ash 装的技能（例如手写在 `~/.claude/skills` 里的），用 `ash import` 一次推送进库：默认扫描各 Agent 的技能目录，也可以给目录。同名的已在库里时跳过（加 `--update` 提交为更新）；`--dry-run` 只列出会导入什么。导入成功的目录会登记为 ash 管理（写入 `.ash`），之后 `ash installed`、`ash outdated` 就能管到它们；不想登记就加 `--no-adopt`。导入保留原目录；审核采纳后运行 `ash migrate` 查看计划，再 `ash migrate --apply` 迁入共享存储并链接给各 Agent。待审更新会保留本地提交版本，`ash pull --all` 不会在审核前覆盖它。
-- 在 Claude Code 里，用户可以运行 `ash hooks install`：会话里用到了 ash 装的技能、却没有 `ash feedback` 时，会话结束前会提醒你回报，同时把「用过」记到库里。看到这条提醒时，按提示为每个技能运行一次 `ash feedback`。
+- 在 Claude Code 里，用户可以运行 `ash hooks install`：会话里用到了 ash 装的技能、却没有 `ash feedback` 时，会话结束前会提醒你回报，同时把「用过」记到库里。它还会记下本次会话用到这些技能的先后顺序（调用链，`ash info` 里能看到）。看到这条提醒时，按提示为每个技能运行一次 `ash feedback`；没走通时回报给真正出问题的那一层，例如连不上设备是连接技能的问题，不要都记在最上层的流程技能头上。
 
 ## 没有 ash 时的 HTTP 接口
 
@@ -217,6 +217,6 @@ GET  __BASE_URL__/api/agent/revisions?slug=a&slug=b         已装技能比对�
 GET  __BASE_URL__/api/agent/lint?slug=<slug>&format=text     技能检查（不带 slug 列出全库有问题的技能）
 POST __BASE_URL__/api/agent/lint                            推送前自查本地版本：content=<SKILL.md 全文>&format=text（不写库）
 POST __BASE_URL__/api/agent/feedback                        用完回报：slug=<slug>&outcome=ok|fail&note=<说明>&terminal=<来源>
-POST __BASE_URL__/api/agent/used                            会话结束时上报用到的技能：slug=<slug>&revision=<修订>（可重复多个；ash hooks install 的 hook 调用）
+POST __BASE_URL__/api/agent/used                            会话结束时上报用到的技能：slug=<slug>&revision=<修订>（可重复多个）&chain=<按先后顺序的 slug，逗号分隔>（ash hooks install 的 hook 调用）
 GET  __BASE_URL__/api/skills/insights?days=30&format=text   使用与反馈统计（使用次数、反馈率，按机器拆分；ash stats 显示的内容）
 ```

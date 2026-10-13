@@ -173,12 +173,19 @@ test('onboarding and the feedback loop', async (t) => {
     const decision = JSON.parse(r.stdout);
     assert.equal(decision.decision, 'block');
     assert.match(decision.reason, /release-check/);
-    assert.doesNotMatch(decision.reason, /deploy-kit/, 'deploy-kit already got feedback in this session');
+    // 调用链里会出现 deploy-kit，但要求回报的名单里不能有它
+    const owing = decision.reason.match(/其中 (.+?) 还没有回报/)[1];
+    assert.doesNotMatch(owing, /deploy-kit/, 'deploy-kit already got feedback in this session');
     assert.doesNotMatch(decision.reason, /my-notes/, 'skills not managed by ash are ignored');
     assert.equal(await useEvents('deploy-kit'), 1);
     assert.equal(await useEvents('release-check'), 1);
     assert.equal(await useEvents('my-notes'), 0);
     assert.match(ok(['info', 'release-check']).stdout, /Agent 调用 1 次/);
+    // 调用链：本次会话先用 deploy-kit 再读 release-check
+    assert.match(decision.reason, /按顺序用到了技能库里的 deploy-kit → release-check/);
+    assert.match(decision.reason, /回报给真正出问题的那一层/);
+    assert.match(ok(['info', 'deploy-kit']).stdout, /调用顺序（近 30 天的会话）: deploy-kit → release-check（1 次）/);
+    assert.deepEqual((await skill('release-check')).usage.chains, [{ chain: ['deploy-kit', 'release-check'], count: 1 }]);
 
     const again = ok(['hook', 'claude-stop'], { input: stopInput() });
     assert.equal(again.stdout, '', 'one reminder per skill per session');

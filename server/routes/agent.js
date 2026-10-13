@@ -144,6 +144,7 @@ router.get('/:slug/info', (req, res) => {
     ...(dependents.length ? [`被引用: ${dependents.length} 个技能（${dependents.join(', ')}）—— 修改它会影响这些技能`] : []),
     ...effectLines(skill),
     `使用: ${usageLine(usage)}`,
+    ...(usage.chains.length ? [`调用顺序（近 30 天的会话）: ${usage.chains.map((c) => `${c.chain.join(' → ')}（${c.count} 次）`).join('；')}`] : []),
     ...usage.health.map((h) => `⚠️  ${h.label}：${h.detail}`),
     ...usage.recent_feedback.filter((f) => f.outcome === 'fail' && f.current && f.note).slice(0, 3)
       .map((f) => `   失败反馈（${f.terminal || '未知来源'}，${f.created_at.slice(0, 10)}）：${f.note}`),
@@ -792,13 +793,16 @@ api.post('/used', (req, res) => {
   const revisions = [].concat(body.revision || []).map(String);
   const entries = [].concat(body.slug || []).slice(0, 50).map((s, i) => ({ slug: String(s).trim(), revision: revisions[i] }));
   if (!entries.some(({ slug }) => /^[A-Za-z0-9_.-]+$/.test(slug))) return res.status(400).type('text/plain').send('错误: 缺少 slug\n');
+  // 本次会话按先后顺序用到的技能（hook 给出，逗号分隔）：记在每条使用记录的 note 上，反馈失败时据此找出出问题的那一层
+  const chain = String(body.chain || '').split(',').map((s) => s.trim()).filter((s) => /^[A-Za-z0-9_.-]+$/.test(s)).slice(0, 20);
+  const note = chain.length > 1 ? `chain: ${chain.join(' > ')}` : null;
   const recorded = [];
   entries.forEach(({ slug, revision: supplied }) => {
     if (!/^[A-Za-z0-9_.-]+$/.test(slug) || recorded.includes(slug)) return;
     const skill = findSkill(req.user.id, slug);
     if (!skill || skill.is_deleted) return;
     const revision = /^[0-9a-f]{12}$/.test(supplied || '') ? supplied : skillRevision(skill);
-    if (recordEvent(skill, req.user.id, 'use', { terminal: terminalOf(req), revision })) recorded.push(slug);
+    if (recordEvent(skill, req.user.id, 'use', { terminal: terminalOf(req), revision, note: note && chain.includes(slug) ? note : null })) recorded.push(slug);
   });
   res.type('text/plain').send(`已记录 ${recorded.length} 个技能的使用${recorded.length ? `：${recorded.join(', ')}` : ''}\n`);
 });
